@@ -173,6 +173,9 @@ def logged_in(profile):
     return bool(status.get('loggedIn', status.get('authMethod') not in (None, '', 'none')))
 
 
+SHARED = ('skills', 'plugins', 'agents', 'commands', 'hooks', 'CLAUDE.md', 'settings.json')
+
+
 def share_claude_setup(config_dir):
     """Give an isolated account the main account's skills, plugins and MCP servers; login stays separate."""
     main = Path(os.environ.get('SMART_AI_CLAUDE_HOME', '~/.claude')).expanduser()
