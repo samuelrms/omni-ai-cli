@@ -1,0 +1,69 @@
+{
+  "active_profile": "primary",
+  "profiles": {
+    "primary": {
+      "name": "Conta principal",
+      "credentials_file": "~/.claude/.credentials.json",
+      "priority": 1,
+      "enabled": true,
+      "status": "active",
+      "last_rate_limit": null,
+      "cooldown_minutes": 60
+    }
+  },
+  "routing": {
+    "simple_keywords": [
+      "explain",
+      "what is",
+      "how does",
+      "define",
+      "list",
+      "explicar",
+      "o que é",
+      "como funciona",
+      "definir",
+      "listar",
+      "search",
+      "find",
+      "look up",
+      "pesquisar",
+      "buscar",
+      "summarize",
+      "resumir",
+      "translate",
+      "traduzir"
+    ],
+    "complex_keywords": [
+      "refactor",
+      "implement",
+      "create",
+      "build",
+      "fix bug",
+      "debug",
+      "write code",
+      "generate",
+      "architect",
+      "design",
+      "migrate",
+      "deploy",
+      "review",
+      "analyze code",
+      "refatorar",
+      "implementar",
+      "criar",
+      "construir",
+      "corrigir",
+      "depurar",
+      "escrever código",
+      "gerar",
+      "arquitetar"
+    ],
+    "max_simple_length": 200,
+    "prefer_tool_for_simple": "openrouter",
+    "fallback_order": [
+      "openrouter",
+      "codex",
+      "agy"
+    ]
+  }
+}

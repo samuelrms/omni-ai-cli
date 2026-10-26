@@ -1,0 +1,5 @@
+simulation: smart-ai-openrouter
+routing: path
+mocks:
+  - routeKey: openrouter
+    path: ../mocks/openrouter.js

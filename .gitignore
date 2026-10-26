@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Segredos e estado local (nunca versionar)
+.env
+.env.*
+*_key
+*.key
+.credentials*.json
+.claude-accounts/
+
+# Sessões, logs e cache do smart-ai
+*.log
+.cache/
+sessions/
+
+# Sistema / editores
+.DS_Store
+.idea/
+.vscode/
+*.swp
