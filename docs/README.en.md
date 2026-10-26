@@ -219,6 +219,7 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 | `/sync` | Shares MCPs and skills across Claude, Codex and Antigravity |
 | `/usage` · `/limits` | Usage and limits of every tool and account, with the reset time each one reported |
 | `/claude:usage` · `/codex:status` · `/agy:usage` … | Each tool's native commands: opens its screen and returns to Omni on exit |
+| `/terminal-setup` | Shows how to get Shift+Enter (or Option+Enter) for new lines in your terminal |
 | `/skills` | Lists project and user skills and commands from Claude, Codex and Antigravity |
 | `/name args` | Runs the skill or command (e.g. `/pr-review 237`). Tab completes |
 | `/history` · `/sent` · `/trace` | Conversation · what was sent · run events |

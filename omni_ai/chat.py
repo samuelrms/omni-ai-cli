@@ -91,6 +91,7 @@ T = {
 /status   /reset                         Status das contas / zerar cooldowns
 /sync [--dry-run]                        Compartilhar MCPs e skills entre Claude, Codex e agy
 /mode default|plan|edits|auto|yolo      Modo de permissão (vale para Claude, Codex e agy)
+/terminal-setup                          Como quebrar linha (Shift+Enter) no seu terminal
 /lang pt|en|es|fr                        Mudar idioma
 /skills                                  Skills e comandos do projeto e do usuário (/nome args executa; Tab completa)
 /history                                 Mostrar conversa
@@ -108,6 +109,7 @@ T = {
 /status   /reset                         Account status / clear cooldowns
 /sync [--dry-run]                        Share MCPs and skills across Claude, Codex and agy
 /mode default|plan|edits|auto|yolo      Permission mode (applies to Claude, Codex and agy)
+/terminal-setup                          How to get new lines (Shift+Enter) in your terminal
 /lang pt|en|es|fr                        Change language
 /skills                                  Project and user skills/commands (/name args runs; Tab completes)
 /history                                 Show conversation
@@ -125,6 +127,7 @@ T = {
 /status   /reset                         Estado de cuentas / limpiar cooldowns
 /sync [--dry-run]                        Compartir MCPs y skills entre Claude, Codex y agy
 /mode default|plan|edits|auto|yolo      Modo de permisos (Claude, Codex y agy)
+/terminal-setup                          Cómo hacer saltos de línea (Shift+Enter) en tu terminal
 /lang pt|en|es|fr                        Cambiar idioma
 /skills                                  Skills y comandos del proyecto y del usuario (/nombre args ejecuta; Tab completa)
 /history                                 Mostrar conversación
@@ -142,6 +145,7 @@ T = {
 /status   /reset                         État des comptes / réinitialiser les cooldowns
 /sync [--dry-run]                        Partager MCP et skills entre Claude, Codex et agy
 /mode default|plan|edits|auto|yolo      Mode de permissions (Claude, Codex et agy)
+/terminal-setup                          Comment faire un saut de ligne (Maj+Entrée) dans votre terminal
 /lang pt|en|es|fr                        Changer de langue
 /skills                                  Skills et commandes du projet et de l'utilisateur (/nom args exécute ; Tab complète)
 /history                                 Afficher la conversation
@@ -171,6 +175,11 @@ def save_lang(value):
 LANG = [load_lang() or (os.environ.get('LANG', 'pt')[:2] if os.environ.get('LANG', '')[:2] in LANGS else 'pt')]
 
 
+def set_lang(code):
+    LANG[0] = code
+    ui.LANG[0] = code  # the screen's own texts (badges, spinner, hints) follow too
+
+
 def tr(key, **values):
     return T[key][LANG[0]].format(**values)
 
@@ -184,9 +193,9 @@ def choose_lang():
         answer = ''
     codes = list(LANGS)
     if answer.isdigit() and 1 <= int(answer) <= 4:
-        LANG[0] = codes[int(answer) - 1]
+        set_lang(codes[int(answer) - 1])
     elif answer in LANGS:
-        LANG[0] = answer
+        set_lang(answer)
     save_lang(LANG[0])
 
 
@@ -508,7 +517,7 @@ def run_tool(args):
         pass
 
 
-BUILTIN = ['/usage', '/tool', '/model', '/account', '/key', '/status', '/reset', '/sync', '/update', '/mode', '/lang',
+BUILTIN = ['/usage', '/terminal-setup', '/tool', '/model', '/account', '/key', '/status', '/reset', '/sync', '/update', '/mode', '/lang',
            '/skills', '/history', '/sent', '/trace', '/sessions', '/resume', '/new', '/parallel', '/help', '/exit']
 
 
@@ -542,6 +551,40 @@ def run_native(tool, command, cwd):
     except KeyboardInterrupt:
         pass
     ui.out(ui.dim('↩ Omni AI'))
+
+
+TERMINAL_SETUP = {
+    'Apple_Terminal': {
+        'pt': 'Terminal do Mac: ele envia Shift+Enter igual a Enter, então nenhum programa consegue separar os dois.\n'
+              'Para quebrar linha use \\ + Enter, ou ligue Option+Enter:\n'
+              '  Terminal › Ajustes › Perfis › (seu perfil) › Teclado › marque "Usar Option como tecla Meta".',
+        'en': 'macOS Terminal sends Shift+Enter exactly like Enter, so no program can tell them apart.\n'
+              'For a new line use \\ + Enter, or turn on Option+Enter:\n'
+              '  Terminal › Settings › Profiles › (your profile) › Keyboard › check "Use Option as Meta key".',
+        'es': 'La Terminal de macOS envía Shift+Enter igual que Enter, así que ningún programa puede distinguirlos.\n'
+              'Para nueva línea usa \\ + Enter, o activa Option+Enter:\n'
+              '  Terminal › Ajustes › Perfiles › (tu perfil) › Teclado › marca "Usar Opción como tecla Meta".',
+        'fr': "Le Terminal macOS envoie Maj+Entrée exactement comme Entrée : aucun programme ne peut les distinguer.\n"
+              "Pour une nouvelle ligne, utilisez \\ + Entrée, ou activez Option+Entrée :\n"
+              "  Terminal › Réglages › Profils › (votre profil) › Clavier › cochez « Utiliser Option comme touche Méta ».",
+    },
+    'iTerm.app': {
+        'pt': 'iTerm2: Shift+Enter já funciona. Se não, Ajustes › Perfis › Teclas › "Report modifiers using CSI u".',
+        'en': 'iTerm2: Shift+Enter already works. If not: Settings › Profiles › Keys › "Report modifiers using CSI u".',
+        'es': 'iTerm2: Shift+Enter ya funciona. Si no: Ajustes › Perfiles › Teclas › "Report modifiers using CSI u".',
+        'fr': 'iTerm2 : Maj+Entrée fonctionne déjà. Sinon : Réglages › Profils › Touches › « Report modifiers using CSI u ».',
+    },
+}
+TERMINAL_OK = {'pt': 'Seu terminal envia Shift+Enter separado; ele quebra a linha. \\ + Enter e Option+Enter também funcionam.',
+               'en': 'Your terminal reports Shift+Enter; it inserts a new line. \\ + Enter and Option+Enter work too.',
+               'es': 'Tu terminal envía Shift+Enter por separado; inserta una nueva línea. \\ + Enter y Option+Enter también.',
+               'fr': 'Votre terminal distingue Maj+Entrée ; elle insère une nouvelle ligne. \\ + Entrée et Option+Entrée aussi.'}
+
+
+def terminal_setup():
+    program = os.environ.get('TERM_PROGRAM', '')
+    text = TERMINAL_SETUP.get(program, TERMINAL_OK)
+    return text[LANG[0]] if isinstance(text, dict) and LANG[0] in text else text.get('pt', '')
 
 
 def setup_completion(cwd):
@@ -581,6 +624,7 @@ def main(argv=None):
         session = Session(args.resume)
     except ValueError as error:
         parser.error(str(error))
+    set_lang(LANG[0])
     setup_completion(session.data['cwd'])
     if load_lang() is None and sys.stdin.isatty():
         choose_lang()
@@ -660,7 +704,8 @@ def main(argv=None):
             return [(o, skills.argument_hint(entry[tool][1])) for o in skills.hint_options(skills.argument_hint(entry[tool][1]))]
         return []
 
-    box = ui.InputBox(Path(session_dir()).parent / 'input_history', commands, status, tr('placeholder'), tr('hints'),
+    box = ui.InputBox(Path(session_dir()).parent / 'input_history', commands, status,
+                      lambda: tr('placeholder'), lambda: tr('hints'),
                       arguments=arguments, cwd=lambda: session.data['cwd'], mode=lambda: session.data.get('mode', 'default'))
     if box.session is None:
         display(tr('welcome', id=session.id, cwd=session.data['cwd']))
@@ -717,9 +762,11 @@ def main(argv=None):
                     session.data['mode'] = argument
                     session.save()
                     display(tr('mode_now', v=argument))
+                elif command == '/terminal-setup':
+                    display(terminal_setup())
                 elif command == '/lang':
                     if argument in LANGS:
-                        LANG[0] = argument
+                        set_lang(argument)
                         save_lang(argument)
                     else:
                         choose_lang()

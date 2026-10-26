@@ -63,6 +63,26 @@ TOOL_COLOR = {'claude': _c('38;5;173'), 'codex': green, 'agy': magenta, 'openrou
 TOOL_RGB = {'claude': (217, 119, 87), 'codex': (16, 185, 129), 'agy': (99, 102, 241), 'openrouter': (234, 179, 8)}
 MARK = '✦'  # Omni's mark: the star at the center of the orbit
 LOCK = threading.RLock()
+LANG = ['pt']  # set by the chat; screen texts follow it
+TEXT = {
+    'cancel': {'pt': 'Ctrl-C cancela', 'en': 'Ctrl-C cancels', 'es': 'Ctrl-C cancela', 'fr': 'Ctrl-C annule'},
+    'no_output': {'pt': '(sem saída)', 'en': '(no output)', 'es': '(sin salida)', 'fr': '(aucune sortie)'},
+    'more': {'pt': '+ {n} linhas · /trace para ver tudo', 'en': '+ {n} lines · /trace to see all',
+             'es': '+ {n} líneas · /trace para ver todo', 'fr': '+ {n} lignes · /trace pour tout voir'},
+    'older': {'pt': '… {n} mensagens anteriores · /history mostra tudo', 'en': '… {n} earlier messages · /history shows all',
+              'es': '… {n} mensajes anteriores · /history muestra todo', 'fr': '… {n} messages précédents · /history montre tout'},
+    'session': {'pt': 'sessão', 'en': 'session', 'es': 'sesión', 'fr': 'session'},
+    'limit': {'pt': 'LIMITE', 'en': 'LIMIT', 'es': 'LÍMITE', 'fr': 'LIMITE'},
+    'error': {'pt': 'ERRO', 'en': 'ERROR', 'es': 'ERROR', 'fr': 'ERREUR'},
+    'warn': {'pt': 'AVISO', 'en': 'WARNING', 'es': 'AVISO', 'fr': 'AVERTISSEMENT'},
+    'file': {'pt': 'arquivo', 'en': 'file', 'es': 'archivo', 'fr': 'fichier'},
+    'args': {'pt': 'Tab mostra opções · Enter sem nada pula', 'en': 'Tab shows options · Enter alone skips',
+             'es': 'Tab muestra opciones · Enter vacío omite', 'fr': 'Tab montre les options · Entrée seule ignore'},
+}
+
+
+def t(key, **values):
+    return TEXT[key].get(LANG[0], TEXT[key]['pt']).format(**values)
 
 
 def width():
@@ -137,7 +157,7 @@ class Spinner:
         while not self.stop_event.wait(0.1):
             with LOCK:
                 sys.stdout.write('\r\033[K' + rgb(_mix(BRAND, (i % 20) / 19), self.FRAMES[i % len(self.FRAMES)]) + ' '
-                                 + shimmer(self.label, i) + dim(f' {elapsed(self.started)} · Ctrl-C cancela'))
+                                 + shimmer(self.label, i) + dim(f" {elapsed(self.started)} · {t('cancel')}"))
                 sys.stdout.flush()
                 self.visible = True
             i += 1
@@ -188,12 +208,12 @@ class View:
     def result(self, text, failed=False):
         lines = [l for l in str(text).splitlines() if l.strip()]
         if not lines:
-            self._p(dim('  └ (sem saída)'))
+            self._p(dim('  └ ' + t('no_output')))
             return
         first = short(lines[0], width() - 8)
         self._p(dim('  └ ') + (red(first) if failed else dim(first)))
         if len(lines) > 1:
-            self._p(dim(f'    + {len(lines) - 1} linhas · /trace para ver tudo'))
+            self._p(dim('    ' + t('more', n=len(lines) - 1)))
 
     def answer(self, text):
         body = markdown(text.strip())
@@ -202,7 +222,7 @@ class View:
 
     def note(self, text):
         if LIMIT_WORDS.search(text) or text.lstrip().startswith(('⚠', '✗', '❌')):
-            self._p('  ' + badge('LIMITE' if LIMIT_WORDS.search(text) else 'AVISO', (234, 179, 8)) + ' '
+            self._p('  ' + badge(t('limit') if LIMIT_WORDS.search(text) else t('warn'), (234, 179, 8)) + ' '
                     + yellow(text.lstrip('⚠✗❌ ')))
         else:
             self._p(dim('  ' + text))
@@ -213,15 +233,15 @@ class View:
             return  # tools often report the same failure twice (item + turn)
         self.last_error = line
         if LIMIT_WORDS.search(line):
-            self._p('  ' + badge('LIMITE', (234, 179, 8)) + ' ' + yellow(line))
+            self._p('  ' + badge(t('limit'), (234, 179, 8)) + ' ' + yellow(line))
         else:
-            self._p('  ' + badge('ERRO', (220, 38, 38)) + ' ' + red(line))
+            self._p('  ' + badge(t('error'), (220, 38, 38)) + ' ' + red(line))
 
 
 def replay(messages, limit=40):
     """Show a resumed conversation the way it looked: your lines with ›, answers with ●."""
     if len(messages) > limit:
-        out(dim(f'  … {len(messages) - limit} mensagens anteriores · /history mostra tudo'))
+        out(dim('  ' + t('older', n=len(messages) - limit)))
     for message in messages[-limit:]:
         if message.get('role') == 'user':
             lines = message.get('content', '').split('\n')
@@ -275,7 +295,7 @@ def welcome(session_id, cwd, engine, model, mode, lang_hint):
     rows = [f'{logo[0]}     {bold(gradient("Omni AI"))}',
             f'{logo[1]}     {tools}',
             f'{logo[2]}     {where}', '',
-            dim('sessão ') + session_id + dim('  ·  ') + dim(lang_hint)]
+            dim(t('session') + ' ') + session_id + dim('  ·  ') + dim(lang_hint)]
     strip = re.compile(r'\033\[[0-9;]*m')
     border = lambda t: rgb((88, 70, 140), t)
     out(border('╭' + '─' * w + '╮'))
@@ -362,7 +382,7 @@ class InputBox:
                     if folder not in files_cache:
                         files_cache[folder] = project_files(folder)
                     for _, path, _ in ranked(word[1:], [(f, '') for f in files_cache[folder]])[:40]:
-                        yield Completion('@' + path, start_position=-len(word), display_meta='arquivo')
+                        yield Completion('@' + path, start_position=-len(word), display_meta=t('file'))
                     return
                 if not text.startswith('/'):
                     return
@@ -429,7 +449,7 @@ class InputBox:
         from prompt_toolkit.completion import WordCompleter
         message = self.HTML(f'  <arrow>{escape(command)}</arrow> ')
         return self.session.prompt(message, completer=WordCompleter(options, sentence=True),
-                                   placeholder=self.HTML(f'<placeholder>{escape(hint)} · Tab mostra opções · Enter sem nada pula</placeholder>'),
+                                   placeholder=self.HTML(f'<placeholder>{escape(hint)} · {escape(t('args'))}</placeholder>'),
                                    bottom_toolbar=None)
 
     def ask(self):
@@ -442,7 +462,7 @@ class InputBox:
 
         def toolbar():
             left = status()
-            right = self.hints
+            right = self.hints() if callable(self.hints) else self.hints
             mode = self.mode() if self.mode else 'default'
             chip = f'<style bg="{MODE_COLORS[mode]}" fg="#000000"><b> {mode.upper()} </b></style> ' if mode in MODE_COLORS else ''
             visible = len(left) + (len(mode) + 3 if chip else 0)
@@ -453,7 +473,7 @@ class InputBox:
         sys.stdout.flush()
         try:
             return self.session.prompt(message, bottom_toolbar=toolbar,
-                                       placeholder=self.HTML(f'<placeholder>{escape(self.placeholder)}</placeholder>'))
+                                       placeholder=self.HTML(f'<placeholder>{escape(self.placeholder() if callable(self.placeholder) else self.placeholder)}</placeholder>'))
         finally:
             sys.stdout.write('\033[>4m')
             sys.stdout.flush()
