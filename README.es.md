@@ -207,6 +207,8 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 | `/lang pt\|en\|es\|fr` | Cambia el idioma |
 | `/mode default\|plan\|edits\|auto\|yolo` | Modo de permisos, igual en las tres herramientas |
 | `/sync` | Comparte MCPs y skills entre Claude, Codex y Antigravity |
+| `/skills` | Lista skills y comandos del proyecto y del usuario, de Claude, Codex y Antigravity |
+| `/nombre args` | Ejecuta la skill o comando (ej.: `/pr-review 237`). Tab completa |
 | `/history` · `/sent` · `/trace` | Conversación · lo que se envió · eventos de la ejecución |
 | `/sessions` · `/resume ID` · `/new` | Sesiones guardadas |
 | `/parallel codex: tarefa \| codex: tarefa` | De 2 a 4 análisis en paralelo, solo lectura |
@@ -346,6 +348,11 @@ Aplicar? [s/N]
   la otra herramienta. `/sync` avisa antes.
 - `/sync --dry-run` solo muestra lo que haría.
 
+**Skills y comandos del proyecto:** el chat lee `.claude/commands`, `.claude/skills`, `.agents/skills` y
+`.agent/workflows` del proyecto abierto, además de las carpetas del usuario. `/pr-review 237` va a
+Claude tal como se escribió, y Claude ejecuta el comando de forma nativa. Una skill que solo existe
+en Codex o Antigravity va a esa herramienta, con las instrucciones del archivo en el pedido.
+
 Como el chat no reenvía las solicitudes de aprobación, una herramienta MCP solo corre si ya
 está permitida en el CLI o si el modo es `auto` o `yolo`. OpenRouter no tiene skills ni MCP.
 
@@ -391,6 +398,7 @@ omni-ai-cli/
 ├── smart-ai.sh / ai.cmd      # lanzadores de compatibilidad (Unix / Windows)
 ├── terminal.py               # chat: sesiones, eventos, Ctrl-C, idiomas
 ├── config_tool.py            # modelos, claves y cuentas Claude (/model, /key, /account)
+├── skills.py                 # skills y comandos del proyecto y del usuario (/skills, /nombre)
 ├── sync_tool.py              # /sync: MCPs y skills entre las tres herramientas
 ├── openrouter_client.py      # cliente OpenRouter: gratuitos, de pago solo si se autorizan
 ├── pii_masker.py             # enmascara y restaura datos personales
@@ -415,7 +423,7 @@ python3 -m unittest discover -s tests -v
 bash -n install.sh
 ```
 
-**24 pruebas**: persistencia y reanudación de sesión, límite de contexto, permisos de
+**27 pruebas**: persistencia y reanudación de sesión, límite de contexto, permisos de
 los archivos, sesión abierta en dos terminales, lectura de eventos, cancelación del árbol
 de procesos, paralelismo real, sandbox de solo lectura, enmascaramiento de datos
 personales, fallback OpenRouter → Codex, validación de modelos, almacenamiento de las

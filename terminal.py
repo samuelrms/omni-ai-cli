@@ -20,6 +20,7 @@ except ImportError:
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 from platform_utils import group_kwargs, kill_tree, lock_exclusive  # noqa: E402
+import skills  # noqa: E402
 ENGINES = {'auto', 'openrouter', 'codex', 'claude', 'agy'}
 MODES = ('default', 'plan', 'edits', 'auto', 'yolo')
 MAX_CONTEXT = 48000
@@ -42,8 +43,11 @@ T = {
     'cancelling': {'pt': 'Cancelando agentes... (Ctrl-C de novo no prompt para sair)', 'en': 'Cancelling agents... (Ctrl-C again at the prompt to exit)',
                    'es': 'Cancelando agentes... (Ctrl-C otra vez en el prompt para salir)', 'fr': 'Annulation des agents... (Ctrl-C à nouveau pour quitter)'},
     'error': {'pt': 'Erro: {e}', 'en': 'Error: {e}', 'es': 'Error: {e}', 'fr': 'Erreur : {e}'},
-    'unknown': {'pt': 'Comando desconhecido. Use /help.', 'en': 'Unknown command. Use /help.',
-                'es': 'Comando desconocido. Usa /help.', 'fr': 'Commande inconnue. Utilisez /help.'},
+    'unknown': {'pt': 'Comando ou skill desconhecido. Use /help ou /skills.', 'en': 'Unknown command or skill. Use /help or /skills.',
+                'es': 'Comando o skill desconocido. Usa /help o /skills.', 'fr': 'Commande ou skill inconnue. Utilisez /help ou /skills.'},
+    'no_skills': {'pt': 'Nenhuma skill ou comando encontrado neste projeto nem no usuário.', 'en': 'No skills or commands found in this project or user folders.',
+                  'es': 'No se encontraron skills ni comandos en este proyecto ni en el usuario.', 'fr': "Aucune skill ni commande trouvée dans ce projet ni chez l'utilisateur."},
+    'skill_run': {'pt': '→ /{name} via {tool}', 'en': '→ /{name} via {tool}', 'es': '→ /{name} vía {tool}', 'fr': '→ /{name} via {tool}'},
     'bad_tool': {'pt': 'Ferramenta inválida: {v}', 'en': 'Invalid tool: {v}', 'es': 'Herramienta inválida: {v}', 'fr': 'Outil invalide : {v}'},
     'tool_set': {'pt': 'Ferramenta: {v}', 'en': 'Tool: {v}', 'es': 'Herramienta: {v}', 'fr': 'Outil : {v}'},
     'no_call': {'pt': 'Nenhuma chamada encontrada', 'en': 'No call found', 'es': 'Ninguna llamada encontrada', 'fr': 'Aucun appel trouvé'},
@@ -72,6 +76,7 @@ T = {
 /sync [--dry-run]                        Compartilhar MCPs e skills entre Claude, Codex e agy
 /mode default|plan|edits|auto|yolo      Modo de permissão (vale para Claude, Codex e agy)
 /lang pt|en|es|fr                        Mudar idioma
+/skills                                  Skills e comandos do projeto e do usuário (/nome args executa; Tab completa)
 /history                                 Mostrar conversa
 /sent [agente-N]  /trace [agente-N]      Ver o que foi enviado / eventos
 /sessions   /resume ID   /new            Sessões salvas
@@ -86,6 +91,7 @@ T = {
 /sync [--dry-run]                        Share MCPs and skills across Claude, Codex and agy
 /mode default|plan|edits|auto|yolo      Permission mode (applies to Claude, Codex and agy)
 /lang pt|en|es|fr                        Change language
+/skills                                  Project and user skills/commands (/name args runs; Tab completes)
 /history                                 Show conversation
 /sent [agente-N]  /trace [agente-N]      What was sent / events
 /sessions   /resume ID   /new            Saved sessions
@@ -100,6 +106,7 @@ T = {
 /sync [--dry-run]                        Compartir MCPs y skills entre Claude, Codex y agy
 /mode default|plan|edits|auto|yolo      Modo de permisos (Claude, Codex y agy)
 /lang pt|en|es|fr                        Cambiar idioma
+/skills                                  Skills y comandos del proyecto y del usuario (/nombre args ejecuta; Tab completa)
 /history                                 Mostrar conversación
 /sent [agente-N]  /trace [agente-N]      Lo enviado / eventos
 /sessions   /resume ID   /new            Sesiones guardadas
@@ -114,6 +121,7 @@ T = {
 /sync [--dry-run]                        Partager MCP et skills entre Claude, Codex et agy
 /mode default|plan|edits|auto|yolo      Mode de permissions (Claude, Codex et agy)
 /lang pt|en|es|fr                        Changer de langue
+/skills                                  Skills et commandes du projet et de l'utilisateur (/nom args exécute ; Tab complète)
 /history                                 Afficher la conversation
 /sent [agente-N]  /trace [agente-N]      Ce qui a été envoyé / événements
 /sessions   /resume ID   /new            Sessions enregistrées
@@ -339,12 +347,13 @@ class Runner:
             self.emit(f"\n[{job['id']}] {content}\n")
 
 
-def execute(session, tasks, parallel=False):
+def execute(session, tasks, parallel=False, raw=False):
     runner = Runner(session.data['cwd'], mode=session.data.get('mode', 'default'))
     jobs = []
     for engine, prompt in tasks:
         job = {'id': 'agente-' + str(len(session.data['requests']) + 1), 'engine': engine,
-               'prompt': prompt, 'sent': session.context(prompt), 'status': 'running', 'created': time.time()}
+               'prompt': prompt, 'sent': prompt if raw else session.context(prompt), 'status': 'running',
+               'created': time.time()}
         if parallel:
             job['sent'] += '\n\nSubtarefa delegada: faça somente análise, sem alterar arquivos. Entregue evidências e conclusões.'
         session.data['requests'].append(job)
@@ -404,6 +413,26 @@ def run_tool(args):
         pass
 
 
+BUILTIN = ['/tool', '/model', '/account', '/key', '/status', '/reset', '/sync', '/update', '/mode', '/lang',
+           '/skills', '/history', '/sent', '/trace', '/sessions', '/resume', '/new', '/parallel', '/help', '/exit']
+
+
+def setup_completion(cwd):
+    """Tab completes built-in commands and the project's/user's skills."""
+    if 'readline' not in sys.modules:
+        return
+    import readline
+    names = sorted(set(BUILTIN) | {'/' + name for name in skills.discover(cwd)})
+
+    def complete(text, state):
+        matches = [n for n in names if n.startswith(text)] if text.startswith('/') else []
+        return matches[state] if state < len(matches) else None
+    readline.set_completer_delims(' \t\n')
+    readline.set_completer(complete)
+    # macOS ships libedit instead of GNU readline
+    readline.parse_and_bind('bind ^I rl_complete' if 'libedit' in (readline.__doc__ or '') else 'tab: complete')
+
+
 def list_sessions():
     for path in sorted(session_dir().glob('*.json'), key=lambda p: p.stat().st_mtime, reverse=True)[:20]:
         try:
@@ -425,6 +454,7 @@ def main(argv=None):
         session = Session(args.resume)
     except ValueError as error:
         parser.error(str(error))
+    setup_completion(session.data['cwd'])
     if load_lang() is None and sys.stdin.isatty():
         choose_lang()
     display(tr('welcome', id=session.id, cwd=session.data['cwd']))
@@ -498,8 +528,21 @@ def main(argv=None):
                     display(json.dumps(data, ensure_ascii=False, indent=2) if not isinstance(data, str) else data)
                 elif command == '/parallel':
                     execute(session, parse_parallel(argument), parallel=True)
+                elif command == '/skills':
+                    catalog = skills.discover(session.data['cwd'])
+                    if not catalog:
+                        display(tr('no_skills'))
+                    for name, entry in sorted(catalog.items()):
+                        kind, path, scope = next(iter(entry.values()))
+                        display(f"/{name:<28} {', '.join(entry):<18} {scope:<8} {skills.description(path)[:70]}")
                 elif line.startswith('/'):
-                    raise ValueError(tr('unknown'))
+                    entry = skills.discover(session.data['cwd']).get(command[1:])
+                    if not entry:
+                        raise ValueError(tr('unknown'))
+                    tool = skills.pick_tool(entry, session.data['engine'])
+                    prompt, raw = skills.build_prompt(command[1:], argument, tool, entry)
+                    display(tr('skill_run', name=command[1:], tool=tool))
+                    execute(session, [(tool, prompt)], raw=raw)
                 else:
                     execute(session, [(session.data['engine'], line)])
             except (ValueError, OSError) as error:

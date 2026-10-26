@@ -206,6 +206,8 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 | `/lang pt\|en\|es\|fr` | Muda o idioma |
 | `/mode default\|plan\|edits\|auto\|yolo` | Modo de permissão, igual nas três ferramentas |
 | `/sync` | Compartilha MCPs e skills entre Claude, Codex e Antigravity |
+| `/skills` | Lista skills e comandos do projeto e do usuário, de Claude, Codex e Antigravity |
+| `/nome args` | Roda a skill ou comando (ex.: `/pr-review 237`). Tab completa |
 | `/history` · `/sent` · `/trace` | Conversa · o que foi enviado · eventos da execução |
 | `/sessions` · `/resume ID` · `/new` | Sessões salvas |
 | `/parallel codex: tarefa \| codex: tarefa` | 2 a 4 análises em paralelo, somente leitura |
@@ -345,6 +347,11 @@ Aplicar? [s/N]
   outra ferramenta. O `/sync` avisa antes.
 - `/sync --dry-run` só mostra o que faria.
 
+**Skills e comandos do projeto:** o chat lê `.claude/commands`, `.claude/skills`, `.agents/skills` e
+`.agent/workflows` do projeto aberto, além das pastas do usuário. `/pr-review 237` vai para o
+Claude do jeito que foi digitado, e ele executa o comando nativamente. Uma skill que só existe
+no Codex ou no Antigravity vai para essa ferramenta, com as instruções do arquivo no pedido.
+
 Como o chat não repassa pedidos de aprovação, uma ferramenta de MCP só roda se já estiver
 liberada nas permissões do CLI ou se o modo for `auto` ou `yolo`. O OpenRouter não tem
 skills nem MCP.
@@ -391,6 +398,7 @@ omni-ai-cli/
 ├── smart-ai.sh / ai.cmd      # atalhos de compatibilidade (Unix / Windows)
 ├── terminal.py               # chat: sessões, eventos, Ctrl-C, idiomas
 ├── config_tool.py            # modelos, chaves e contas Claude (/model, /key, /account)
+├── skills.py                 # skills e comandos do projeto e do usuário (/skills, /nome)
 ├── sync_tool.py              # /sync: MCPs e skills entre as três ferramentas
 ├── openrouter_client.py      # cliente OpenRouter: gratuitos, pagos só se autorizados
 ├── pii_masker.py             # mascara e restaura dados pessoais
@@ -415,7 +423,7 @@ python3 -m unittest discover -s tests -v
 bash -n install.sh
 ```
 
-**24 testes**: persistência e retomada de sessão, limite de contexto, permissão dos
+**27 testes**: persistência e retomada de sessão, limite de contexto, permissão dos
 arquivos, sessão aberta em dois terminais, leitura de eventos, cancelamento da árvore de
 processos, paralelismo real, sandbox somente leitura, mascaramento de dados pessoais,
 fallback OpenRouter → Codex, validação de modelos, armazenamento das chaves e o ciclo de vida das contas. Todos os

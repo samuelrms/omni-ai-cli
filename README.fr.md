@@ -207,6 +207,8 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 | `/lang pt\|en\|es\|fr` | Change la langue |
 | `/mode default\|plan\|edits\|auto\|yolo` | Mode de permissions, identique sur les trois outils |
 | `/sync` | Partage MCP et skills entre Claude, Codex et Antigravity |
+| `/skills` | Liste les skills et commandes du projet et de l'utilisateur (Claude, Codex, Antigravity) |
+| `/nom args` | Lance la skill ou la commande (ex. `/pr-review 237`). Tab complète |
 | `/history` · `/sent` · `/trace` | Conversation · ce qui a été envoyé · événements de l'exécution |
 | `/sessions` · `/resume ID` · `/new` | Sessions sauvegardées |
 | `/parallel codex: tarefa \| codex: tarefa` | 2 à 4 analyses en parallèle, en lecture seule |
@@ -350,6 +352,11 @@ Aplicar? [s/N]
   la config de l'autre outil. `/sync` prévient avant.
 - `/sync --dry-run` montre seulement ce qu'il ferait.
 
+**Skills et commandes du projet :** le chat lit `.claude/commands`, `.claude/skills`, `.agents/skills` et
+`.agent/workflows` du projet ouvert, en plus des dossiers de l'utilisateur. `/pr-review 237` part vers
+Claude tel quel, et Claude exécute la commande nativement. Une skill qui n'existe que dans Codex
+ou Antigravity part vers cet outil, avec les instructions du fichier dans la demande.
+
 Comme le chat ne relaie pas les demandes d'approbation, un outil MCP ne s'exécute que s'il
 est déjà autorisé dans le CLI ou si le mode est `auto` ou `yolo`. OpenRouter n'a ni skills
 ni MCP.
@@ -396,6 +403,7 @@ omni-ai-cli/
 ├── smart-ai.sh / ai.cmd      # lanceurs de compatibilité (Unix / Windows)
 ├── terminal.py               # chat : sessions, événements, Ctrl-C, langues
 ├── config_tool.py            # modèles, clés et comptes Claude (/model, /key, /account)
+├── skills.py                 # skills et commandes du projet et de l'utilisateur (/skills, /nom)
 ├── sync_tool.py              # /sync : MCP et skills entre les trois outils
 ├── openrouter_client.py      # client OpenRouter : gratuits, payants seulement si autorisés
 ├── pii_masker.py             # masque et restaure les données personnelles
@@ -420,7 +428,7 @@ python3 -m unittest discover -s tests -v
 bash -n install.sh
 ```
 
-**24 tests** : persistance et reprise de session, limite de contexte, permissions des
+**27 tests** : persistance et reprise de session, limite de contexte, permissions des
 fichiers, session ouverte dans deux terminaux, lecture des événements, annulation de
 l'arbre de processus, parallélisme réel, sandbox en lecture seule, masquage des données
 personnelles, fallback OpenRouter → Codex, validation des modèles, stockage des clés et

@@ -206,6 +206,8 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 | `/lang pt\|en\|es\|fr` | Changes the language |
 | `/mode default\|plan\|edits\|auto\|yolo` | Permission mode, the same on all three tools |
 | `/sync` | Shares MCPs and skills across Claude, Codex and Antigravity |
+| `/skills` | Lists project and user skills and commands from Claude, Codex and Antigravity |
+| `/name args` | Runs the skill or command (e.g. `/pr-review 237`). Tab completes |
 | `/history` · `/sent` · `/trace` | Conversation · what was sent · run events |
 | `/sessions` · `/resume ID` · `/new` | Saved sessions |
 | `/parallel codex: tarefa \| codex: tarefa` | 2 to 4 analyses in parallel, read-only |
@@ -344,6 +346,11 @@ Aplicar? [s/N]
   config. `/sync` warns before doing it.
 - `/sync --dry-run` only shows what it would do.
 
+**Project skills and commands:** the chat reads `.claude/commands`, `.claude/skills`, `.agents/skills`
+and `.agent/workflows` from the open project, plus the user folders. `/pr-review 237` goes to
+Claude exactly as typed, and Claude runs the command natively. A skill that only exists in
+Codex or Antigravity goes to that tool, with the file's instructions in the request.
+
 Since the chat doesn't forward approval prompts, an MCP tool only runs if it is already
 allowed in the CLI's permissions or the mode is `auto` or `yolo`. OpenRouter has no skills
 or MCP.
@@ -390,6 +397,7 @@ omni-ai-cli/
 ├── smart-ai.sh / ai.cmd      # compatibility launchers (Unix / Windows)
 ├── terminal.py               # chat: sessions, events, Ctrl-C, languages
 ├── config_tool.py            # models, keys and Claude accounts (/model, /key, /account)
+├── skills.py                 # project and user skills and commands (/skills, /name)
 ├── sync_tool.py              # /sync: MCPs and skills across the three tools
 ├── openrouter_client.py      # OpenRouter client: free, paid only if authorized
 ├── pii_masker.py             # masks and restores personal data
@@ -414,7 +422,7 @@ python3 -m unittest discover -s tests -v
 bash -n install.sh
 ```
 
-**24 tests**: session persistence and resume, context limit, file permissions, session
+**27 tests**: session persistence and resume, context limit, file permissions, session
 open in two terminals, event reading, process tree cancellation, real parallelism,
 read-only sandbox, personal data masking, OpenRouter → Codex fallback, model
 validation, key storage and the account lifecycle. All the
