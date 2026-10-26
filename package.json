@@ -1,6 +1,6 @@
 {
   "name": "omni-ai-cli",
-  "version": "1.0.0",
+  "version": "0.0.0-development",
   "description": "One chat for Claude Code, Codex, Antigravity and OpenRouter, with automatic routing, account fallback, API keys, permission modes and MCP/skill sync.",
   "bin": {
     "ai": "bin/ai.js",

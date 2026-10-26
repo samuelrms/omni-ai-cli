@@ -454,6 +454,57 @@ SMART_AI_SIM_URL=http://127.0.0.1:4901/openrouter python3 -m unittest discover -
 
 ---
 
+## Releases and branches
+
+Publishing to npm is automatic, run by GitHub Actions with semantic-release. The
+version comes from commit messages (Conventional Commits) — nobody edits `version` in
+`package.json` by hand.
+
+| Branch | Publishes as | Example |
+|---|---|---|
+| `main` | `latest` | `1.4.0` |
+| `next` | `next` (release candidate) | `1.5.0-rc.1` |
+| `beta` | `beta` | `2.0.0-beta.1` |
+| others / PR | nothing, CI only | — |
+
+| Commit | Version effect |
+|---|---|
+| `fix: ...` | patch (`1.4.0` → `1.4.1`) |
+| `feat: ...` | minor (`1.4.0` → `1.5.0`) |
+| `feat!: ...` or `BREAKING CHANGE:` in the body | major (`1.4.0` → `2.0.0`) |
+| `docs:`, `ci:`, `chore:`, `test:`, `refactor:` | no release |
+
+Use squash merge: the PR title becomes the commit, and the `PR title` workflow blocks
+titles that don't follow the convention.
+
+```mermaid
+flowchart TD
+    A[PR opened] --> B[CI: Python 3.11-3.13 tests on Linux and macOS<br/>+ npm pack + launcher]
+    A --> C[PR title: Conventional Commits?]
+    B -->|failed| X[Merge blocked]
+    C -->|invalid| X
+    B -->|ok| D[Squash merge into main / next / beta]
+    C -->|ok| D
+    D --> E[Release: CI runs again]
+    E -->|failed| Y[Nothing is published]
+    E -->|ok| F{semantic-release:<br/>any feat/fix/breaking<br/>since last tag?}
+    F -->|no| Z[No release]
+    F -->|yes| G[Compute version and tag vX.Y.Z]
+    G --> H[npm publish with provenance<br/>on the branch dist-tag]
+    G --> I[GitHub Release with notes]
+```
+
+One-time GitHub setup:
+
+1. **Settings → Secrets and variables → Actions**: add `NPM_TOKEN` (an *Automation* or
+   *Granular* npmjs.com token with publish permission).
+2. **Settings → Branches**: protect `main` (and `next`/`beta` if used), requiring a PR and
+   the `Tests (...)`, `npm package` and `conventional` checks.
+3. **Settings → General → Pull Requests**: allow only *squash merging* and tick *Default
+   to pull request title*.
+
+---
+
 ## Troubleshooting
 
 | Problem | Solution |
