@@ -564,6 +564,7 @@ def main(argv=None):
     if box.session is None:
         display(tr('welcome', id=session.id, cwd=session.data['cwd']))
     else:
+        ui.clear_screen()
         ui.welcome(session.id, session.data['cwd'], session.data['engine'], engine_model(),
                    session.data.get('mode', 'default'), tr('hint_line'))
     try:

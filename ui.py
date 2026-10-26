@@ -152,6 +152,14 @@ class View:
         self._p(red('  ✗ ' + short(text, width() - 6)))
 
 
+def clear_screen():
+    """Start on a clean screen, like Claude Code and Codex (keeps the scrollback above)."""
+    if sys.stdout.isatty():
+        with LOCK:
+            sys.stdout.write('\033[2J\033[H')
+            sys.stdout.flush()
+
+
 def welcome(session_id, cwd, engine, model, mode, lang_hint):
     w = min(width() - 2, 78)
     rows = [bold('✻ Omni AI'), '',
