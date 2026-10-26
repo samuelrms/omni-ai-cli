@@ -1,11 +1,11 @@
 # Omni AI CLI
 
 ![npm](https://img.shields.io/badge/npm-coming%20soon-1A1714)
-[![License: MIT](https://img.shields.io/badge/license-MIT-C4552F.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-C4552F.svg)](../LICENSE)
 ![Platforms](https://img.shields.io/badge/macOS%20·%20Linux%20·%20Windows-1A1714)
 ![Languages](https://img.shields.io/badge/pt--BR%20·%20en%20·%20es%20·%20fr-C4552F)
 
-> [Português](README.md) · [Español](README.es.md) · [Français](README.fr.md)
+> [Português](../README.md) · [Español](README.es.md) · [Français](README.fr.md)
 
 A chat terminal that brings **Claude Code, Codex, Antigravity and OpenRouter** together in
 one place. You type your question, `ai` decides who answers, and if a tool fails or
@@ -42,24 +42,24 @@ configured from inside the chat itself.
 
 ## How it works
 
-From the typed line to the saved answer. The chat (`terminal.py`) does not call any AI
-directly: it launches the router (`smart_ai.py`) as a subprocess and reads the events it
+From the typed line to the saved answer. The chat (`chat.py`) does not call any AI
+directly: it launches the router (`cli.py`) as a subprocess and reads the events it
 emits, line by line, to show who is answering and what they are doing.
 
 ```mermaid
 flowchart TD
     A["You type and press Enter"] --> B{"Starts with / ?"}
     B -- yes --> C["Internal command<br/>/model · /account · /key · /lang · /resume"]
-    C --> C1["config_tool.py writes to<br/>models.json, profiles.json or keys/"]
+    C --> C1["config.py writes to<br/>models.json, profiles.json or keys/"]
     B -- no --> D["Builds the context: latest messages<br/>of the session up to 48 thousand characters + language"]
 
-    subgraph CHAT ["terminal.py — chat"]
+    subgraph CHAT ["chat.py — chat"]
         D --> E["Thread worker launches the router<br/>in its own process group"]
         E -. "JSON events line by line" .-> F["Shows provider, commands and answer"]
         X["Ctrl-C"] -. "SIGTERM to the group;<br/>after 5 s, SIGKILL" .-> E
     end
 
-    subgraph ROUTER ["smart_ai.py — router"]
+    subgraph ROUTER ["cli.py — router"]
         E --> G["Loads models:<br/>env > models.json > default"]
         G --> H{"Tool pinned<br/>with /tool?"}
         H -- yes --> H1["Only the chosen tool"]
@@ -140,7 +140,7 @@ From source, for development:
 
 ```bash
 git clone https://github.com/samuelrms/omni-ai-cli ~/dev/omni-ai-cli
-cd ~/dev/omni-ai-cli && ./install.sh        # Windows: powershell -File install.ps1
+cd ~/dev/omni-ai-cli && ./scripts/install.sh        # Windows: powershell -File scripts\install.ps1
 ```
 
 The installer:
@@ -180,6 +180,10 @@ The first time, it asks for the language. After that, just type and press Enter.
 | Esc+Enter | New line without sending |
 | Tab | Completes commands and skills |
 
+In the Tab menu every item ends with its owner: `omni`, `claude`, `codex` or `agy`. When you pick a
+skill that takes arguments (like `/pr-review [pr-number | --branch]`), the chat asks for them: Tab
+shows the options, you can type your own text, and Enter alone runs it without arguments.
+
 The screen follows Claude Code and Codex: an input box at the bottom with a status bar (tool,
 model, mode and folder), Tab to complete commands and skills, each AI action on one line
 (`● Ran …`, `● Edited …`, `● Called …`) with its output collapsed, markdown answers and a
@@ -213,6 +217,8 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 | `/lang pt\|en\|es\|fr` | Changes the language |
 | `/mode default\|plan\|edits\|auto\|yolo` | Permission mode, the same on all three tools |
 | `/sync` | Shares MCPs and skills across Claude, Codex and Antigravity |
+| `/usage` · `/limits` | Usage and limits of every tool and account, with the reset time each one reported |
+| `/claude:usage` · `/codex:status` · `/agy:usage` … | Each tool's native commands: opens its screen and returns to Omni on exit |
 | `/skills` | Lists project and user skills and commands from Claude, Codex and Antigravity |
 | `/name args` | Runs the skill or command (e.g. `/pr-review 237`). Tab completes |
 | `/history` · `/sent` · `/trace` | Conversation · what was sent · run events |
@@ -397,30 +403,30 @@ ai --log                               # latest calls
 
 ```text
 omni-ai-cli/
-├── bin/ai.js                 # npm launcher: finds or installs Python and runs smart_ai.py
-├── package.json              # omni-ai-cli npm package
-├── smart_ai.py               # ai command: classifies, routes and runs each tool
-├── platform_utils.py         # differences between macOS, Linux and Windows
-├── smart-ai.sh / ai.cmd      # compatibility launchers (Unix / Windows)
-├── ui.py                     # chat look: input box, status bar, actions and answers
-├── vendor/                   # bundled prompt_toolkit and wcwidth (no pip)
-├── terminal.py               # chat: sessions, events, Ctrl-C, languages
-├── config_tool.py            # models, keys and Claude accounts (/model, /key, /account)
-├── skills.py                 # project and user skills and commands (/skills, /name)
-├── sync_tool.py              # /sync: MCPs and skills across the three tools
-├── openrouter_client.py      # OpenRouter client: free, paid only if authorized
-├── pii_masker.py             # masks and restores personal data
-├── profiles.json             # starting template; yours lives in ~/.config/smart-ai
-├── get.sh / get.ps1          # one-command install (downloads and runs install)
-├── install.sh / install.ps1  # installs Claude Code and the ai command (Unix / Windows)
-├── README.md / .en / .es / .fr
-├── postman/                  # HTTP simulation of OpenRouter
-└── tests/                    # fake executables, no quota used
+├── omni_ai/                  # the program (Python package)
+│   ├── cli.py                # ai command: classifies, routes and runs each tool
+│   ├── chat.py               # chat: sessions, events, Ctrl-C, languages
+│   ├── ui.py                 # look: input box, status bar, actions and answers
+│   ├── skills.py             # project, user and native skills/commands
+│   ├── config.py             # models, keys and Claude accounts (/model, /key, /account)
+│   ├── sync.py               # /sync: MCPs and skills across the three tools
+│   ├── openrouter.py         # OpenRouter client: free, paid only if authorized
+│   ├── pii.py                # masks and restores personal data
+│   ├── osutils.py            # differences between macOS, Linux and Windows
+│   ├── profiles.json         # starting template; yours lives in ~/.config/smart-ai
+│   └── vendor/               # bundled prompt_toolkit and wcwidth (no pip)
+├── bin/ai.js                 # npm launcher: finds or installs Python and runs the package
+├── scripts/                  # install.sh, install.ps1 and ai.cmd
+├── docs/                     # README in English, Spanish and French
+├── tests/                    # fake executables, no quota used
+├── postman/                  # OpenRouter HTTP simulation
+├── get.sh / get.ps1          # one-command install
+└── package.json · LICENSE
 ```
 
 The router knows nothing about chat: it only runs a question and, with
 `SMART_AI_EVENTS=1`, emits JSON events. The chat knows nothing about credentials:
-accounts and models go through `config_tool.py`.
+accounts and models go through `config.py`.
 
 ---
 
@@ -428,10 +434,10 @@ accounts and models go through `config_tool.py`.
 
 ```bash
 python3 -m unittest discover -s tests -v
-bash -n install.sh
+bash -n scripts/install.sh
 ```
 
-**28 tests**: session persistence and resume, context limit, file permissions, session
+**34 tests**: session persistence and resume, context limit, file permissions, session
 open in two terminals, event reading, process tree cancellation, real parallelism,
 read-only sandbox, personal data masking, OpenRouter → Codex fallback, model
 validation, key storage and the account lifecycle. All the
@@ -455,7 +461,7 @@ SMART_AI_SIM_URL=http://127.0.0.1:4901/openrouter python3 -m unittest discover -
 | `You've hit your session limit` | Account quota. `ai` moves to the next one; add another with `/account add` or a key with `/key claude`. |
 | `Individual quota reached` (Antigravity) | Antigravity quota; it is skipped until it renews. |
 | `Not inside a trusted directory` (Codex) | Old install. Run the installer again. |
-| `Claude Code não instalado` | `./install.sh` (or `install.ps1` on Windows) installs it with the official installer. |
+| `Claude Code não instalado` | `./scripts/install.sh` (or `scripts\install.ps1` on Windows) installs it with the official installer. |
 | Windows: skill links fail | Turn on Developer Mode or run as administrator; otherwise `ai` uses folder junctions. |
 | `/model` changes nothing | A `SMART_AI_*_MODEL` variable is set and takes precedence. |
 | `/key` changes nothing | The tool's variable (`ANTHROPIC_API_KEY` etc.) is set and takes precedence. |
@@ -490,4 +496,4 @@ SMART_AI_SIM_URL=http://127.0.0.1:4901/openrouter python3 -m unittest discover -
 
 ## License
 
-[MIT](LICENSE). Bundled in `vendor/`: prompt_toolkit (BSD-3-Clause) and wcwidth (MIT), each with its license.
+[MIT](../LICENSE). Bundled in `vendor/`: prompt_toolkit (BSD-3-Clause) and wcwidth (MIT), each with its license.

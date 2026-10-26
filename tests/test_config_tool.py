@@ -7,6 +7,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+os.environ['PYTHONPATH'] = str(ROOT)
 
 
 class ConfigToolTests(unittest.TestCase):
@@ -33,7 +34,7 @@ class ConfigToolTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def run_tool(self, *args, **extra):
-        return subprocess.run([sys.executable, str(ROOT / 'config_tool.py'), *args],
+        return subprocess.run([sys.executable, '-m', 'omni_ai.config', *args],
                               env=dict(self.env, **extra), capture_output=True, text=True)
 
     def test_model_set_validate_reset_and_env_priority(self):
@@ -69,10 +70,10 @@ class ConfigToolTests(unittest.TestCase):
         self.assertNotEqual(self.run_tool('account', 'add', '../x').returncode, 0)
 
     def test_keys_hidden_storage_prefix_check_and_remove(self):
-        bad = subprocess.run([sys.executable, str(ROOT / 'config_tool.py'), 'key', 'claude'], env=self.env,
+        bad = subprocess.run([sys.executable, '-m', 'omni_ai.config', 'key', 'claude'], env=self.env,
                              input='sk-wrong-prefix-1234567890\n', capture_output=True, text=True)
         self.assertNotEqual(bad.returncode, 0)
-        good = subprocess.run([sys.executable, str(ROOT / 'config_tool.py'), 'key', 'set', 'claude'], env=self.env,
+        good = subprocess.run([sys.executable, '-m', 'omni_ai.config', 'key', 'set', 'claude'], env=self.env,
                               input='sk-ant-abcdefghijklmnop1234\n', capture_output=True, text=True)
         self.assertEqual(good.returncode, 0, good.stderr)
         path = Path(self.env['SMART_AI_HOME']) / 'keys' / 'claude'

@@ -5,7 +5,7 @@
 ![Plataformas](https://img.shields.io/badge/macOS%20·%20Linux%20·%20Windows-1A1714)
 ![Idiomas](https://img.shields.io/badge/pt--BR%20·%20en%20·%20es%20·%20fr-C4552F)
 
-> [English](README.en.md) · [Español](README.es.md) · [Français](README.fr.md)
+> [English](docs/README.en.md) · [Español](docs/README.es.md) · [Français](docs/README.fr.md)
 
 Um terminal de chat que junta **Claude Code, Codex, Antigravity e OpenRouter** num lugar
 só. Você escreve a pergunta, o `ai` decide quem responde e, se a ferramenta falhar ou
@@ -42,24 +42,24 @@ se configuram de dentro do próprio chat.
 
 ## Como funciona
 
-Da linha digitada até a resposta salva. O chat (`terminal.py`) não chama nenhuma IA
-direto: ele dispara o roteador (`smart_ai.py`) como subprocesso e lê os eventos que ele
+Da linha digitada até a resposta salva. O chat (`chat.py`) não chama nenhuma IA
+direto: ele dispara o roteador (`cli.py`) como subprocesso e lê os eventos que ele
 emite, linha a linha, para mostrar quem está atendendo e o que está fazendo.
 
 ```mermaid
 flowchart TD
     A["Você digita e tecla Enter"] --> B{"Começa com / ?"}
     B -- sim --> C["Comando interno<br/>/model · /account · /key · /lang · /resume"]
-    C --> C1["config_tool.py grava em<br/>models.json, profiles.json ou keys/"]
+    C --> C1["config.py grava em<br/>models.json, profiles.json ou keys/"]
     B -- não --> D["Monta o contexto: últimas mensagens<br/>da sessão até 48 mil caracteres + idioma"]
 
-    subgraph CHAT ["terminal.py — chat"]
+    subgraph CHAT ["chat.py — chat"]
         D --> E["Worker em thread dispara o roteador<br/>em grupo de processos próprio"]
         E -. "eventos JSON linha a linha" .-> F["Mostra provedor, comandos e resposta"]
         X["Ctrl-C"] -. "SIGTERM no grupo;<br/>após 5 s, SIGKILL" .-> E
     end
 
-    subgraph ROUTER ["smart_ai.py — roteador"]
+    subgraph ROUTER ["cli.py — roteador"]
         E --> G["Carrega modelos:<br/>env > models.json > padrão"]
         G --> H{"Ferramenta fixada<br/>com /tool?"}
         H -- sim --> H1["Só a ferramenta escolhida"]
@@ -140,7 +140,7 @@ Pelo código-fonte, para desenvolver:
 
 ```bash
 git clone https://github.com/samuelrms/omni-ai-cli ~/dev/omni-ai-cli
-cd ~/dev/omni-ai-cli && ./install.sh        # Windows: powershell -File install.ps1
+cd ~/dev/omni-ai-cli && ./scripts/install.sh        # Windows: powershell -File scripts\install.ps1
 ```
 
 O instalador:
@@ -180,6 +180,10 @@ Na primeira vez ele pergunta o idioma. Depois é só escrever e teclar Enter.
 | Esc+Enter | Nova linha sem enviar |
 | Tab | Completa comandos e skills |
 
+No menu do Tab, cada item termina dizendo de quem é: `omni`, `claude`, `codex` ou `agy`. Ao escolher
+uma skill que tem argumentos (como `/pr-review [pr-number | --branch]`), o chat pergunta os
+argumentos: Tab mostra as opções, dá para escrever o próprio texto, e Enter sem nada roda sem argumentos.
+
 A tela segue o estilo do Claude Code e do Codex: caixa de entrada no rodapé com a barra de status
 (ferramenta, modelo, modo e pasta), Tab para completar comandos e skills, cada ação da IA numa linha
 (`● Ran …`, `● Edited …`, `● Called …`) com a saída recolhida, respostas em markdown e um indicador
@@ -213,6 +217,8 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 | `/lang pt\|en\|es\|fr` | Muda o idioma |
 | `/mode default\|plan\|edits\|auto\|yolo` | Modo de permissão, igual nas três ferramentas |
 | `/sync` | Compartilha MCPs e skills entre Claude, Codex e Antigravity |
+| `/usage` · `/limits` | Uso e limites de todas as ferramentas e contas, com o horário de volta que cada uma informou |
+| `/claude:usage` · `/codex:status` · `/agy:usage` … | Comandos nativos de cada ferramenta: abre a tela dela e volta ao Omni ao sair |
 | `/skills` | Lista skills e comandos do projeto e do usuário, de Claude, Codex e Antigravity |
 | `/nome args` | Roda a skill ou comando (ex.: `/pr-review 237`). Tab completa |
 | `/history` · `/sent` · `/trace` | Conversa · o que foi enviado · eventos da execução |
@@ -398,30 +404,30 @@ ai --log                               # últimas chamadas
 
 ```text
 omni-ai-cli/
-├── bin/ai.js                 # lançador npm: acha ou instala o Python e chama smart_ai.py
-├── package.json              # pacote npm omni-ai-cli
-├── smart_ai.py               # comando ai: classifica, roteia e executa cada ferramenta
-├── platform_utils.py         # diferenças entre macOS, Linux e Windows
-├── smart-ai.sh / ai.cmd      # atalhos de compatibilidade (Unix / Windows)
-├── ui.py                     # visual do chat: caixa de entrada, barra de status, ações e respostas
-├── vendor/                   # prompt_toolkit e wcwidth embutidos (sem pip)
-├── terminal.py               # chat: sessões, eventos, Ctrl-C, idiomas
-├── config_tool.py            # modelos, chaves e contas Claude (/model, /key, /account)
-├── skills.py                 # skills e comandos do projeto e do usuário (/skills, /nome)
-├── sync_tool.py              # /sync: MCPs e skills entre as três ferramentas
-├── openrouter_client.py      # cliente OpenRouter: gratuitos, pagos só se autorizados
-├── pii_masker.py             # mascara e restaura dados pessoais
-├── profiles.json             # modelo inicial; o seu fica em ~/.config/smart-ai
-├── get.sh / get.ps1          # instalação com um comando (baixa e chama o install)
-├── install.sh / install.ps1  # instala o Claude Code e o comando ai (Unix / Windows)
-├── README.md / .en / .es / .fr
+├── omni_ai/                  # o programa (pacote Python)
+│   ├── cli.py                # comando ai: classifica, roteia e executa cada ferramenta
+│   ├── chat.py               # chat: sessões, eventos, Ctrl-C, idiomas
+│   ├── ui.py                 # visual: caixa de entrada, barra de status, ações e respostas
+│   ├── skills.py             # skills e comandos do projeto, do usuário e nativos
+│   ├── config.py             # modelos, chaves e contas Claude (/model, /key, /account)
+│   ├── sync.py               # /sync: MCPs e skills entre as três ferramentas
+│   ├── openrouter.py         # cliente OpenRouter: gratuitos, pagos só se autorizados
+│   ├── pii.py                # mascara e restaura dados pessoais
+│   ├── osutils.py            # diferenças entre macOS, Linux e Windows
+│   ├── profiles.json         # modelo inicial; o seu fica em ~/.config/smart-ai
+│   └── vendor/               # prompt_toolkit e wcwidth embutidos (sem pip)
+├── bin/ai.js                 # lançador npm: acha ou instala o Python e roda o pacote
+├── scripts/                  # install.sh, install.ps1 e ai.cmd
+├── docs/                     # README em inglês, espanhol e francês
+├── tests/                    # executáveis fictícios, sem consumir cota
 ├── postman/                  # simulação HTTP do OpenRouter
-└── tests/                    # executáveis fictícios, sem consumir cota
+├── get.sh / get.ps1          # instalação com um comando
+└── package.json · LICENSE
 ```
 
 O roteador não sabe nada de chat: ele só executa uma pergunta e, com
 `SMART_AI_EVENTS=1`, emite eventos JSON. O chat não sabe nada de credenciais: contas e
-modelos passam pelo `config_tool.py`.
+modelos passam pelo `config.py`.
 
 ---
 
@@ -429,10 +435,10 @@ modelos passam pelo `config_tool.py`.
 
 ```bash
 python3 -m unittest discover -s tests -v
-bash -n install.sh
+bash -n scripts/install.sh
 ```
 
-**28 testes**: persistência e retomada de sessão, limite de contexto, permissão dos
+**34 testes**: persistência e retomada de sessão, limite de contexto, permissão dos
 arquivos, sessão aberta em dois terminais, leitura de eventos, cancelamento da árvore de
 processos, paralelismo real, sandbox somente leitura, mascaramento de dados pessoais,
 fallback OpenRouter → Codex, validação de modelos, armazenamento das chaves e o ciclo de vida das contas. Todos os
@@ -456,7 +462,7 @@ SMART_AI_SIM_URL=http://127.0.0.1:4901/openrouter python3 -m unittest discover -
 | `You've hit your session limit` | Cota da conta. O `ai` passa para a próxima; adicione outra com `/account add` ou uma chave com `/key claude`. |
 | `Individual quota reached` (Antigravity) | Cota do Antigravity; ele é pulado até a renovação. |
 | `Not inside a trusted directory` (Codex) | Instalação antiga. Rode o instalador de novo. |
-| `Claude Code não instalado` | `./install.sh` (ou `install.ps1` no Windows) instala pelo instalador oficial. |
+| `Claude Code não instalado` | `./scripts/install.sh` (ou `scripts\install.ps1` no Windows) instala pelo instalador oficial. |
 | Windows: atalhos de skills falham | Ative o Modo de Desenvolvedor ou rode como administrador; sem isso o `ai` usa junções de pasta. |
 | `/model` não muda nada | Uma variável `SMART_AI_*_MODEL` está definida e tem precedência. |
 | `/key` não muda nada | A variável da ferramenta (`ANTHROPIC_API_KEY` etc.) está definida e tem precedência. |

@@ -7,6 +7,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+os.environ['PYTHONPATH'] = str(ROOT)
 
 
 class SyncToolTests(unittest.TestCase):
@@ -34,7 +35,7 @@ class SyncToolTests(unittest.TestCase):
             env = dict(os.environ, SMART_AI_SYNC_HOME=str(home), SMART_AI_HOME=str(home / 'cfg'),
                        SMART_AI_CONFIG=str(home / 'profiles.json'), **bins)
             (home / 'profiles.json').write_text('{"profiles": {}}')
-            result = subprocess.run([sys.executable, str(ROOT / 'sync_tool.py'), '--yes'], env=env,
+            result = subprocess.run([sys.executable, '-m', 'omni_ai.sync', '--yes'], env=env,
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             calls = log.read_text()

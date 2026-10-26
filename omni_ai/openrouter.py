@@ -4,19 +4,19 @@ OpenRouter Client — Chama modelos gratuitos do OpenRouter com PII masking.
 
 Uso:
     export OPENROUTER_API_KEY="sk-or-..."
-    python3 openrouter_client.py "Qual a diferença entre REST e GraphQL?"
+    python -m omni_ai.openrouter "Qual a diferença entre REST e GraphQL?"
     
     # Com PII masking (padrão)
-    python3 openrouter_client.py --mask "Meu email é foo@bar.com, explique OAuth"
+    python -m omni_ai.openrouter --mask "Meu email é foo@bar.com, explique OAuth"
     
     # Sem masking
-    python3 openrouter_client.py --no-mask "Explique o que é Docker"
+    python -m omni_ai.openrouter --no-mask "Explique o que é Docker"
     
     # Modelo específico
-    python3 openrouter_client.py --model "google/gemma-4-31b-it:free" "Olá mundo"
+    python -m omni_ai.openrouter --model "google/gemma-4-31b-it:free" "Olá mundo"
     
     # Listar modelos gratuitos
-    python3 openrouter_client.py --list-models
+    python -m omni_ai.openrouter --list-models
 """
 
 import json
@@ -27,9 +27,7 @@ import urllib.error
 from typing import Optional
 
 # Importar o PII masker do mesmo diretório
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, SCRIPT_DIR)
-from pii_masker import PIIMasker
+from .pii import PIIMasker
 
 
 # ─────────────────────────────────────────────

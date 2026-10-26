@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Share MCP servers and skills between Claude Code, Codex and Antigravity.
 
-  sync_tool.py            show what is missing where, ask, then apply
-  sync_tool.py --dry-run  only show
-  sync_tool.py --yes      apply without asking
+  python -m omni_ai.sync            show what is missing where, ask, then apply
+  python -m omni_ai.sync --dry-run  only show
+  python -m omni_ai.sync --yes      apply without asking
 
 Each CLI keeps its own config; servers are added through each CLI's own
 `mcp add` command, and skills are shared by symlink, so nothing is copied twice.
@@ -15,8 +15,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from platform_utils import link, resolve_bin  # noqa: E402
+from .osutils import link, module_cmd, module_env, resolve_bin
 
 HOME = Path(os.environ.get('SMART_AI_SYNC_HOME', '~')).expanduser()
 BINS = {'claude': os.environ.get('CLAUDE_BIN', 'claude'), 'codex': os.environ.get('CODEX_BIN', 'codex'),
@@ -191,7 +190,7 @@ def main(argv):
             failures += 1
             print(f'  ✗ skill {name} em {tool}: {error}')
     # Extra Claude accounts read their own folder; refresh them with the new servers and skills
-    subprocess.run([sys.executable, str(Path(__file__).with_name('config_tool.py')), 'account', 'sync-all'])
+    subprocess.run(module_cmd('config') + ['account', 'sync-all'], env=module_env())
     print('Reinicie sessões abertas dos CLIs para carregar o que foi adicionado.')
     return 1 if failures else 0
 

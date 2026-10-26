@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """Model and Claude account settings for Omni AI.
 
-  config_tool.py env                     shell assignments (SMART_AI_* model variables)
-  config_tool.py model [KEY [VALUE|default]]
-  config_tool.py account list|add NAME|login NAME|remove NAME|enable NAME|disable NAME
-  config_tool.py key [list|set PROVIDER|remove PROVIDER|get PROVIDER]
+  python -m omni_ai.config env                     shell assignments (SMART_AI_* model variables)
+  python -m omni_ai.config model [KEY [VALUE|default]]
+  python -m omni_ai.config account list|add NAME|login NAME|remove NAME|enable NAME|disable NAME
+  python -m omni_ai.config key [list|set PROVIDER|remove PROVIDER|get PROVIDER]
 """
 import getpass
-from platform_utils import link, resolve_bin
 import json
 import os
 from pathlib import Path
@@ -17,6 +16,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+
+from .osutils import link, resolve_bin
 
 ROOT = Path(__file__).resolve().parent
 CONFIG_DIR = Path(os.environ.get('SMART_AI_HOME', '~/.config/smart-ai')).expanduser()

@@ -17,12 +17,8 @@ try:
 except ImportError:
     pass
 
-ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT))
-from platform_utils import group_kwargs, kill_tree, lock_exclusive  # noqa: E402
-import skills  # noqa: E402
-import ui  # noqa: E402
-import config_tool  # noqa: E402
+from . import config as config_tool, skills, ui
+from .osutils import group_kwargs, kill_tree, lock_exclusive, module_cmd, module_env, resolve_bin
 ENGINES = {'auto', 'openrouter', 'codex', 'claude', 'agy'}
 MODES = ('default', 'plan', 'edits', 'auto', 'yolo')
 MAX_CONTEXT = 48000
@@ -300,9 +296,9 @@ class Runner:
             kill_tree(child)
 
     def run(self, job, classify_prompt, readonly=False):
-        env = dict(os.environ, SMART_AI_EVENTS='1', SMART_AI_CLASSIFY_PROMPT=classify_prompt, SMART_AI_MODE=self.mode,
-                   SMART_AI_READ_ONLY='1' if readonly else '0', PYTHONUNBUFFERED='1', NO_COLOR='1')
-        args = [sys.executable, str(ROOT / 'smart_ai.py')]
+        env = module_env(dict(os.environ, SMART_AI_EVENTS='1', SMART_AI_CLASSIFY_PROMPT=classify_prompt, SMART_AI_MODE=self.mode,
+                   SMART_AI_READ_ONLY='1' if readonly else '0', PYTHONUNBUFFERED='1', NO_COLOR='1'))
+        args = module_cmd('cli')
         if job['engine'] != 'auto':
             args += ['--' + job['engine']]
         args += ['--', job['sent']]
@@ -498,7 +494,7 @@ TOOL_COMMANDS = {'/usage': ['--usage'], '/limits': ['--usage'], '/model': ['--mo
 def run_tool(args):
     """Run a management command attached to this terminal (login prompts need the TTY)."""
     try:
-        subprocess.call([sys.executable, str(ROOT / 'smart_ai.py')] + args)
+        subprocess.call(module_cmd('cli') + args, env=module_env())
     except KeyboardInterrupt:
         pass
 
@@ -525,7 +521,6 @@ NATIVE_HINT = {
 
 def run_native(tool, command, cwd):
     """Built-in commands live in each tool's own screen: open it attached to this terminal, then come back."""
-    from platform_utils import resolve_bin
     binary = resolve_bin(os.environ.get(tool.upper() + '_BIN', tool))
     if not binary:
         raise ValueError(f'{tool} não está instalado')

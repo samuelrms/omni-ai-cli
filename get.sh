@@ -29,7 +29,7 @@ fi
 
 # Reattach stdin to the terminal so the installer can open the Claude login
 if [[ "${SMART_AI_NONINTERACTIVE:-0}" != "1" && -r /dev/tty ]]; then
-    bash "$DEST/install.sh" </dev/tty
+    bash "$DEST/scripts/install.sh" </dev/tty
 else
-    bash "$DEST/install.sh"
+    bash "$DEST/scripts/install.sh"
 fi

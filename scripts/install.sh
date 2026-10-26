@@ -6,6 +6,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -107,10 +108,10 @@ fi
 # Small launcher instead of a symlink, so it always uses the Python chosen above
 cat > "$LINK_TARGET" <<LAUNCHER
 #!/usr/bin/env sh
-exec "$PYTHON" "$SCRIPT_DIR/smart_ai.py" "\$@"
+PYTHONPATH="$REPO\${PYTHONPATH:+:\$PYTHONPATH}" exec "$PYTHON" -m omni_ai "\$@"
 LAUNCHER
 chmod +x "$LINK_TARGET"
-echo -e "  ${GREEN}✓${NC} Comando criado: $LINK_TARGET → $SCRIPT_DIR/smart_ai.py"
+echo -e "  ${GREEN}✓${NC} Comando criado: $LINK_TARGET → $REPO/omni_ai"
 
 # 5. Verificar PATH
 if echo "$PATH" | grep -q "$HOME/.local/bin"; then
@@ -131,7 +132,7 @@ elif [[ -t 0 ]]; then
 else
     echo -e "  ${YELLOW}⚠${NC} Conta principal sem login: rode ${CYAN}claude auth login${NC}"
 fi
-"$PYTHON" "$SCRIPT_DIR/config_tool.py" account list | sed 's/^/  /'
+PYTHONPATH="$REPO" "$PYTHON" -m omni_ai.config account list | sed 's/^/  /'
 
 echo ""
 echo -e "${GREEN}${BOLD}✓ Instalação concluída!${NC}"

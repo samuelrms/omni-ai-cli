@@ -1,7 +1,7 @@
 # Omni AI CLI - instalação no Windows (PowerShell 5.1+)
 #   powershell -ExecutionPolicy Bypass -File install.ps1
 $ErrorActionPreference = 'Stop'
-$Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 
 Write-Host "Omni AI CLI - Instalação" -ForegroundColor Cyan
 
@@ -53,7 +53,8 @@ New-Item -ItemType Directory -Force -Path $Bin | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $env:USERPROFILE '.cache\smart-ai') | Out-Null
 @"
 @echo off
-"$Python" "$Root\smart_ai.py" %*
+set "PYTHONPATH=$Root;%PYTHONPATH%"
+"$Python" -m omni_ai %*
 "@ | Set-Content -Encoding ASCII (Join-Path $Bin 'ai.cmd')
 Write-Host "  ok Comando criado: $Bin\ai.cmd" -ForegroundColor Green
 
@@ -69,7 +70,8 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "  ! Conta principal sem login. Abrindo login..." -ForegroundColor Yellow
     claude auth login
 }
-& $Python (Join-Path $Root 'config_tool.py') account list
+$env:PYTHONPATH = $Root
+& $Python -m omni_ai.config account list
 
 Write-Host ""
 Write-Host "Instalação concluída!" -ForegroundColor Green

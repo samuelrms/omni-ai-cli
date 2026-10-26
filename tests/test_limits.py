@@ -5,8 +5,10 @@ import sys
 import unittest
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import smart_ai  # noqa: E402
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+os.environ['PYTHONPATH'] = str(ROOT)
+from omni_ai import cli as smart_ai  # noqa: E402
 
 
 def stream(*events):

@@ -3,11 +3,11 @@
 PII Masker — Mascara dados pessoais/sensíveis antes de enviar para terceiros.
 
 Uso standalone:
-    echo "Meu email é foo@bar.com" | python3 pii_masker.py mask
-    echo "Meu email é [EMAIL_1]"   | python3 pii_masker.py unmask --map map.json
+    echo "Meu email é foo@bar.com" | python -m omni_ai.pii mask
+    echo "Meu email é [EMAIL_1]"   | python -m omni_ai.pii unmask --map map.json
 
 Uso como módulo:
-    from pii_masker import PIIMasker
+    from omni_ai.pii import PIIMasker
     masker = PIIMasker()
     masked, mapping = masker.mask("Meu CPF é 123.456.789-00")
     original = masker.unmask(masked, mapping)

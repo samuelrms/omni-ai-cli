@@ -7,6 +7,19 @@ import subprocess
 import sys
 
 WINDOWS = os.name == 'nt'
+REPO = Path(__file__).resolve().parent.parent
+
+
+def module_cmd(name):
+    """Command line that runs one of this package's modules (python -m omni_ai.<name>)."""
+    return [sys.executable, '-m', 'omni_ai.' + name]
+
+
+def module_env(env=None):
+    """Environment in which `python -m omni_ai...` finds the package, from any working directory."""
+    env = dict(os.environ if env is None else env)
+    env['PYTHONPATH'] = os.pathsep.join(p for p in (str(REPO), env.get('PYTHONPATH', '')) if p)
+    return env
 
 
 def resolve_bin(name):
@@ -69,6 +82,3 @@ def enable_ansi():
     if WINDOWS:
         os.system('')
 
-
-def python_cmd():
-    return [sys.executable]

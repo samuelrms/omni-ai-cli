@@ -10,11 +10,12 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
+os.environ['PYTHONPATH'] = str(ROOT)
 sys.path.insert(0, str(ROOT))
-import ui  # noqa: E402
+from omni_ai import ui  # noqa: E402
 import io
 import contextlib
-from terminal import Runner, Session, execute, parse_parallel
+from omni_ai.chat import Runner, Session, execute, parse_parallel
 
 FAKE = '''#!/usr/bin/env python3
 import json, os, sys, time
@@ -57,7 +58,7 @@ class TerminalTests(unittest.TestCase):
         self.assertIn('ALPHA', resumed.context('next'))
 
     def test_chat_entrypoint_and_followup_context(self):
-        result = subprocess.run([sys.executable, str(ROOT/'smart_ai.py'), '--chat'],
+        result = subprocess.run([sys.executable, '-m', 'omni_ai.cli', '--chat'],
                                 input='/tool codex\nRemember ALPHA\nWhat was it?\n/sent\n/exit\n',
                                 text=True, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)

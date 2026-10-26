@@ -6,6 +6,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+os.environ['PYTHONPATH'] = str(ROOT)
 EXPECTED = {
     'default': ('', '', ''),
     'plan': ('--permission-mode plan', '--sandbox read-only', '--mode plan'),
@@ -28,7 +29,7 @@ class ModeTests(unittest.TestCase):
                 env[tool.upper() + '_BIN'] = str(fake)
             for mode, flags in EXPECTED.items():
                 for tool, flag in zip(('claude', 'codex', 'agy'), flags):
-                    out = subprocess.run([sys.executable, str(ROOT / 'smart_ai.py'), '--mode', mode, '--' + tool, 'x'],
+                    out = subprocess.run([sys.executable, '-m', 'omni_ai.cli', '--mode', mode, '--' + tool, 'x'],
                                          env=env, capture_output=True, text=True)
                     call = next((l for l in out.stdout.splitlines() if l.startswith('CALL ' + tool)), None)
                     self.assertIsNotNone(call, f'{mode}/{tool}: {out.stdout}{out.stderr}')
@@ -38,7 +39,7 @@ class ModeTests(unittest.TestCase):
                         self.assertNotIn('--sandbox', call)
 
     def test_invalid_mode_rejected(self):
-        out = subprocess.run([sys.executable, str(ROOT / 'smart_ai.py'), '--mode', 'nope', 'x'], capture_output=True, text=True)
+        out = subprocess.run([sys.executable, '-m', 'omni_ai.cli', '--mode', 'nope', 'x'], capture_output=True, text=True)
         self.assertNotEqual(out.returncode, 0)
 
 

@@ -7,8 +7,9 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+os.environ['PYTHONPATH'] = str(ROOT)
 sys.path.insert(0, str(ROOT))
-import skills  # noqa: E402
+from omni_ai import skills  # noqa: E402
 
 
 class SkillTests(unittest.TestCase):
@@ -55,7 +56,7 @@ class SkillTests(unittest.TestCase):
                    SMART_AI_STATE=str(Path(self.tmp.name) / 'state'), SMART_AI_LOG=str(Path(self.tmp.name) / 'log'),
                    SMART_AI_CONFIG=str(Path(self.tmp.name) / 'profiles.json'))
         (Path(self.tmp.name) / 'profiles.json').write_text(json.dumps({'profiles': {'primary': {'priority': 1}}}))
-        out = subprocess.run([sys.executable, str(ROOT / 'smart_ai.py'), '--chat'], input='/pr-review 237 240\n/exit\n',
+        out = subprocess.run([sys.executable, '-m', 'omni_ai.cli', '--chat'], input='/pr-review 237 240\n/exit\n',
                              cwd=self.project, env=env, capture_output=True, text=True, timeout=60).stdout
         self.assertIn('→ /pr-review via claude', out)
         self.assertIn('ARG:/pr-review 237 240', out)

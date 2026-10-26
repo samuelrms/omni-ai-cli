@@ -26,4 +26,4 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
     Remove-Item -Recurse -Force $tmp, $zip
 }
 
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Dest 'install.ps1')
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Dest 'scripts\install.ps1')

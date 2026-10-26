@@ -17,10 +17,8 @@ import subprocess
 import sys
 import time
 
-ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT))
-import config_tool  # noqa: E402
-from platform_utils import enable_ansi, resolve_bin  # noqa: E402
+from . import config as config_tool
+from .osutils import REPO, enable_ansi, module_cmd, module_env, resolve_bin
 
 STATE_FILE = Path(os.environ.get('SMART_AI_STATE', '~/.cache/smart-ai/state.json')).expanduser()
 LOG_FILE = Path(os.environ.get('SMART_AI_LOG', '~/.cache/smart-ai/usage.log')).expanduser()
@@ -134,7 +132,7 @@ def header(label, note):
 def run_claude(profile, prompt):
     if not installed('claude'):
         say(f'{RED}✗ Claude Code não instalado.{NC}')
-        say(f'{DIM}  Execute o instalador: {ROOT / ("install.ps1" if os.name == "nt" else "install.sh")}{NC}')
+        say(f'{DIM}  Execute o instalador: {REPO / 'scripts' / ('install.ps1' if os.name == 'nt' else 'install.sh')}{NC}')
         return 1
     env = dict(os.environ)
     env.pop('CLAUDE_CONFIG_DIR', None)
@@ -277,10 +275,10 @@ def run_openrouter(prompt):
     values = models()
     paid = values['openrouter_paid'] == 'on'
     header(f'{YELLOW}🌐 OpenRouter{NC}', ('modelos pagos autorizados' if paid else 'modelo gratuito') + ' + PII masking')
-    argv = [sys.executable, str(ROOT / 'openrouter_client.py')]
+    argv = module_cmd('openrouter')
     if values['openrouter']:
         argv += ['--model', values['openrouter']]
-    env = dict(os.environ, OPENROUTER_API_KEY=key, SMART_AI_OPENROUTER_PAID=values['openrouter_paid'])
+    env = module_env(dict(os.environ, OPENROUTER_API_KEY=key, SMART_AI_OPENROUTER_PAID=values['openrouter_paid']))
     code, _ = run(argv, env, stdin=prompt)
     log_usage('openrouter', 'N/A', 'success' if code == 0 else 'error')
     return code
@@ -465,8 +463,8 @@ def show_log():
 
 def update():
     """Pull the latest version into the install folder; settings live in ~/.config and are kept."""
-    if (ROOT / '.git').is_dir() and resolve_bin('git'):
-        code = subprocess.call(['git', '-C', str(ROOT), 'pull', '--ff-only'])
+    if (REPO / '.git').is_dir() and resolve_bin('git'):
+        code = subprocess.call(['git', '-C', str(REPO), 'pull', '--ff-only'])
         say(f'{GREEN}✓ Omni AI atualizado.{NC}' if code == 0 else f'{RED}✗ Não consegui atualizar; veja a mensagem acima.{NC}')
         return code
     if os.environ.get('SMART_AI_INSTALLER') == 'npm':
@@ -500,8 +498,8 @@ USAGE = f'''{BOLD}Uso:{NC}
 def main(argv):
     enable_ansi()
     if not argv and sys.stdin.isatty():
-        import terminal
-        return terminal.main([])
+        from . import chat
+        return chat.main([])
     head = argv[0] if argv else ''
     delegated = {'--model': ('config_tool', ['model']), '-m': ('config_tool', ['model']),
                  '--account': ('config_tool', ['account']), '--key': ('config_tool', ['key']),
@@ -509,8 +507,8 @@ def main(argv):
                  '--setup-secondary': ('config_tool', ['account', 'add', 'secondary']),
                  '--setup': ('config_tool', ['account', 'add', 'secondary'])}
     if head in ('--chat', '--interactive', '-i', '--resume', '--sessions'):
-        import terminal
-        return terminal.main(argv[1:] if head in ('--chat', '--interactive', '-i') else argv)
+        from . import chat
+        return chat.main(argv[1:] if head in ('--chat', '--interactive', '-i') else argv)
     if head in delegated:
         _, base = delegated[head]
         try:
@@ -523,8 +521,8 @@ def main(argv):
     if head in ('--update', '--upgrade'):
         return update()
     if head == '--sync':
-        import sync_tool
-        return sync_tool.main(argv[1:])
+        from . import sync
+        return sync.main(argv[1:])
     tool, words, i = 'auto', [], 0
     while i < len(argv):
         arg = argv[i]
@@ -571,8 +569,12 @@ def main(argv):
     return route(prompt, tool)
 
 
-if __name__ == '__main__':
+def entry():
     try:
-        sys.exit(main(sys.argv[1:]))
+        return main(sys.argv[1:])
     except KeyboardInterrupt:
-        sys.exit(130)
+        return 130
+
+
+if __name__ == '__main__':
+    sys.exit(entry())

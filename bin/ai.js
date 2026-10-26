@@ -1,11 +1,10 @@
 #!/usr/bin/env node
-// npm launcher: finds Python 3.11+ and runs the bundled smart_ai.py with the same arguments.
+// npm launcher: finds Python 3.11+ and runs the bundled omni_ai package with the same arguments.
 'use strict';
 const { spawnSync, spawn } = require('child_process');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
-const script = path.join(root, 'smart_ai.py');
 const candidates = process.env.SMART_AI_PYTHON
   ? [[process.env.SMART_AI_PYTHON]]
   : process.platform === 'win32'
@@ -73,11 +72,12 @@ if (!python) {
 }
 
 // Claude Code installed as this package's optional dependency is used when there's no global one
-const env = { ...process.env, SMART_AI_INSTALLER: 'npm' };
+const env = { ...process.env, SMART_AI_INSTALLER: 'npm',
+  PYTHONPATH: [root, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter) };
 env.PATH = [process.env.PATH, path.join(root, 'node_modules', '.bin')].join(path.delimiter);
 
 const [cmd, pre] = python;
-const child = spawn(cmd, [...pre, script, ...process.argv.slice(2)], { stdio: 'inherit', env });
+const child = spawn(cmd, [...pre, '-m', 'omni_ai', ...process.argv.slice(2)], { stdio: 'inherit', env });
 // Ctrl-C reaches the child through the shared terminal; just don't die before it does
 process.on('SIGINT', () => {});
 process.on('SIGTERM', () => child.kill('SIGTERM'));

@@ -10,9 +10,10 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
+os.environ['PYTHONPATH'] = str(ROOT)
 sys.path.insert(0, str(ROOT))
-from openrouter_client import OpenRouterClient
-from pii_masker import PIIMasker
+from omni_ai.openrouter import OpenRouterClient
+from omni_ai.pii import PIIMasker
 
 
 class ClientTests(unittest.TestCase):
@@ -79,21 +80,21 @@ class ShellTests(unittest.TestCase):
     def test_forced_openrouter_and_auto_fallback_without_prompt_logging(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for name in ('smart_ai.py', 'config_tool.py', 'platform_utils.py', 'terminal.py', 'pii_masker.py'):
-                (root / name).write_bytes((ROOT / name).read_bytes())
+            import shutil
+            shutil.copytree(ROOT / 'omni_ai', root / 'omni_ai', ignore=shutil.ignore_patterns('__pycache__', 'vendor'))
             (root / 'profiles.json').write_text(json.dumps({'routing': {'prefer_tool_for_simple': 'openrouter', 'fallback_order': ['openrouter', 'codex']}}))
-            (root / 'openrouter_client.py').write_text('import os,sys\nprompt=sys.stdin.read()\nprint("ROUTER_OK")\nsys.exit(int(os.environ.get("TEST_FAILURE", "0")))\n')
+            (root / 'omni_ai' / 'openrouter.py').write_text('import os,sys\nprompt=sys.stdin.read()\nprint("ROUTER_OK")\nsys.exit(int(os.environ.get("TEST_FAILURE", "0")))\n')
             codex = root / 'fake-codex'
             codex.write_text('#!/bin/sh\necho CODEX_OK\n')
             codex.chmod(0o700)
-            env = dict(os.environ, SMART_AI_CONFIG=str(root/'profiles.json'), SMART_AI_HOME=str(root/'cfg'), OPENROUTER_API_KEY='synthetic', SMART_AI_STATE=str(root/'state'), SMART_AI_LOG=str(root/'log'), CODEX_BIN=str(codex))
+            env = dict(os.environ, PYTHONPATH=str(root), SMART_AI_CONFIG=str(root/'profiles.json'), SMART_AI_HOME=str(root/'cfg'), OPENROUTER_API_KEY='synthetic', SMART_AI_STATE=str(root/'state'), SMART_AI_LOG=str(root/'log'), CODEX_BIN=str(codex))
             prompt = 'alice@example.com'
-            forced = subprocess.run([sys.executable, str(root/'smart_ai.py'), '--openrouter', prompt], env=env, capture_output=True, text=True)
+            forced = subprocess.run([sys.executable, '-m', 'omni_ai.cli', '--openrouter', prompt], env=env, capture_output=True, text=True, cwd=root)
             self.assertEqual(forced.returncode, 0, forced.stderr)
             self.assertIn('ROUTER_OK', forced.stdout)
             self.assertNotIn('CODEX_OK', forced.stdout)
             env['TEST_FAILURE'] = '1'
-            automatic = subprocess.run([sys.executable, str(root/'smart_ai.py'), prompt], env=env, capture_output=True, text=True)
+            automatic = subprocess.run([sys.executable, '-m', 'omni_ai.cli', prompt], env=env, capture_output=True, text=True, cwd=root)
             self.assertEqual(automatic.returncode, 0, automatic.stderr)
             self.assertIn('CODEX_OK', automatic.stdout)
             self.assertNotIn(prompt, (root/'log').read_text())
@@ -102,7 +103,7 @@ class ShellTests(unittest.TestCase):
 @unittest.skipUnless(os.getenv('SMART_AI_SIM_URL'), 'local Postman simulation not enabled')
 class HttpTests(unittest.TestCase):
     def test_real_http_masking_fallback_contract_and_quota(self):
-        with patch('openrouter_client.OPENROUTER_BASE', os.environ['SMART_AI_SIM_URL']):
+        with patch('omni_ai.openrouter.OPENROUTER_BASE', os.environ['SMART_AI_SIM_URL']):
             client = OpenRouterClient(api_key='synthetic-key')
             trace = io.StringIO()
             with patch.dict(os.environ, SMART_AI_EVENTS='1'), contextlib.redirect_stderr(trace):
