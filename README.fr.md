@@ -1,6 +1,6 @@
 # Smart AI CLI
 
-[![npm](https://img.shields.io/npm/v/smart-ai-cli?color=C4552F)](https://www.npmjs.com/package/smart-ai-cli)
+[![npm](https://img.shields.io/npm/v/omni-ai-cli?color=C4552F)](https://www.npmjs.com/package/omni-ai-cli)
 [![License: MIT](https://img.shields.io/badge/license-MIT-C4552F.svg)](LICENSE)
 ![Plateformes](https://img.shields.io/badge/macOS%20·%20Linux%20·%20Windows-1A1714)
 ![Langues](https://img.shields.io/badge/pt--BR%20·%20en%20·%20es%20·%20fr-C4552F)
@@ -127,7 +127,7 @@ irm https://raw.githubusercontent.com/samuelrms/smart-ai-cli/main/get.ps1 | iex
 **Via npm** (tout système, Node 18+ requis) :
 
 ```bash
-npm install -g smart-ai-cli
+npm install -g omni-ai-cli
 ```
 
 Pour mettre à jour ensuite : `ai --update` (ou `/update` dans le chat).
@@ -385,7 +385,7 @@ ai --log                               # derniers appels
 ```text
 smart-ai-cli/
 ├── bin/ai.js                 # lanceur npm : trouve ou installe Python et lance smart_ai.py
-├── package.json              # paquet npm smart-ai-cli
+├── package.json              # paquet npm omni-ai-cli
 ├── smart_ai.py               # commande ai : classe, route et exécute chaque outil
 ├── platform_utils.py         # différences entre macOS, Linux et Windows
 ├── smart-ai.sh / ai.cmd      # lanceurs de compatibilité (Unix / Windows)

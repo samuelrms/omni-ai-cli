@@ -377,10 +377,10 @@ def update():
         say(f'{GREEN}✓ Smart AI atualizado.{NC}' if code == 0 else f'{RED}✗ Não consegui atualizar; veja a mensagem acima.{NC}')
         return code
     if os.environ.get('SMART_AI_INSTALLER') == 'npm':
-        command = 'npm install -g smart-ai-cli@latest'
+        command = 'npm install -g omni-ai-cli@latest'
         say(f'Atualizando com: {command}')
         npm = resolve_bin('npm')
-        return subprocess.call([npm, 'install', '-g', 'smart-ai-cli@latest']) if npm else 1
+        return subprocess.call([npm, 'install', '-g', 'omni-ai-cli@latest']) if npm else 1
     if os.name == 'nt':
         command = 'irm https://raw.githubusercontent.com/samuelrms/smart-ai-cli/main/get.ps1 | iex'
     else:
