@@ -42,6 +42,19 @@ def _mix(stops, t):
     return tuple(round(a + (b - a) * f) for a, b in zip(stops[i], stops[i + 1]))
 
 
+def hue(position):
+    """Bright rainbow color for a position on the color wheel (0..1)."""
+    import colorsys
+    r, g, b = colorsys.hsv_to_rgb(position % 1.0, 0.62, 1.0)
+    return round(r * 255), round(g * 255), round(b * 255)
+
+
+def rainbow(text, phase):
+    """Text whose colors slide along the wheel as 'phase' grows: the RGB-cycling title."""
+    n = max(1, len(text))
+    return ''.join(rgb(hue(phase + i / (n * 2.5)), ch) for i, ch in enumerate(text))
+
+
 def gradient(text, stops=BRAND):
     """Brand gradient across the characters of a short text."""
     if not COLOR:
@@ -280,31 +293,55 @@ def clear_screen():
             sys.stdout.flush()
 
 
-def orbit():
-    """The Omni mark: four tools orbiting the star in the middle."""
-    c = {t: rgb(TOOL_RGB[t], '●') for t in TOOL_RGB}
+ORBIT_SLOTS = ['top', 'right', 'bottom', 'left']
+ORBIT_TOOLS = ['claude', 'codex', 'openrouter', 'agy']
+
+
+def orbit(step=0):
+    """The Omni mark: four tools orbiting the star; 'step' turns them a quarter each time."""
+    at = {ORBIT_SLOTS[(i + step) % 4]: rgb(TOOL_RGB[t], '●') for i, t in enumerate(ORBIT_TOOLS)}
     d = dim('·')
-    return [f' {d}  {c["claude"]}  {d} ', f'{c["agy"]}   {gradient(MARK)}   {c["codex"]}', f' {d}  {c["openrouter"]}  {d} ']
+    star = rgb(hue(step / 8), MARK) if step else gradient(MARK)
+    return [f' {d}  {at["top"]}  {d} ', f'{at["left"]}   {star}   {at["right"]}', f' {d}  {at["bottom"]}  {d} ']
 
 
-def welcome(session_id, cwd, engine, model, mode, lang_hint):
+def welcome(session_id, cwd, engine, model, mode, lang_hint, animate=True):
     w = min(width() - 2, 78)
     tools = dim(' · ').join(rgb(TOOL_RGB[t], t) for t in ('claude', 'codex', 'agy', 'openrouter'))
     where = home_path(cwd) + dim(' · ') + f'{engine} · {model}' + ('' if mode == 'default' else dim(' · ') + rgb((239, 68, 68) if mode == 'yolo' else (59, 130, 246), mode))
-    logo = orbit()
-    rows = [f'{logo[0]}     {bold(gradient("Omni AI"))}',
-            f'{logo[1]}     {tools}',
-            f'{logo[2]}     {where}', '',
-            dim(t('session') + ' ') + session_id + dim('  ·  ') + dim(lang_hint)]
     strip = re.compile(r'\033\[[0-9;]*m')
     border = lambda t: rgb((88, 70, 140), t)
-    out(border('╭' + '─' * w + '╮'))
-    for row in rows:
-        if len(strip.sub('', row)) > w - 4:
-            row = row if row.startswith(logo[0][:3]) else dim(short(strip.sub('', row), w - 4))
-        pad = w - 2 - len(strip.sub('', row))
-        out(border('│') + '  ' + row + ' ' * max(0, pad) + border('│'))
-    out(border('╰' + '─' * w + '╯'))
+
+    def frame(step, phase):
+        logo = orbit(step)
+        title = bold(rainbow('Omni AI', phase)) if phase is not None else bold(gradient('Omni AI'))
+        rows = [f'{logo[0]}     {title}', f'{logo[1]}     {tools}', f'{logo[2]}     {where}', '',
+                dim(t('session') + ' ') + session_id + dim('  ·  ') + dim(lang_hint)]
+        lines = [border('╭' + '─' * w + '╮')]
+        for i, row in enumerate(rows):
+            if i >= 3 and len(strip.sub('', row)) > w - 4:
+                row = dim(short(strip.sub('', row), w - 4))
+            lines.append(border('│') + '  ' + row + ' ' * max(0, w - 2 - len(strip.sub('', row))) + border('│'))
+        lines.append(border('╰' + '─' * w + '╯'))
+        return lines
+
+    lines = frame(0, None)
+    out('\n'.join(lines))
+    if not (animate and COLOR and sys.stdout.isatty()):
+        return
+    # Short intro: the tools circle the star while the title runs through the colors, then it settles
+    frames = 18
+    try:
+        for f in range(1, frames + 1):
+            time.sleep(0.07)
+            with LOCK:
+                sys.stdout.write(f'\033[{len(lines)}F' + '\n'.join('\033[2K' + l for l in frame(f // 2, f / frames)) + '\n')
+                sys.stdout.flush()
+        with LOCK:
+            sys.stdout.write(f'\033[{len(lines)}F' + '\n'.join('\033[2K' + l for l in frame(0, None)) + '\n')
+            sys.stdout.flush()
+    except KeyboardInterrupt:
+        pass
 
 
 def fuzzy(query, text):
@@ -465,14 +502,19 @@ class InputBox:
             right = self.hints() if callable(self.hints) else self.hints
             mode = self.mode() if self.mode else 'default'
             chip = f'<style bg="{MODE_COLORS[mode]}" fg="#000000"><b> {mode.upper()} </b></style> ' if mode in MODE_COLORS else ''
-            visible = len(left) + (len(mode) + 3 if chip else 0)
+            # "✦ Omni AI" keeps cycling through the colors while you type
+            phase = time.time() / 4
+            brand = ''.join(f'<style fg="#{r:02x}{g:02x}{b:02x}">{escape(ch)}</style>'
+                            for i, ch in enumerate(MARK + ' Omni AI') for r, g, b in [hue(phase + i / 22)])
+            left = left[len('Omni AI'):].lstrip(' ·') if left.startswith('Omni AI') else left
+            visible = len(MARK + ' Omni AI · ') + len(left) + (len(mode) + 3 if chip else 0)
             gap = max(2, width() - visible - len(right) - 1)
-            return self.HTML(f'<rule>{rule}</rule>\n {chip}{escape(left)}{" " * gap}{escape(right)}')
+            return self.HTML(f'<rule>{rule}</rule>\n {brand}<rule> · </rule>{chip}{escape(left)}{" " * gap}{escape(right)}')
         print()
         sys.stdout.write('\033[>4;1m')  # xterm modifyOtherKeys=1: Shift+Enter becomes distinguishable
         sys.stdout.flush()
         try:
-            return self.session.prompt(message, bottom_toolbar=toolbar,
+            return self.session.prompt(message, bottom_toolbar=toolbar, refresh_interval=0.12,
                                        placeholder=self.HTML(f'<placeholder>{escape(self.placeholder() if callable(self.placeholder) else self.placeholder)}</placeholder>'))
         finally:
             sys.stdout.write('\033[>4m')
