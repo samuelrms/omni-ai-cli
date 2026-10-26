@@ -52,8 +52,10 @@ T = {
     'auto_model': {'pt': 'escolhe a cada pergunta', 'en': 'picks per question', 'es': 'elige en cada pregunta', 'fr': 'choisit à chaque question'},
     'placeholder': {'pt': 'Pergunte qualquer coisa · / para comandos e skills', 'en': 'Ask anything · / for commands and skills',
                     'es': 'Pregunta lo que quieras · / para comandos y skills', 'fr': 'Demandez ce que vous voulez · / pour commandes et skills'},
-    'hints': {'pt': 'Tab completa · Esc+Enter nova linha · Ctrl-C sai', 'en': 'Tab completes · Esc+Enter new line · Ctrl-C exits',
-              'es': 'Tab completa · Esc+Enter nueva línea · Ctrl-C sale', 'fr': 'Tab complète · Échap+Entrée nouvelle ligne · Ctrl-C quitte'},
+    'hints': {'pt': '/ comandos · @ arquivos · → aceita sugestão · Ctrl-R busca · Ctrl-C sai',
+              'en': '/ commands · @ files · → accept suggestion · Ctrl-R search · Ctrl-C exits',
+              'es': '/ comandos · @ archivos · → acepta sugerencia · Ctrl-R busca · Ctrl-C sale',
+              'fr': '/ commandes · @ fichiers · → accepter · Ctrl-R recherche · Ctrl-C quitte'},
     'working': {'pt': 'Trabalhando…', 'en': 'Working…', 'es': 'Trabajando…', 'fr': 'Au travail…'},
     'took': {'pt': 'Levou {t}', 'en': 'Took {t}', 'es': 'Tardó {t}', 'fr': 'Durée {t}'},
     'job_failed': {'pt': 'Não concluiu · /trace para detalhes', 'en': 'Did not finish · /trace for details',
@@ -604,7 +606,58 @@ def main(argv=None):
             listed += [(f'/{tool}:{command}', f'{meta} · {tool}') for command, meta in items]
         return listed
 
-    box = ui.InputBox(Path(session_dir()).parent / 'input_history', commands, status, tr('placeholder'), tr('hints'))
+    def arguments(command, done):
+        """What can come next after a command and the words already typed: (value, description)."""
+        values = config_tool.model_values()
+        if command == '/tool':
+            return [(e, model_label(e) if e != 'auto' else tr('auto_model')) for e in sorted(ENGINES)] if not done else []
+        if command == '/mode':
+            helps = dict(line.split(None, 1) for line in tr('mode_help').splitlines() if line.strip())
+            return [(m, helps.get(m, '')) for m in MODES] if not done else []
+        if command == '/lang':
+            return list(LANGS.items()) if not done else []
+        if command == '/model':
+            if not done:
+                return [(k, f'{values[k] or "(automático)"} · {meta[2]}') for k, meta in config_tool.MODELS.items()]
+            if len(done) == 1:
+                choices = {'claude': ['opus', 'sonnet', 'haiku'], 'codex_effort': list(config_tool.EFFORTS),
+                           'openrouter_paid': ['on', 'off']}.get(done[0], [])
+                return [(c, 'atual' if c == values.get(done[0]) else '') for c in choices] + [('default', 'volta ao padrão')]
+            return []
+        if command == '/key':
+            if not done:
+                return [(p, 'configurada' if config_tool.stored_key(p)[0] else 'adicionar') for p in config_tool.KEYS] + \
+                       [('remove', 'apagar uma chave')]
+            return [(p, '') for p in config_tool.KEYS] if done == ['remove'] else []
+        if command == '/account':
+            actions = [('list', 'listar'), ('add', 'nova conta'), ('login', 'refazer login'), ('sync', 'compartilhar skills/MCP'),
+                       ('enable', 'ativar'), ('disable', 'desativar'), ('remove', 'remover')]
+            if not done:
+                return actions
+            if len(done) == 1 and done[0] not in ('list', 'add'):
+                return [(name, conf.get('name', '')) for name, conf in config_tool.ordered(config_tool.profiles())]
+            return []
+        if command == '/resume' and not done:
+            listed = []
+            for path in sorted(session_dir().glob('*.json'), key=lambda p: p.stat().st_mtime, reverse=True)[:30]:
+                try:
+                    data = json.loads(path.read_text())
+                    listed.append((data['id'], f"{data.get('title') or '—'} · {ui.home_path(data['cwd'])}"))
+                except (ValueError, KeyError):
+                    continue
+            return listed
+        if command == '/sync':
+            return [('--dry-run', 'só mostra o que faria')] if not done else []
+        if command == '/parallel':
+            return [('codex:', 'subtarefa no Codex (somente leitura)'), ('openrouter:', 'subtarefa no OpenRouter'), ('|', 'separa subtarefas')]
+        entry = skills.discover(session.data['cwd']).get(command[1:])
+        if entry:
+            tool = skills.pick_tool(entry, session.data['engine'])
+            return [(o, skills.argument_hint(entry[tool][1])) for o in skills.hint_options(skills.argument_hint(entry[tool][1]))]
+        return []
+
+    box = ui.InputBox(Path(session_dir()).parent / 'input_history', commands, status, tr('placeholder'), tr('hints'),
+                      arguments=arguments, cwd=lambda: session.data['cwd'])
     if box.session is None:
         display(tr('welcome', id=session.id, cwd=session.data['cwd']))
     else:

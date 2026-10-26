@@ -206,16 +206,56 @@ def welcome(session_id, cwd, engine, model, mode, lang_hint):
     out(cyan('╰' + '─' * w + '╯'))
 
 
+def fuzzy(query, text):
+    """Rank for 'query' inside 'text': 0 prefix, 1 substring, 2 letters in order, None no match."""
+    query, text = query.lower(), text.lower()
+    if text.startswith(query):
+        return 0
+    if query in text:
+        return 1
+    position = 0
+    for char in query:
+        position = text.find(char, position) + 1
+        if not position:
+            return None
+    return 2
+
+
+SKIP_DIRS = {'.git', 'node_modules', '__pycache__', '.venv', 'venv', 'dist', 'build', '.next', '.cache',
+             'target', '.idea', '.vscode', 'coverage', 'vendor'}
+
+
+def project_files(cwd, limit=4000):
+    """Files for @mentions: git's list when it's a repo (respects .gitignore), else a bounded walk."""
+    import subprocess
+    try:
+        out = subprocess.run(['git', '-C', str(cwd), 'ls-files', '--cached', '--others', '--exclude-standard'],
+                             capture_output=True, text=True, timeout=3)
+        if out.returncode == 0 and out.stdout:
+            return out.stdout.splitlines()[:limit]
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    found = []
+    for root, dirs, files in os.walk(cwd):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith('.')]
+        for name in files:
+            found.append(os.path.relpath(os.path.join(root, name), cwd))
+            if len(found) >= limit:
+                return found
+    return found
+
+
 class InputBox:
     """Bottom input like Claude Code/Codex: rule above, placeholder, status bar below, Tab completion."""
 
-    def __init__(self, history_file, commands, status, placeholder, hints):
+    def __init__(self, history_file, commands, status, placeholder, hints, arguments=None, cwd=None):
         self.status, self.placeholder, self.hints = status, placeholder, hints
         self.session = None
         if not (sys.stdin.isatty() and sys.stdout.isatty()):
             return
         try:
             from prompt_toolkit import PromptSession
+            from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
             from prompt_toolkit.completion import Completer, Completion
             from prompt_toolkit.formatted_text import HTML
             from prompt_toolkit.history import FileHistory
@@ -225,14 +265,38 @@ class InputBox:
             return
         self.HTML = HTML
 
-        class Commands(Completer):
+        files_cache = {}
+
+        def ranked(query, items):
+            scored = [(fuzzy(query, value), value, meta) for value, meta in items]
+            return sorted(((r, v, m) for r, v, m in scored if r is not None), key=lambda x: (x[0], len(x[1])))
+
+        class Smart(Completer):
+            """/commands and skills (fuzzy), their arguments, and @file mentions from the project."""
             def get_completions(self, document, complete_event):
                 text = document.text_before_cursor
-                if not text.startswith('/') or ' ' in text:
+                word = document.get_word_before_cursor(WORD=True)
+                if word.startswith('@') and cwd:
+                    folder = cwd()
+                    if folder not in files_cache:
+                        files_cache[folder] = project_files(folder)
+                    for _, path, _ in ranked(word[1:], [(f, '') for f in files_cache[folder]])[:40]:
+                        yield Completion('@' + path, start_position=-len(word), display_meta='arquivo')
                     return
-                for name, meta in commands():
-                    if name.startswith(text):
-                        yield Completion(name, start_position=-len(text), display_meta=short(meta, 60))
+                if not text.startswith('/'):
+                    return
+                if ' ' not in text:
+                    for _, name, meta in ranked(text[1:], [(n[1:], m) for n, m in commands()])[:60]:
+                        yield Completion('/' + name, start_position=-len(text), display_meta=short(meta, 70))
+                    return
+                if arguments:
+                    command, *done = text.split()
+                    if text.endswith(' '):
+                        current = ''
+                    else:
+                        current = done.pop() if done else ''
+                    for _, value, meta in ranked(current, arguments(command, done)):
+                        yield Completion(value, start_position=-len(current), display_meta=short(meta, 60))
 
         keys = KeyBindings()
 
@@ -251,10 +315,11 @@ class InputBox:
         Path(history_file).touch(mode=0o600, exist_ok=True)
         os.chmod(history_file, 0o600)
         self.session = PromptSession(
-            history=PrivateHistory(str(history_file)), completer=Commands(), complete_while_typing=True,
+            history=PrivateHistory(str(history_file)), completer=Smart(), complete_while_typing=True,
+            auto_suggest=AutoSuggestFromHistory(), enable_history_search=False,
             key_bindings=keys, multiline=False, mouse_support=False,
             style=Style.from_dict({'bottom-toolbar': 'noreverse #8a8a8a', 'rule': '#4a4a4a',
-                                   'arrow': '#d7875f bold', 'placeholder': '#6c6c6c',
+                                   'arrow': '#d7875f bold', 'placeholder': '#6c6c6c', 'auto-suggestion': '#5f5f5f',
                                    'completion-menu.completion': 'bg:#262626 #d0d0d0',
                                    'completion-menu.completion.current': 'bg:#444444 #ffffff bold',
                                    'completion-menu.meta.completion': 'bg:#262626 #808080'}))

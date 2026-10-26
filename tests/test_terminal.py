@@ -156,3 +156,22 @@ class TerminalTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class CompletionHelperTests(unittest.TestCase):
+    def test_fuzzy_ranks_prefix_then_substring_then_letters(self):
+        self.assertEqual(ui.fuzzy('pr', 'pr-review'), 0)
+        self.assertEqual(ui.fuzzy('review', 'pr-review'), 1)
+        self.assertEqual(ui.fuzzy('prr', 'pr-review'), 2)
+        self.assertIsNone(ui.fuzzy('xyz', 'pr-review'))
+
+    def test_project_files_skip_heavy_folders(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / 'src').mkdir()
+            (root / 'src' / 'app.py').write_text('x')
+            (root / 'node_modules' / 'lib').mkdir(parents=True)
+            (root / 'node_modules' / 'lib' / 'big.js').write_text('x')
+            files = ui.project_files(root)
+            self.assertIn(os.path.join('src', 'app.py'), files)
+            self.assertFalse(any('node_modules' in f for f in files))
