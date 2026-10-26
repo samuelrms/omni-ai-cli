@@ -431,6 +431,10 @@ def execute(session, tasks, parallel=False, raw=False):
             job['sent'] += '\n\nSubtarefa delegada: faça somente análise, sem alterar arquivos. Entregue evidências e conclusões.'
         session.data['requests'].append(job)
         jobs.append(job)
+    if not session.data.get('title'):
+        # First question names the conversation (tab title, /sessions)
+        session.data['title'] = ui.short(tasks[0][1].split('\n')[0], 48)
+        ui.set_title(f"Omni AI · {session.data['title']}")
     session.data['messages'].append({'role': 'user', 'content': '\n'.join(prompt for _, prompt in tasks)})
     session.save()
     # Run even single requests in a worker so Ctrl-C can terminate all child groups.
@@ -555,7 +559,7 @@ def list_sessions():
     for path in sorted(session_dir().glob('*.json'), key=lambda p: p.stat().st_mtime, reverse=True)[:20]:
         try:
             data = json.loads(path.read_text())
-            display(f"{data['id']} · {len(data['messages'])} mensagens · {data['cwd']}")
+            display(f"{data['id']} · {data.get('title') or '—'} · {len(data['messages'])} mensagens · {ui.home_path(data['cwd'])}")
         except (ValueError, KeyError):
             continue
 
@@ -605,8 +609,11 @@ def main(argv=None):
         display(tr('welcome', id=session.id, cwd=session.data['cwd']))
     else:
         ui.clear_screen()
+        ui.set_title(f"Omni AI · {session.data.get('title') or session.id}")
         ui.welcome(session.id, session.data['cwd'], session.data['engine'], engine_model(),
                    session.data.get('mode', 'default'), tr('hint_line'))
+        if session.data['messages']:
+            ui.replay(session.data['messages'])
     try:
         while True:
             try:
@@ -667,7 +674,10 @@ def main(argv=None):
                     replacement = Session(argument) if command == '/resume' else Session()
                     session.close()
                     session = replacement
+                    ui.set_title(f"Omni AI · {session.data.get('title') or session.id}")
                     display(f"Sessão {session.id} · {session.data['cwd']}")
+                    if session.data['messages']:
+                        ui.replay(session.data['messages'])
                 elif command in ('/sent', '/trace'):
                     jobs = session.data['requests']
                     job = next((j for j in reversed(jobs) if not argument or j['id'] == argument), None)
@@ -706,6 +716,7 @@ def main(argv=None):
                 display(tr('error', e=error))
     finally:
         session.save()
+        ui.set_title('')
         display(tr('saved', id=session.id))
         session.close()
 

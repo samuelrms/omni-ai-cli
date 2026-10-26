@@ -109,7 +109,7 @@ def cmd_model(args):
     key = args[0]
     if len(args) == 1:
         validate_model(key, '' if key != 'codex_effort' else 'high')
-        print(model_values()[key])
+        print(f"{key} = {model_values()[key] or '(automático)'}  ·  {MODELS[key][2]}")
         return
     value = args[1]
     saved = read_json(MODELS_FILE, {})
@@ -307,7 +307,7 @@ def cmd_key(args):
         print('OpenRouter funciona só com chave.')
         return
     if action in KEYS:
-        args, action = [action], 'set'
+        action = 'set'
     else:
         args = args[1:]
     if not args or args[0] not in KEYS:
@@ -317,11 +317,14 @@ def cmd_key(args):
     if action == 'get':
         print(stored_key(provider)[0])
     elif action == 'set':
-        print(f'Chave de {provider} ({url}). Cole e tecle Enter; ela não aparece na tela.')
-        try:
-            value = getpass.getpass('> ').strip()
-        except (EOFError, KeyboardInterrupt):
-            raise SystemExit('\nCancelado.')
+        if len(args) > 1:
+            value = args[1].strip()  # typed inline: /key openrouter sk-or-...
+        else:
+            print(f'Chave de {provider} ({url}). Cole e tecle Enter; ela não aparece na tela.')
+            try:
+                value = getpass.getpass('> ').strip()
+            except (EOFError, KeyboardInterrupt):
+                raise SystemExit('\nCancelado.')
         if not value or not re.fullmatch(r'[A-Za-z0-9._-]{16,}', value):
             raise SystemExit('Chave vazia ou com formato inválido.')
         if prefix and not value.startswith(prefix):

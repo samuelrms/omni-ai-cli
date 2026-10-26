@@ -10,6 +10,7 @@ import time
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / 'vendor'))
 
+SECRET = re.compile(r'^\s*/key\b|sk-[A-Za-z0-9_-]{16,}|AIza[0-9A-Za-z_-]{20,}|npm_[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9]{20,}')
 COLOR = sys.stdout.isatty() and not os.environ.get('NO_COLOR')
 
 
@@ -156,6 +157,31 @@ class View:
         self._p(red('  ✗ ' + line))
 
 
+def replay(messages, limit=40):
+    """Show a resumed conversation the way it looked: your lines with ›, answers with ●."""
+    if len(messages) > limit:
+        out(dim(f'  … {len(messages) - limit} mensagens anteriores · /history mostra tudo'))
+    for message in messages[-limit:]:
+        if message.get('role') == 'user':
+            lines = message.get('content', '').split('\n')
+            out('\n' + _c('38;5;173')('›') + ' ' + lines[0] + ''.join('\n  ' + l for l in lines[1:]))
+        else:
+            view = View()
+            view.answer(message.get('content', ''))
+            if message.get('provider'):
+                view.note(message['provider'])
+    out('')
+
+
+def set_title(text):
+    """Terminal tab/window title (OSC 0); empty text hands the title back to the terminal."""
+    if sys.stdout.isatty():
+        clean = re.sub(r'[\x00-\x1f\x7f]', ' ', text)[:80]
+        with LOCK:
+            sys.stdout.write(f'\033]0;{clean}\007')
+            sys.stdout.flush()
+
+
 def clear_screen():
     """Start on a clean screen, like Claude Code and Codex (keeps the scrollback above)."""
     if sys.stdout.isatty():
@@ -215,9 +241,17 @@ class InputBox:
         def _(event):
             event.current_buffer.insert_text('\n')
 
+        class PrivateHistory(FileHistory):
+            """Arrow-key history that never writes secrets: no /key lines, nothing that looks like a key."""
+            def store_string(self, string):
+                if not SECRET.search(string):
+                    super().store_string(string)
+
         Path(history_file).parent.mkdir(parents=True, exist_ok=True)
+        Path(history_file).touch(mode=0o600, exist_ok=True)
+        os.chmod(history_file, 0o600)
         self.session = PromptSession(
-            history=FileHistory(str(history_file)), completer=Commands(), complete_while_typing=True,
+            history=PrivateHistory(str(history_file)), completer=Commands(), complete_while_typing=True,
             key_bindings=keys, multiline=False, mouse_support=False,
             style=Style.from_dict({'bottom-toolbar': 'noreverse #8a8a8a', 'rule': '#4a4a4a',
                                    'arrow': '#d7875f bold', 'placeholder': '#6c6c6c',

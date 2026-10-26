@@ -46,6 +46,30 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(data['models'][0], 'vendor/paid')
         self.assertNotIn('provider', data)
 
+    def test_walks_every_free_model_in_groups_of_three(self):
+        models = [f'test/m{i}:free' for i in range(7)]
+        client = OpenRouterClient(api_key='synthetic-key', fallback_models=models)
+        sent = []
+
+        def fake(endpoint, data=None, method='GET'):
+            sent.append(data['models'])
+            if len(sent) < 3:
+                raise RuntimeError('OpenRouter HTTP 429: Rate limit exceeded')
+            return {'choices': [{'message': {'content': 'ok'}}], 'model': data['models'][0]}
+        with patch.object(client, '_request', side_effect=fake):
+            result = client.chat('oi')
+        self.assertEqual(result['content'], 'ok')
+        self.assertTrue(all(len(group) <= 3 for group in sent))
+        self.assertEqual(sent[0], models[:3])
+        self.assertEqual(sent[2], [models[6], 'openrouter/free'])
+
+    def test_bad_key_stops_instead_of_trying_every_model(self):
+        client = OpenRouterClient(api_key='bad', fallback_models=[f'test/m{i}:free' for i in range(9)])
+        with patch.object(client, '_request', side_effect=RuntimeError('OpenRouter HTTP 401: No auth')) as request:
+            with self.assertRaisesRegex(RuntimeError, '401'):
+                client.chat('oi')
+        self.assertEqual(request.call_count, 1)
+
     def test_catalog_unavailable_still_uses_free_router(self):
         client = OpenRouterClient(api_key='fake')
         with patch.object(client, 'list_free_models', side_effect=RuntimeError('unavailable')):

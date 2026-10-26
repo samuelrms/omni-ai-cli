@@ -20,6 +20,7 @@ Uso:
 """
 
 import json
+import re
 import os
 import sys
 import urllib.request
@@ -48,6 +49,7 @@ PREFERRED_FREE_MODELS = [
 ]
 
 DEFAULT_MODEL = "openrouter/free"
+MAX_MODELS = 3
 
 
 class OpenRouterClient:
@@ -91,9 +93,13 @@ class OpenRouterClient:
             with urllib.request.urlopen(req, timeout=60) as resp:
                 return json.loads(resp.read().decode())
         except urllib.error.HTTPError as e:
+            # Only the provider's short error message is shown; the rest of the body could echo the prompt
+            try:
+                reason = json.loads(e.read().decode())['error']['message'][:160]
+            except (ValueError, KeyError, TypeError, OSError):
+                reason = ''
             e.close()
-            # Never print provider bodies: they can echo prompts or credentials.
-            raise RuntimeError(f"OpenRouter HTTP {e.code}; fallback indisponível nesta requisição") from None
+            raise RuntimeError(f"OpenRouter HTTP {e.code}" + (f": {reason}" if reason else '')) from None
         except (ValueError, TimeoutError):
             raise RuntimeError("Resposta inválida ou timeout do OpenRouter") from None
         except urllib.error.URLError as e:
@@ -165,22 +171,32 @@ class OpenRouterClient:
                 available = [m['id'] for m in self.list_free_models() if m['id'].endswith(':free')]
                 models = [m for m in PREFERRED_FREE_MODELS if m in available]
                 models += [m for m in available if m not in models]
-                models = models[:3]
             except RuntimeError:
                 models = []
-        chain = list(dict.fromkeys(([self.model] if self.model != DEFAULT_MODEL else []) + models + [DEFAULT_MODEL]))
-        data = {
-            "models": chain,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-
-        # Paid models only when explicitly authorized; otherwise the price cap blocks them
-        if not self.allow_paid:
-            data["provider"] = {"max_price": {"prompt": 0, "completion": 0}}
-
-        resp = self._request("/chat/completions", data=data, method="POST")
+        # Every free model gets a turn. OpenRouter accepts at most 3 per request and falls back inside
+        # each group itself; when a whole group fails we move on to the next, ending with its free router.
+        candidates = list(dict.fromkeys(([self.model] if self.model != DEFAULT_MODEL else []) + models + [DEFAULT_MODEL]))
+        groups = [candidates[i:i + MAX_MODELS] for i in range(0, len(candidates), MAX_MODELS)]
+        resp, last_error = None, None
+        for group in groups:
+            data = {"models": group, "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
+            # Paid models only when explicitly authorized; otherwise the price cap blocks them
+            if not self.allow_paid:
+                data["provider"] = {"max_price": {"prompt": 0, "completion": 0}}
+            try:
+                resp = self._request("/chat/completions", data=data, method="POST")
+                if resp.get("choices"):
+                    break
+                last_error = RuntimeError("OpenRouter não retornou uma resposta válida")
+            except RuntimeError as error:
+                last_error = error
+                # Bad key or no credit: another model won't help
+                if re.search(r"HTTP (401|402|403)\b", str(error)):
+                    raise
+            if os.environ.get('SMART_AI_EVENTS') != '1':
+                print(f"  ↪ {', '.join(group)} indisponíveis; tentando os próximos modelos gratuitos...", file=sys.stderr)
+        if resp is None or not resp.get("choices"):
+            raise last_error or RuntimeError("OpenRouter não retornou uma resposta válida")
 
         # === Extrair resposta ===
         choices = resp.get("choices", [])
