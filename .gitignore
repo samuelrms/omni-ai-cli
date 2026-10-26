@@ -23,3 +23,5 @@ sessions/
 .idea/
 .vscode/
 *.swp
+node_modules/
+*.tgz

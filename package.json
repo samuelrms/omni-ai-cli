@@ -1,0 +1,40 @@
+{
+  "name": "smart-ai-cli",
+  "version": "1.0.0",
+  "description": "One chat for Claude Code, Codex, Antigravity and OpenRouter, with automatic routing, account fallback, API keys, permission modes and MCP/skill sync.",
+  "bin": {
+    "ai": "bin/ai.js",
+    "smart-ai": "bin/ai.js"
+  },
+  "files": [
+    "bin/",
+    "smart_ai.py",
+    "terminal.py",
+    "config_tool.py",
+    "sync_tool.py",
+    "platform_utils.py",
+    "openrouter_client.py",
+    "pii_masker.py",
+    "profiles.json",
+    "README.md",
+    "README.en.md",
+    "README.es.md",
+    "README.fr.md",
+    "LICENSE"
+  ],
+  "optionalDependencies": {
+    "@anthropic-ai/claude-code": "*"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["ai", "cli", "claude", "codex", "antigravity", "openrouter", "mcp", "router"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/samuelrms/smart-ai-cli.git"
+  },
+  "homepage": "https://github.com/samuelrms/smart-ai-cli#readme",
+  "bugs": "https://github.com/samuelrms/smart-ai-cli/issues",
+  "author": "samuelrms",
+  "license": "MIT"
+}

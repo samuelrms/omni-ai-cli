@@ -37,8 +37,27 @@ check_dep() {
     fi
 }
 
-check_dep "Python 3" "python3" || { echo -e "    ${RED}✗ Python 3.11+ é necessário.${NC}"; exit 1; }
-python3 -c "import sys; sys.exit(sys.version_info < (3, 11))" || { echo -e "    ${RED}✗ Python 3.11+ é necessário.${NC}"; exit 1; }
+# Python 3.11+: use the system one, or fetch a private 3.12 with uv (no sudo)
+PYTHON=""
+for candidate in python3 python; do
+    if command -v "$candidate" &>/dev/null && "$candidate" -c "import sys; sys.exit(sys.version_info < (3, 11))" 2>/dev/null; then
+        PYTHON="$(command -v "$candidate")"; break
+    fi
+done
+if [[ -z "$PYTHON" ]]; then
+    echo -e "  ${YELLOW}⚠${NC} Python 3.11+ não encontrado. Instalando Python 3.12 só para o Smart AI..."
+    DATA="$HOME/.local/share/smart-ai"
+    export UV_INSTALL_DIR="$DATA/uv" UV_NO_MODIFY_PATH=1 UV_PYTHON_INSTALL_DIR="$DATA/python"
+    [[ -x "$UV_INSTALL_DIR/uv" ]] || curl -LsSf https://astral.sh/uv/install.sh | sh
+    "$UV_INSTALL_DIR/uv" python install --no-bin 3.12 || "$UV_INSTALL_DIR/uv" python install 3.12
+    PYTHON="$("$UV_INSTALL_DIR/uv" python find 3.12)"
+fi
+if [[ -z "$PYTHON" ]] || ! "$PYTHON" -c "import sys; sys.exit(sys.version_info < (3, 11))"; then
+    echo -e "  ${RED}✗ Não consegui um Python 3.11+.${NC}"; exit 1
+fi
+echo -e "  ${GREEN}✓${NC} Python: $("$PYTHON" --version) ($PYTHON)"
+mkdir -p "$HOME/.config/smart-ai"
+printf '%s' "$PYTHON" > "$HOME/.config/smart-ai/python-path"
 install_claude() {
     echo -e "    ${CYAN}→ Instalando Claude Code (instalador oficial)...${NC}"
     if ! command -v curl &>/dev/null; then
@@ -85,9 +104,13 @@ if [[ -L "$LINK_TARGET" || -f "$LINK_TARGET" ]]; then
     rm -f "$LINK_TARGET"
 fi
 
-chmod +x "$SCRIPT_DIR/smart_ai.py"
-ln -sf "$SCRIPT_DIR/smart_ai.py" "$LINK_TARGET"
-echo -e "  ${GREEN}✓${NC} Symlink criado: ai → $SCRIPT_DIR/smart_ai.py"
+# Small launcher instead of a symlink, so it always uses the Python chosen above
+cat > "$LINK_TARGET" <<LAUNCHER
+#!/usr/bin/env sh
+exec "$PYTHON" "$SCRIPT_DIR/smart_ai.py" "\$@"
+LAUNCHER
+chmod +x "$LINK_TARGET"
+echo -e "  ${GREEN}✓${NC} Comando criado: $LINK_TARGET → $SCRIPT_DIR/smart_ai.py"
 
 # 5. Verificar PATH
 if echo "$PATH" | grep -q "$HOME/.local/bin"; then
@@ -108,7 +131,7 @@ elif [[ -t 0 ]]; then
 else
     echo -e "  ${YELLOW}⚠${NC} Conta principal sem login: rode ${CYAN}claude auth login${NC}"
 fi
-python3 "$SCRIPT_DIR/config_tool.py" account list | sed 's/^/  /'
+"$PYTHON" "$SCRIPT_DIR/config_tool.py" account list | sed 's/^/  /'
 
 echo ""
 echo -e "${GREEN}${BOLD}✓ Instalação concluída!${NC}"

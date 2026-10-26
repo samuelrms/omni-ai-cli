@@ -1,5 +1,7 @@
 # Smart AI CLI
 
+[![npm](https://img.shields.io/npm/v/smart-ai-cli?color=C4552F)](https://www.npmjs.com/package/smart-ai-cli)
+[![License: MIT](https://img.shields.io/badge/license-MIT-C4552F.svg)](LICENSE)
 ![Platforms](https://img.shields.io/badge/macOS%20·%20Linux%20·%20Windows-1A1714)
 ![Languages](https://img.shields.io/badge/pt--BR%20·%20en%20·%20es%20·%20fr-C4552F)
 
@@ -34,6 +36,7 @@ configured from inside the chat itself.
 - [Troubleshooting](#troubleshooting)
 - [Known limitations](#known-limitations)
 - [Privacy](#privacy)
+- [License](#license)
 
 ---
 
@@ -120,6 +123,12 @@ curl -fsSL https://raw.githubusercontent.com/samuelrms/smart-ai-cli/main/get.sh 
 irm https://raw.githubusercontent.com/samuelrms/smart-ai-cli/main/get.ps1 | iex
 ```
 
+**Via npm** (any system, needs Node 18+):
+
+```bash
+npm install -g smart-ai-cli
+```
+
 To update later: `ai --update` (or `/update` in the chat).
 
 From source, for development:
@@ -136,8 +145,8 @@ The installer:
 3. creates the `ai` command in `~/.local/bin`;
 4. shows the configured Claude accounts.
 
-Requirements: Python 3.11 or newer (on Windows, tick "Add to PATH" when installing). On macOS and Linux also `curl`. Codex (`codex`) and Antigravity (`agy`) are optional
-and join the fallback queue when they are installed.
+Requirements: nothing beyond `curl` (macOS/Linux) or PowerShell (Windows). If Python 3.11+ is missing, the installer downloads a Python 3.12 just for Smart AI, without sudo and without touching the system Python.
+Codex (`codex`) and Antigravity (`agy`) are optional and join the fallback queue when they are installed.
 
 If `~/.local/bin` is not in your `PATH`, add this to `~/.zshrc`:
 
@@ -369,6 +378,8 @@ ai --log                               # latest calls
 
 ```text
 smart-ai-cli/
+├── bin/ai.js                 # npm launcher: finds or installs Python and runs smart_ai.py
+├── package.json              # smart-ai-cli npm package
 ├── smart_ai.py               # ai command: classifies, routes and runs each tool
 ├── platform_utils.py         # differences between macOS, Linux and Windows
 ├── smart-ai.sh / ai.cmd      # compatibility launchers (Unix / Windows)
@@ -452,3 +463,9 @@ SMART_AI_SIM_URL=http://127.0.0.1:4901/openrouter python3 -m unittest discover -
   are swapped for placeholders and restored in the answer. Masking is pattern-based and
   does not guarantee full anonymization.
 - Claude, Codex and Antigravity receive the original text, under each service's terms.
+
+---
+
+## License
+
+[MIT](LICENSE).

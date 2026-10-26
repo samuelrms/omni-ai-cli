@@ -1,5 +1,7 @@
 # Smart AI CLI
 
+[![npm](https://img.shields.io/npm/v/smart-ai-cli?color=C4552F)](https://www.npmjs.com/package/smart-ai-cli)
+[![License: MIT](https://img.shields.io/badge/license-MIT-C4552F.svg)](LICENSE)
 ![Plateformes](https://img.shields.io/badge/macOS%20·%20Linux%20·%20Windows-1A1714)
 ![Langues](https://img.shields.io/badge/pt--BR%20·%20en%20·%20es%20·%20fr-C4552F)
 
@@ -34,6 +36,7 @@ et les modèles comme les comptes se configurent depuis le chat lui-même.
 - [Dépannage](#dépannage)
 - [Limitations connues](#limitations-connues)
 - [Confidentialité](#confidentialité)
+- [Licence](#licence)
 
 ---
 
@@ -121,6 +124,12 @@ curl -fsSL https://raw.githubusercontent.com/samuelrms/smart-ai-cli/main/get.sh 
 irm https://raw.githubusercontent.com/samuelrms/smart-ai-cli/main/get.ps1 | iex
 ```
 
+**Via npm** (tout système, Node 18+ requis) :
+
+```bash
+npm install -g smart-ai-cli
+```
+
 Pour mettre à jour ensuite : `ai --update` (ou `/update` dans le chat).
 
 Depuis les sources, pour développer :
@@ -137,8 +146,8 @@ L'installateur :
 3. crée la commande `ai` dans `~/.local/bin` ;
 4. affiche les comptes Claude configurés.
 
-Prérequis : Python 3.11 ou plus récent (sous Windows, cochez « Add to PATH » à l'installation). Sous macOS et Linux, aussi `curl`. Codex (`codex`) et Antigravity (`agy`) sont optionnels et
-rejoignent la file des alternatives quand ils sont installés.
+Prérequis : rien d'autre que `curl` (macOS/Linux) ou PowerShell (Windows). S'il manque Python 3.11+, l'installateur télécharge un Python 3.12 réservé à Smart AI, sans sudo et sans toucher au Python du système.
+Codex (`codex`) et Antigravity (`agy`) sont optionnels et rejoignent la file des alternatives quand ils sont installés.
 
 Si `~/.local/bin` n'est pas dans le `PATH`, ajoutez à `~/.zshrc` :
 
@@ -375,6 +384,8 @@ ai --log                               # derniers appels
 
 ```text
 smart-ai-cli/
+├── bin/ai.js                 # lanceur npm : trouve ou installe Python et lance smart_ai.py
+├── package.json              # paquet npm smart-ai-cli
 ├── smart_ai.py               # commande ai : classe, route et exécute chaque outil
 ├── platform_utils.py         # différences entre macOS, Linux et Windows
 ├── smart-ai.sh / ai.cmd      # lanceurs de compatibilité (Unix / Windows)
@@ -463,3 +474,9 @@ SMART_AI_SIM_URL=http://127.0.0.1:4901/openrouter python3 -m unittest discover -
   masquage repose sur des motifs et ne garantit pas une anonymisation totale.
 - Claude, Codex et Antigravity reçoivent le texte d'origine, selon les conditions de
   chaque service.
+
+---
+
+## Licence
+
+[MIT](LICENSE).
