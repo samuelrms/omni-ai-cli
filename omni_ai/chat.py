@@ -52,10 +52,10 @@ T = {
     'auto_model': {'pt': 'escolhe a cada pergunta', 'en': 'picks per question', 'es': 'elige en cada pregunta', 'fr': 'choisit à chaque question'},
     'placeholder': {'pt': 'Pergunte qualquer coisa · / para comandos e skills', 'en': 'Ask anything · / for commands and skills',
                     'es': 'Pregunta lo que quieras · / para comandos y skills', 'fr': 'Demandez ce que vous voulez · / pour commandes et skills'},
-    'hints': {'pt': '/ comandos · @ arquivos · → aceita sugestão · Ctrl-R busca · Ctrl-C sai',
-              'en': '/ commands · @ files · → accept suggestion · Ctrl-R search · Ctrl-C exits',
-              'es': '/ comandos · @ archivos · → acepta sugerencia · Ctrl-R busca · Ctrl-C sale',
-              'fr': '/ commandes · @ fichiers · → accepter · Ctrl-R recherche · Ctrl-C quitte'},
+    'hints': {'pt': '/ comandos · @ arquivos · \\⏎ nova linha · → aceita · Ctrl-R busca · Ctrl-C sai',
+              'en': '/ commands · @ files · \\⏎ new line · → accept · Ctrl-R search · Ctrl-C exits',
+              'es': '/ comandos · @ archivos · \\⏎ nueva línea · → acepta · Ctrl-R busca · Ctrl-C sale',
+              'fr': '/ commandes · @ fichiers · \\⏎ nouvelle ligne · → accepter · Ctrl-R recherche · Ctrl-C quitte'},
     'working': {'pt': 'Trabalhando…', 'en': 'Working…', 'es': 'Trabajando…', 'fr': 'Au travail…'},
     'took': {'pt': 'Levou {t}', 'en': 'Took {t}', 'es': 'Tardó {t}', 'fr': 'Durée {t}'},
     'job_failed': {'pt': 'Não concluiu · /trace para detalhes', 'en': 'Did not finish · /trace for details',
@@ -465,9 +465,9 @@ def execute(session, tasks, parallel=False, raw=False):
         for job in jobs:
             prefix = f"[{job['id']}] " if parallel else ''
             if job['status'] == 'done':
-                ui.out('\n' + ui.dim(f"{prefix}✻ {tr('took', t=ui.elapsed(started))} · {job.get('provider', job['engine'])}"))
+                ui.out('\n' + ui.gradient(ui.MARK) + ' ' + ui.dim(f"{prefix}{tr('took', t=ui.elapsed(started))} · {job.get('provider', job['engine'])}"))
             elif job['status'] == 'cancelled':
-                ui.out('\n' + ui.yellow(f"{prefix}✻ {tr('job_cancelled')}"))
+                ui.out('\n' + ui.yellow(f"{prefix}{ui.MARK} {tr('job_cancelled')}"))
             else:
                 ui.out('\n' + ui.red(f"{prefix}✗ {tr('job_failed')}"))
         for job in jobs:
@@ -476,6 +476,9 @@ def execute(session, tasks, parallel=False, raw=False):
                 session.data['messages'].append({'role': 'assistant', 'content': '\n'.join(job['answers']),
                                                 'agent': job['id'], 'provider': job.get('provider', job['engine'])})
         session.save()
+        if time.time() - started > 20:
+            # Long run finished: ring the bell and mark the tab, so it's noticed from another window
+            ui.attention(f"{ui.MARK} {tr('took', t=ui.elapsed(started))} · Omni AI · {session.data.get('title') or session.id}")
 
 
 def parse_parallel(text):
@@ -587,8 +590,9 @@ def main(argv=None):
 
     def status():
         mode = session.data.get('mode', 'default')
+        # the mode is drawn as a colored chip by the input box
         return ' · '.join(x for x in ('Omni AI', session.data['engine'], engine_model() if session.data['engine'] != 'auto' else '',
-                                      mode if mode != 'default' else '', ui.home_path(session.data['cwd'])) if x)
+                                      ui.home_path(session.data['cwd'])) if x)
 
     def commands():
         described = {}
@@ -657,7 +661,7 @@ def main(argv=None):
         return []
 
     box = ui.InputBox(Path(session_dir()).parent / 'input_history', commands, status, tr('placeholder'), tr('hints'),
-                      arguments=arguments, cwd=lambda: session.data['cwd'])
+                      arguments=arguments, cwd=lambda: session.data['cwd'], mode=lambda: session.data.get('mode', 'default'))
     if box.session is None:
         display(tr('welcome', id=session.id, cwd=session.data['cwd']))
     else:
@@ -673,6 +677,8 @@ def main(argv=None):
                 mode = session.data.get('mode', 'default')
                 tag = session.data['engine'] + ('' if mode == 'default' else ' · ' + mode)
                 line = (box.ask() if box.session else input(f"\nai [{tag}] › ")).strip()
+                # the "done" title stays until you're back and send something
+                ui.set_title(f"Omni AI · {session.data.get('title') or session.id}")
             except EOFError:
                 break
             except KeyboardInterrupt:

@@ -178,7 +178,7 @@ La première fois, il demande la langue. Ensuite, il suffit d'écrire et d'appuy
 | ↑ / ↓ | Lignes précédentes |
 | Ctrl-C | Pendant la réponse : annule. Au prompt : sauvegarde et quitte |
 | Ctrl-D | Sauvegarde et quitte |
-| Échap+Entrée | Nouvelle ligne sans envoyer |
+| `\` + Entrée · Maj+Entrée · Option+Entrée | Nouvelle ligne sans envoyer (Maj+Entrée dans iTerm2, Ghostty, Kitty, WezTerm et VS Code ; dans Terminal macOS, `\` + Entrée) |
 | Tab | Complète commandes et skills |
 
 Dans le menu Tab, chaque élément indique à qui il appartient : `omni`, `claude`, `codex` ou `agy`. Quand
@@ -443,7 +443,7 @@ python3 -m unittest discover -s tests -v
 bash -n scripts/install.sh
 ```
 
-**34 tests** : persistance et reprise de session, limite de contexte, permissions des
+**38 tests** : persistance et reprise de session, limite de contexte, permissions des
 fichiers, session ouverte dans deux terminaux, lecture des événements, annulation de
 l'arbre de processus, parallélisme réel, sandbox en lecture seule, masquage des données
 personnelles, fallback OpenRouter → Codex, validation des modèles, stockage des clés et

@@ -62,7 +62,7 @@ class TerminalTests(unittest.TestCase):
                                 input='/tool codex\nRemember ALPHA\nWhat was it?\n/sent\n/exit\n',
                                 text=True, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('◆ codex', result.stdout)
+        self.assertIn('● codex', result.stdout)
         self.assertIn('● Ran rg example', result.stdout)
         self.assertNotIn('[agente-', result.stdout)
         calls = [json.loads(row) for row in (self.root/'calls').read_text().splitlines()]

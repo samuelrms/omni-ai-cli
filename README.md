@@ -177,7 +177,7 @@ Na primeira vez ele pergunta o idioma. Depois é só escrever e teclar Enter.
 | ↑ / ↓ | Linhas anteriores |
 | Ctrl-C | Durante a resposta: cancela. No prompt: salva e sai |
 | Ctrl-D | Salva e sai |
-| Esc+Enter | Nova linha sem enviar |
+| `\` + Enter · Shift+Enter · Option+Enter | Nova linha sem enviar (Shift+Enter no iTerm2, Ghostty, Kitty, WezTerm e VS Code; no Terminal do Mac use `\` + Enter) |
 | Tab | Completa comandos e skills |
 
 No menu do Tab, cada item termina dizendo de quem é: `omni`, `claude`, `codex` ou `agy`. Ao escolher
@@ -438,7 +438,7 @@ python3 -m unittest discover -s tests -v
 bash -n scripts/install.sh
 ```
 
-**34 testes**: persistência e retomada de sessão, limite de contexto, permissão dos
+**38 testes**: persistência e retomada de sessão, limite de contexto, permissão dos
 arquivos, sessão aberta em dois terminais, leitura de eventos, cancelamento da árvore de
 processos, paralelismo real, sandbox somente leitura, mascaramento de dados pessoais,
 fallback OpenRouter → Codex, validação de modelos, armazenamento das chaves e o ciclo de vida das contas. Todos os

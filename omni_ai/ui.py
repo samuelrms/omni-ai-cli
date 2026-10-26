@@ -19,8 +19,49 @@ def _c(code):
 
 
 bold, dim, italic = _c('1'), _c('2'), _c('3')
+TRUECOLOR = os.environ.get('COLORTERM', '').lower() in ('truecolor', '24bit')
+BRAND = [(245, 165, 36), (232, 96, 76), (139, 92, 246)]  # amber → coral → violet
+MODE_COLORS = {'plan': '#3b82f6', 'edits': '#06b6d4', 'auto': '#22c55e', 'yolo': '#ef4444'}
+
+
+def rgb(color, text, background=False):
+    if not COLOR:
+        return text
+    r, g, b = color
+    if TRUECOLOR:
+        code = f'{48 if background else 38};2;{r};{g};{b}'
+    else:  # 256-color cube approximation
+        code = f'{48 if background else 38};5;{16 + 36 * round(r / 51) + 6 * round(g / 51) + round(b / 51)}'
+    return f'\033[{code}m{text}\033[0m'
+
+
+def _mix(stops, t):
+    t = max(0.0, min(1.0, t)) * (len(stops) - 1)
+    i = min(int(t), len(stops) - 2)
+    f = t - i
+    return tuple(round(a + (b - a) * f) for a, b in zip(stops[i], stops[i + 1]))
+
+
+def gradient(text, stops=BRAND):
+    """Brand gradient across the characters of a short text."""
+    if not COLOR:
+        return text
+    n = max(1, len(text) - 1)
+    return ''.join(rgb(_mix(stops, i / n), ch) for i, ch in enumerate(text))
+
+
+def badge(label, color):
+    """Small solid label that draws the eye: LIMITE, ERRO."""
+    if not COLOR:
+        return f'[{label}]'
+    return '\033[1;30m' + rgb(color, f' {label} ', background=True)
+
+
+LIMIT_WORDS = re.compile(r'limit|quota|cota|cooldown|rate.?limit|resets?|try again', re.I)
 red, green, yellow, blue, magenta, cyan = _c('31'), _c('32'), _c('33'), _c('34'), _c('35'), _c('36')
 TOOL_COLOR = {'claude': _c('38;5;173'), 'codex': green, 'agy': magenta, 'openrouter': yellow}
+TOOL_RGB = {'claude': (217, 119, 87), 'codex': (16, 185, 129), 'agy': (99, 102, 241), 'openrouter': (234, 179, 8)}
+MARK = '✦'  # Omni's mark: the star at the center of the orbit
 LOCK = threading.RLock()
 
 
@@ -60,6 +101,19 @@ def markdown(text):
     return '\n'.join(out)
 
 
+def shimmer(text, tick):
+    """A bright band sliding across dim text, like a light passing over it."""
+    if not COLOR:
+        return text
+    center = tick % (len(text) + 8) - 4
+    out_ = []
+    for i, ch in enumerate(text):
+        glow = max(0.0, 1 - abs(i - center) / 3)
+        base = 110 + round(145 * glow)
+        out_.append(rgb(_mix(BRAND, i / max(1, len(text) - 1)), ch) if glow > 0.6 else rgb((base, base, base), ch))
+    return ''.join(out_)
+
+
 class Spinner:
     FRAMES = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
 
@@ -82,8 +136,8 @@ class Spinner:
         i = 0
         while not self.stop_event.wait(0.1):
             with LOCK:
-                sys.stdout.write('\r\033[K' + cyan(self.FRAMES[i % len(self.FRAMES)]) + ' '
-                                 + dim(f'{self.label} {elapsed(self.started)} · Ctrl-C cancela'))
+                sys.stdout.write('\r\033[K' + rgb(_mix(BRAND, (i % 20) / 19), self.FRAMES[i % len(self.FRAMES)]) + ' '
+                                 + shimmer(self.label, i) + dim(f' {elapsed(self.started)} · Ctrl-C cancela'))
                 sys.stdout.flush()
                 self.visible = True
             i += 1
@@ -126,7 +180,7 @@ class View:
         out('\n'.join(self.prefix + line for line in text.split('\n')))
 
     def provider(self, tool, detail):
-        self._p(dim('  ') + TOOL_COLOR.get(tool, cyan)('◆ ' + tool) + (dim(' · ' + detail) if detail else ''))
+        self._p(dim('  ') + rgb(TOOL_RGB.get(tool, (6, 182, 212)), '● ' + tool) + (dim(' · ' + detail) if detail else ''))
 
     def action(self, verb, target):
         self._p('\n' + green('●') + ' ' + bold(verb) + (' ' + short(target, width() - len(verb) - 6) if target else ''))
@@ -144,17 +198,24 @@ class View:
     def answer(self, text):
         body = markdown(text.strip())
         lines = body.split('\n')
-        self._p('\n' + '● ' + lines[0] + ''.join('\n  ' + l for l in lines[1:]))
+        self._p('\n' + gradient(MARK) + ' ' + lines[0] + ''.join('\n  ' + l for l in lines[1:]))
 
     def note(self, text):
-        self._p(dim('  ' + text))
+        if LIMIT_WORDS.search(text) or text.lstrip().startswith(('⚠', '✗', '❌')):
+            self._p('  ' + badge('LIMITE' if LIMIT_WORDS.search(text) else 'AVISO', (234, 179, 8)) + ' '
+                    + yellow(text.lstrip('⚠✗❌ ')))
+        else:
+            self._p(dim('  ' + text))
 
     def error(self, text):
         line = short(text, width() - 6)
         if line == getattr(self, 'last_error', None):
             return  # tools often report the same failure twice (item + turn)
         self.last_error = line
-        self._p(red('  ✗ ' + line))
+        if LIMIT_WORDS.search(line):
+            self._p('  ' + badge('LIMITE', (234, 179, 8)) + ' ' + yellow(line))
+        else:
+            self._p('  ' + badge('ERRO', (220, 38, 38)) + ' ' + red(line))
 
 
 def replay(messages, limit=40):
@@ -164,13 +225,22 @@ def replay(messages, limit=40):
     for message in messages[-limit:]:
         if message.get('role') == 'user':
             lines = message.get('content', '').split('\n')
-            out('\n' + _c('38;5;173')('›') + ' ' + lines[0] + ''.join('\n  ' + l for l in lines[1:]))
+            out('\n' + rgb((232, 96, 76), '❯') + ' ' + lines[0] + ''.join('\n  ' + l for l in lines[1:]))
         else:
             view = View()
             view.answer(message.get('content', ''))
             if message.get('provider'):
                 view.note(message['provider'])
     out('')
+
+
+def attention(title):
+    """Bell (dock bounce / tab badge in most terminals) plus a tab title saying it's done."""
+    if sys.stdout.isatty():
+        with LOCK:
+            sys.stdout.write('\a')
+            sys.stdout.flush()
+        set_title(title)
 
 
 def set_title(text):
@@ -190,20 +260,31 @@ def clear_screen():
             sys.stdout.flush()
 
 
+def orbit():
+    """The Omni mark: four tools orbiting the star in the middle."""
+    c = {t: rgb(TOOL_RGB[t], '●') for t in TOOL_RGB}
+    d = dim('·')
+    return [f' {d}  {c["claude"]}  {d} ', f'{c["agy"]}   {gradient(MARK)}   {c["codex"]}', f' {d}  {c["openrouter"]}  {d} ']
+
+
 def welcome(session_id, cwd, engine, model, mode, lang_hint):
     w = min(width() - 2, 78)
-    rows = [bold('✻ Omni AI'), '',
-            dim('pasta   ') + home_path(cwd),
-            dim('modelo  ') + f'{engine} · {model}' + ('' if mode == 'default' else dim(' · ') + yellow(mode)),
-            dim('sessão  ') + session_id, '', dim(lang_hint)]
+    tools = dim(' · ').join(rgb(TOOL_RGB[t], t) for t in ('claude', 'codex', 'agy', 'openrouter'))
+    where = home_path(cwd) + dim(' · ') + f'{engine} · {model}' + ('' if mode == 'default' else dim(' · ') + rgb((239, 68, 68) if mode == 'yolo' else (59, 130, 246), mode))
+    logo = orbit()
+    rows = [f'{logo[0]}     {bold(gradient("Omni AI"))}',
+            f'{logo[1]}     {tools}',
+            f'{logo[2]}     {where}', '',
+            dim('sessão ') + session_id + dim('  ·  ') + dim(lang_hint)]
     strip = re.compile(r'\033\[[0-9;]*m')
-    out(cyan('╭' + '─' * w + '╮'))
+    border = lambda t: rgb((88, 70, 140), t)
+    out(border('╭' + '─' * w + '╮'))
     for row in rows:
-        if len(strip.sub('', row)) > w - 2:
-            row = dim(short(strip.sub('', row), w - 2))
+        if len(strip.sub('', row)) > w - 4:
+            row = row if row.startswith(logo[0][:3]) else dim(short(strip.sub('', row), w - 4))
         pad = w - 2 - len(strip.sub('', row))
-        out(cyan('│') + ' ' + row + ' ' * max(0, pad) + ' ' + cyan('│'))
-    out(cyan('╰' + '─' * w + '╯'))
+        out(border('│') + '  ' + row + ' ' * max(0, pad) + border('│'))
+    out(border('╰' + '─' * w + '╯'))
 
 
 def fuzzy(query, text):
@@ -248,8 +329,8 @@ def project_files(cwd, limit=4000):
 class InputBox:
     """Bottom input like Claude Code/Codex: rule above, placeholder, status bar below, Tab completion."""
 
-    def __init__(self, history_file, commands, status, placeholder, hints, arguments=None, cwd=None):
-        self.status, self.placeholder, self.hints = status, placeholder, hints
+    def __init__(self, history_file, commands, status, placeholder, hints, arguments=None, cwd=None, mode=None):
+        self.status, self.placeholder, self.hints, self.mode = status, placeholder, hints, mode
         self.session = None
         if not (sys.stdin.isatty() and sys.stdout.isatty()):
             return
@@ -299,11 +380,30 @@ class InputBox:
                         yield Completion(value, start_position=-len(current), display_meta=short(meta, 60))
 
         keys = KeyBindings()
+        from prompt_toolkit.input.ansi_escape_sequences import ANSI_SEQUENCES
+        from prompt_toolkit.keys import Keys
+        # Shift+Enter arrives as one of these in terminals that can tell it apart (iTerm2, Ghostty, Kitty,
+        # WezTerm, VS Code); treat it like Ctrl-J, which inserts a new line
+        for sequence in ('\x1b[13;2u', '\x1b[27;2;13~', '\x1b[13;2~'):
+            ANSI_SEQUENCES[sequence] = Keys.ControlJ
 
         @keys.add('escape', 'enter')
         @keys.add('c-j')
         def _(event):
             event.current_buffer.insert_text('\n')
+
+        @keys.add('enter')
+        def _(event):
+            buffer = event.current_buffer
+            if buffer.complete_state and buffer.complete_state.current_completion:
+                buffer.apply_completion(buffer.complete_state.current_completion)
+                return
+            # A trailing backslash continues on the next line, like in a shell and in Claude Code
+            if buffer.document.text_before_cursor.endswith('\\'):
+                buffer.delete_before_cursor(1)
+                buffer.insert_text('\n')
+                return
+            buffer.validate_and_handle()
 
         class PrivateHistory(FileHistory):
             """Arrow-key history that never writes secrets: no /key lines, nothing that looks like a key."""
@@ -319,7 +419,7 @@ class InputBox:
             auto_suggest=AutoSuggestFromHistory(), enable_history_search=False,
             key_bindings=keys, multiline=False, mouse_support=False,
             style=Style.from_dict({'bottom-toolbar': 'noreverse #8a8a8a', 'rule': '#4a4a4a',
-                                   'arrow': '#d7875f bold', 'placeholder': '#6c6c6c', 'auto-suggestion': '#5f5f5f',
+                                   'arrow': '#e8604c bold', 'placeholder': '#6c6c6c', 'auto-suggestion': '#5f5f5f',
                                    'completion-menu.completion': 'bg:#262626 #d0d0d0',
                                    'completion-menu.completion.current': 'bg:#444444 #ffffff bold',
                                    'completion-menu.meta.completion': 'bg:#262626 #808080'}))
@@ -337,17 +437,26 @@ class InputBox:
         if not self.session:
             return input('\n› ')
         rule = '─' * width()
-        message = self.HTML(f'<rule>{rule}</rule>\n<arrow>›</arrow> ')
+        message = self.HTML(f'<rule>{rule}</rule>\n<arrow>❯</arrow> ')
         status = self.status
 
         def toolbar():
             left = status()
             right = self.hints
-            gap = max(2, width() - len(left) - len(right) - 1)
-            return self.HTML(f'<rule>{rule}</rule>\n {escape(left)}{" " * gap}{escape(right)}')
+            mode = self.mode() if self.mode else 'default'
+            chip = f'<style bg="{MODE_COLORS[mode]}" fg="#000000"><b> {mode.upper()} </b></style> ' if mode in MODE_COLORS else ''
+            visible = len(left) + (len(mode) + 3 if chip else 0)
+            gap = max(2, width() - visible - len(right) - 1)
+            return self.HTML(f'<rule>{rule}</rule>\n {chip}{escape(left)}{" " * gap}{escape(right)}')
         print()
-        return self.session.prompt(message, bottom_toolbar=toolbar,
-                                   placeholder=self.HTML(f'<placeholder>{escape(self.placeholder)}</placeholder>'))
+        sys.stdout.write('\033[>4;1m')  # xterm modifyOtherKeys=1: Shift+Enter becomes distinguishable
+        sys.stdout.flush()
+        try:
+            return self.session.prompt(message, bottom_toolbar=toolbar,
+                                       placeholder=self.HTML(f'<placeholder>{escape(self.placeholder)}</placeholder>'))
+        finally:
+            sys.stdout.write('\033[>4m')
+            sys.stdout.flush()
 
 
 def escape(text):
