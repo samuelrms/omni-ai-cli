@@ -1,6 +1,6 @@
 # Smart AI CLI
 
-[![npm](https://img.shields.io/npm/v/omni-ai-cli?color=C4552F)](https://www.npmjs.com/package/omni-ai-cli)
+![npm](https://img.shields.io/badge/npm-em%20breve-1A1714)
 [![License: MIT](https://img.shields.io/badge/license-MIT-C4552F.svg)](LICENSE)
 ![Plataformas](https://img.shields.io/badge/macOS%20·%20Linux%20·%20Windows-1A1714)
 ![Idiomas](https://img.shields.io/badge/pt--BR%20·%20en%20·%20es%20·%20fr-C4552F)
@@ -123,11 +123,16 @@ curl -fsSL https://raw.githubusercontent.com/samuelrms/smart-ai-cli/main/get.sh 
 irm https://raw.githubusercontent.com/samuelrms/smart-ai-cli/main/get.ps1 | iex
 ```
 
-**Via npm** (qualquer sistema, precisa do Node 18+):
+**Em breve no npm, yarn, pnpm e bun.** O pacote `omni-ai-cli` está pronto e sai assim que a publicação for liberada:
 
 ```bash
 npm install -g omni-ai-cli
+yarn global add omni-ai-cli
+pnpm add -g omni-ai-cli
+bun add -g omni-ai-cli
 ```
+
+Por enquanto, use o comando de macOS/Linux ou Windows acima.
 
 Para atualizar depois: `ai --update` (ou `/update` no chat).
 
