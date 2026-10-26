@@ -4,6 +4,7 @@
   python -m omni_ai.config env                     shell assignments (SMART_AI_* model variables)
   python -m omni_ai.config model [KEY [VALUE|default]]
   python -m omni_ai.config account list|add NAME|login NAME|remove NAME|enable NAME|disable NAME
+  python -m omni_ai.config account list|add|login|remove|enable|disable codex|agy|grok NAME
   python -m omni_ai.config key [list|set PROVIDER|remove PROVIDER|get PROVIDER]
 """
 import getpass
@@ -43,6 +44,7 @@ MODELS = {
     'codex_effort': ('high', 'SMART_AI_CODEX_EFFORT', 'Codex: minimal, low, medium, high, xhigh'),
     'agy': ('', 'SMART_AI_AGY_MODEL', 'Antigravity: vazio = padrão do agy'),
     'openrouter': ('', 'SMART_AI_OPENROUTER_MODEL', 'OpenRouter: ID do modelo; pago exige openrouter_paid on'),
+    'grok': ('', 'SMART_AI_GROK_MODEL', 'Grok Build/xAI: ID do modelo; vazio = padrão do grok'),
     'openrouter_paid': ('off', 'SMART_AI_OPENROUTER_PAID', 'OpenRouter: on autoriza modelos pagos (cobrados na sua conta)'),
 }
 # provider: (env var the CLI reads, expected prefix or None, where to create one)
@@ -51,6 +53,8 @@ KEYS = {
     'codex': ('CODEX_API_KEY', 'sk-', 'platform.openai.com/api-keys'),
     'agy': ('GEMINI_API_KEY', None, 'aistudio.google.com/apikey'),
     'openrouter': ('OPENROUTER_API_KEY', 'sk-or-', 'openrouter.ai/keys'),
+    'grok': ('XAI_API_KEY', 'xai-', 'console.x.ai'),
+    'groq': ('GROQ_API_KEY', 'gsk_', 'console.groq.com/keys'),
 }
 KEYS_DIR = CONFIG_DIR / 'keys'
 LEGACY_OPENROUTER = CONFIG_DIR / 'openrouter_key'
@@ -209,6 +213,10 @@ def login(name, profile):
 
 def cmd_account(args):
     action = args[0] if args else 'list'
+    if len(args) > 1 and args[1] in TOOL_HOMES:
+        return cmd_tool_account(args[1], action, args[2:])
+    if len(args) > 1 and args[1] == 'claude':
+        args = args[:1] + args[2:]
     data = profiles()
     if action == 'sync-all':
         for name, profile in ordered(data):
@@ -221,7 +229,11 @@ def cmd_account(args):
             state = {True: 'logada', False: 'sem login', None: '?'}[logged_in(profile)]
             enabled = 'ativa' if profile.get('enabled', True) else 'desativada'
             print(f"  {profile.get('priority', '?')}. {name:<12} {state:<10} {enabled:<11} {profile.get('name', '')}")
-        print('\nAdicionar: /account add NOME · refazer login: /account login NOME')
+        for tool in TOOL_HOMES:
+            extra = tool_accounts(tool)
+            if extra:
+                print(f'\n  {tool}: principal + ' + ', '.join(name for name, _ in extra))
+        print('\nAdicionar: /account add NOME (Claude) · /account add codex|agy|grok NOME · refazer login: /account login NOME')
         return
     if len(args) < 2 or not NAME.fullmatch(args[1]):
         raise SystemExit('Informe um nome: letras minúsculas, números, - ou _ (ex.: /account add pessoal)')
@@ -277,6 +289,106 @@ def cmd_account(args):
         print(f'✓ Conta "{name}" removida.')
     else:
         raise SystemExit('Ação inválida: list, add, login, sync, enable, disable, remove')
+
+
+# Extra subscription accounts for the other CLIs. Each one gets its own home folder (the env var the CLI
+# reads); the main login keeps the normal folder. Shared items are linked so every account sees the same setup.
+TOOL_HOMES = {
+    'codex': ('CODEX_HOME', '~/.codex', ('config.toml', 'AGENTS.md', 'prompts', 'skills'), ['codex', 'login']),
+    'grok': ('GROK_HOME', '~/.grok', ('config.toml', 'AGENTS.md', 'skills', 'plugins', 'hooks'), ['grok', 'login']),
+    # agy has no folder variable, so the account runs under its own HOME; git, ssh and gh keep working through links
+    'agy': ('HOME', '~', ('.gitconfig', '.ssh', '.config/gh', '.gemini/config'), ['agy']),
+}
+TOOL_ACCOUNTS_DIR = CONFIG_DIR / 'accounts'
+
+
+def tool_accounts(tool, enabled_only=False):
+    """Extra accounts of a tool by priority; the main login is not listed (it always runs first)."""
+    items = sorted(profiles().get('accounts', {}).get(tool, {}).items(), key=lambda item: item[1].get('priority', 99))
+    return [(name, conf) for name, conf in items if conf.get('enabled', True) or not enabled_only]
+
+
+def tool_env(tool, conf):
+    return {TOOL_HOMES[tool][0]: str(Path(conf['config_dir']).expanduser())}
+
+
+def tool_logged_in(tool, conf):
+    folder = Path(conf['config_dir']).expanduser()
+    if not folder.is_dir():
+        return False
+    if tool == 'codex':
+        try:
+            return subprocess.run([resolve_bin('codex') or 'codex', 'login', 'status'], env=dict(os.environ, **tool_env(tool, conf)),
+                                  capture_output=True, timeout=20).returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+    return (folder / ('auth.json' if tool == 'grok' else '.gemini/jetski-standalone-oauth-token')).is_file()
+
+
+def share_tool_setup(tool, folder):
+    main = Path(TOOL_HOMES[tool][1]).expanduser()
+    for item in TOOL_HOMES[tool][2]:
+        source, target = main / item, folder / item
+        if source.exists() and not target.exists() and not target.is_symlink():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            link(target, source)
+
+
+def tool_login(tool, name, conf):
+    folder = Path(conf['config_dir']).expanduser()
+    folder.mkdir(parents=True, exist_ok=True, mode=0o700)
+    share_tool_setup(tool, folder)
+    print(f'Abrindo login do {tool} para a conta "{name}" (pasta isolada {folder}).')
+    print('Sua conta principal não é afetada.' + (' Faça o login com o Google e saia com Ctrl-C.' if tool == 'agy' else ''))
+    command = TOOL_HOMES[tool][3]
+    return subprocess.call([resolve_bin(command[0]) or command[0]] + command[1:], env=dict(os.environ, **tool_env(tool, conf)))
+
+
+def cmd_tool_account(tool, action, args):
+    data = profiles()
+    accounts = data.setdefault('accounts', {}).setdefault(tool, {})
+    if action == 'list':
+        print(f'  {tool}: principal (login normal) sempre primeiro')
+        for name, conf in tool_accounts(tool):
+            state = {True: 'logada', False: 'sem login', None: '?'}[tool_logged_in(tool, conf)]
+            print(f"  {conf.get('priority', '?')}. {name:<12} {state:<10} {'ativa' if conf.get('enabled', True) else 'desativada'}")
+        print(f'\nAdicionar: /account add {tool} NOME · refazer login: /account login {tool} NOME')
+        return
+    if not args or not NAME.fullmatch(args[0]) or args[0] == 'primary':
+        raise SystemExit(f'Informe um nome: letras minúsculas, números, - ou _ (ex.: /account add {tool} trabalho)')
+    name = args[0]
+    conf = accounts.get(name)
+    if action == 'add':
+        if conf and tool_logged_in(tool, conf):
+            raise SystemExit(f'Conta "{name}" do {tool} já existe e está logada. Use /account login {tool} {name} para trocar.')
+        conf = conf or {'priority': max([c.get('priority', 0) for c in accounts.values()] or [0]) + 1,
+                        'config_dir': str(TOOL_ACCOUNTS_DIR / tool / name), 'enabled': True}
+        tool_login(tool, name, conf)
+        if tool_logged_in(tool, conf) is False:
+            raise SystemExit('Login não concluído; nada foi alterado.')
+        accounts[name] = conf
+        write_json(profiles_path(), data)
+        print(f'✓ Conta "{name}" do {tool} adicionada com prioridade {conf["priority"]}.')
+    elif not conf:
+        raise SystemExit(f'Conta "{name}" do {tool} não existe. Veja /account list {tool}.')
+    elif action == 'login':
+        tool_login(tool, name, conf)
+    elif action in ('enable', 'disable'):
+        conf['enabled'] = action == 'enable'
+        write_json(profiles_path(), data)
+        print(f'✓ Conta "{name}" do {tool} ' + ('ativada.' if conf['enabled'] else 'desativada.'))
+    elif action == 'remove':
+        del accounts[name]
+        write_json(profiles_path(), data)
+        folder = Path(conf['config_dir']).expanduser()
+        if tool in ('codex', 'grok') and folder.is_dir():
+            subprocess.run([resolve_bin(tool) or tool, 'logout'], env=dict(os.environ, **tool_env(tool, conf)),
+                           capture_output=True, timeout=30)
+        if folder.is_dir() and folder.is_relative_to(TOOL_ACCOUNTS_DIR):
+            shutil.rmtree(folder)
+        print(f'✓ Conta "{name}" do {tool} removida.')
+    else:
+        raise SystemExit('Ação inválida: list, add, login, enable, disable, remove')
 
 
 def key_path(provider):

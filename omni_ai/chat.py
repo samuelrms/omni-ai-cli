@@ -19,7 +19,7 @@ except ImportError:
 
 from . import config as config_tool, skills, ui
 from .osutils import group_kwargs, kill_tree, lock_exclusive, module_cmd, module_env, resolve_bin
-ENGINES = {'auto', 'openrouter', 'codex', 'claude', 'agy'}
+ENGINES = {'auto', 'openrouter', 'codex', 'claude', 'agy', 'grok'}
 MODES = ('default', 'plan', 'edits', 'auto', 'yolo')
 MAX_CONTEXT = 48000
 PRINT_LOCK = threading.Lock()
@@ -82,15 +82,16 @@ T = {
     'reply_in': {'pt': 'Responda em português do Brasil.', 'en': 'Reply in English.', 'es': 'Responde en español.', 'fr': 'Réponds en français.'},
     'help': {
         'pt': """Escreva normalmente e tecle Enter. Setas: histórico de linhas. Ctrl-C: cancela resposta / sai. Ctrl-D: sai.
-/tool auto|claude|codex|agy|openrouter   Escolher ferramenta (auto = decide sozinho)
+/tool auto|claude|codex|agy|openrouter|grok Escolher ferramenta (auto = decide sozinho)
 /usage   /limits                        Uso e limites de todas as ferramentas e contas
 /claude:usage  /codex:status  /agy:usage  Comandos nativos de cada ferramenta (Tab lista todos)
-/model [chave valor]                     Ver/alterar modelos (claude, codex, codex_effort, agy, openrouter)
-/account [list|add|login|sync|remove] NOME    Contas Claude (login dentro do ai)
-/key [claude|codex|agy|openrouter|remove X] Chaves de API (reserva da assinatura)
+/model [chave valor]                     Ver/alterar modelos (claude, codex, codex_effort, agy, openrouter, grok)
+/account [list|add|login|remove] [codex|agy|grok] NOME  Contas (Claude por padrão; quantas quiser)
+/key [claude|codex|agy|openrouter|grok|groq|remove X] Chaves de API (reserva da assinatura)
 /status   /reset                         Status das contas / zerar cooldowns
 /sync [--dry-run]                        Compartilhar MCPs e skills entre Claude, Codex e agy
 /mode default|plan|edits|auto|yolo      Modo de permissão (vale para Claude, Codex e agy)
+/setup                                   Guia de primeiro acesso: logins e chaves que faltam
 /terminal-setup                          Como quebrar linha (Shift+Enter) no seu terminal
 /lang pt|en|es|fr                        Mudar idioma
 /skills                                  Skills e comandos do projeto e do usuário (/nome args executa; Tab completa)
@@ -100,15 +101,16 @@ T = {
 /parallel codex: tarefa | codex: tarefa  2–4 análises em paralelo
 /exit                                    Sair""",
         'en': """Type normally and press Enter. Arrows: line history. Ctrl-C: cancel answer / exit. Ctrl-D: exit.
-/tool auto|claude|codex|agy|openrouter   Pick tool (auto = decides for you)
+/tool auto|claude|codex|agy|openrouter|grok Pick tool (auto = decides for you)
 /usage   /limits                        Usage and limits of every tool and account
 /claude:usage  /codex:status  /agy:usage  Native commands of each tool (Tab lists them all)
-/model [key value]                       Show/change models (claude, codex, codex_effort, agy, openrouter)
-/account [list|add|login|sync|remove] NAME    Claude accounts (login inside ai)
-/key [claude|codex|agy|openrouter|remove X] API keys (subscription fallback)
+/model [key value]                       Show/change models (claude, codex, codex_effort, agy, openrouter, grok)
+/account [list|add|login|remove] [codex|agy|grok] NAME  Accounts (Claude by default; as many as you want)
+/key [claude|codex|agy|openrouter|grok|groq|remove X] API keys (subscription fallback)
 /status   /reset                         Account status / clear cooldowns
 /sync [--dry-run]                        Share MCPs and skills across Claude, Codex and agy
 /mode default|plan|edits|auto|yolo      Permission mode (applies to Claude, Codex and agy)
+/setup                                   First-run guide: logins and keys still missing
 /terminal-setup                          How to get new lines (Shift+Enter) in your terminal
 /lang pt|en|es|fr                        Change language
 /skills                                  Project and user skills/commands (/name args runs; Tab completes)
@@ -118,15 +120,16 @@ T = {
 /parallel codex: task | codex: task      2–4 analyses in parallel
 /exit                                    Exit""",
         'es': """Escribe normalmente y pulsa Enter. Flechas: historial. Ctrl-C: cancela respuesta / sale. Ctrl-D: sale.
-/tool auto|claude|codex|agy|openrouter   Elegir herramienta (auto = decide sola)
+/tool auto|claude|codex|agy|openrouter|grok Elegir herramienta (auto = decide sola)
 /usage   /limits                        Uso y límites de todas las herramientas y cuentas
 /claude:usage  /codex:status  /agy:usage  Comandos nativos de cada herramienta (Tab los lista)
-/model [clave valor]                     Ver/cambiar modelos (claude, codex, codex_effort, agy, openrouter)
-/account [list|add|login|sync|remove] NOMBRE  Cuentas Claude (login dentro de ai)
-/key [claude|codex|agy|openrouter|remove X] Claves de API (respaldo de la suscripción)
+/model [clave valor]                     Ver/cambiar modelos (claude, codex, codex_effort, agy, openrouter, grok)
+/account [list|add|login|remove] [codex|agy|grok] NOMBRE  Cuentas (Claude por defecto; las que quieras)
+/key [claude|codex|agy|openrouter|grok|groq|remove X] Claves de API (respaldo de la suscripción)
 /status   /reset                         Estado de cuentas / limpiar cooldowns
 /sync [--dry-run]                        Compartir MCPs y skills entre Claude, Codex y agy
 /mode default|plan|edits|auto|yolo      Modo de permisos (Claude, Codex y agy)
+/setup                                   Guía de primer acceso: logins y claves que faltan
 /terminal-setup                          Cómo hacer saltos de línea (Shift+Enter) en tu terminal
 /lang pt|en|es|fr                        Cambiar idioma
 /skills                                  Skills y comandos del proyecto y del usuario (/nombre args ejecuta; Tab completa)
@@ -136,15 +139,16 @@ T = {
 /parallel codex: tarea | codex: tarea    2–4 análisis en paralelo
 /exit                                    Salir""",
         'fr': """Tapez normalement puis Entrée. Flèches : historique. Ctrl-C : annule la réponse / quitte. Ctrl-D : quitte.
-/tool auto|claude|codex|agy|openrouter   Choisir l'outil (auto = choix automatique)
+/tool auto|claude|codex|agy|openrouter|grok Choisir l'outil (auto = choix automatique)
 /usage   /limits                        Usage et limites de tous les outils et comptes
 /claude:usage  /codex:status  /agy:usage  Commandes natives de chaque outil (Tab les liste)
-/model [clé valeur]                      Voir/changer les modèles (claude, codex, codex_effort, agy, openrouter)
-/account [list|add|login|sync|remove] NOM     Comptes Claude (connexion dans ai)
-/key [claude|codex|agy|openrouter|remove X] Clés API (secours de l'abonnement)
+/model [clé valeur]                      Voir/changer les modèles (claude, codex, codex_effort, agy, openrouter, grok)
+/account [list|add|login|remove] [codex|agy|grok] NOM  Comptes (Claude par défaut ; autant que voulu)
+/key [claude|codex|agy|openrouter|grok|groq|remove X] Clés API (secours de l'abonnement)
 /status   /reset                         État des comptes / réinitialiser les cooldowns
 /sync [--dry-run]                        Partager MCP et skills entre Claude, Codex et agy
 /mode default|plan|edits|auto|yolo      Mode de permissions (Claude, Codex et agy)
+/setup                                   Guide de démarrage : connexions et clés manquantes
 /terminal-setup                          Comment faire un saut de ligne (Maj+Entrée) dans votre terminal
 /lang pt|en|es|fr                        Changer de langue
 /skills                                  Skills et commandes du projet et de l'utilisateur (/nom args exécute ; Tab complète)
@@ -264,7 +268,8 @@ NOISE = re.compile(r'^[─━-]{5,}$|^(🤖|📦|🚀|🌐|📊|→ Credenciais)
 def model_label(provider, profile=''):
     values = config_tool.model_values()
     label = {'claude': values['claude'], 'codex': f"{values['codex']} {values['codex_effort']}",
-             'agy': values['agy'] or 'padrão', 'openrouter': values['openrouter'] or 'gratuito'}.get(provider, '')
+             'agy': values['agy'] or 'padrão', 'openrouter': values['openrouter'] or 'gratuito',
+             'grok': values['grok'] or 'padrão'}.get(provider, '')
     return ' · '.join(x for x in (profile, label) if x)
 
 
@@ -497,7 +502,7 @@ def parse_parallel(text):
     tasks = []
     for part in parts:
         engine, separator, prompt = part.partition(':')
-        if not separator or engine.strip() not in ('codex', 'openrouter') or not prompt.strip():
+        if not separator or engine.strip() not in ('codex', 'openrouter', 'grok') or not prompt.strip():
             raise ValueError('Formato: /parallel codex: analisar testes | openrouter: explicar conceito')
         tasks.append((engine.strip(), prompt.strip()))
     return tasks
@@ -517,7 +522,7 @@ def run_tool(args):
         pass
 
 
-BUILTIN = ['/usage', '/terminal-setup', '/tool', '/model', '/account', '/key', '/status', '/reset', '/sync', '/update', '/mode', '/lang',
+BUILTIN = ['/usage', '/setup', '/terminal-setup', '/tool', '/model', '/account', '/key', '/status', '/reset', '/sync', '/update', '/mode', '/lang',
            '/skills', '/history', '/sent', '/trace', '/sessions', '/resume', '/new', '/parallel', '/help', '/exit']
 
 
@@ -682,8 +687,13 @@ def main(argv=None):
                        ('enable', 'ativar'), ('disable', 'desativar'), ('remove', 'remover')]
             if not done:
                 return actions
-            if len(done) == 1 and done[0] not in ('list', 'add'):
-                return [(name, conf.get('name', '')) for name, conf in config_tool.ordered(config_tool.profiles())]
+            tools = [(t, f'contas do {t}') for t in config_tool.TOOL_HOMES]
+            if len(done) == 1:
+                claude = [] if done[0] in ('list', 'add') else \
+                    [(name, conf.get('name', '')) for name, conf in config_tool.ordered(config_tool.profiles())]
+                return tools + claude
+            if len(done) == 2 and done[1] in config_tool.TOOL_HOMES and done[0] not in ('list', 'add'):
+                return [(name, '') for name, _ in config_tool.tool_accounts(done[1])]
             return []
         if command == '/resume' and not done:
             listed = []
@@ -697,7 +707,7 @@ def main(argv=None):
         if command == '/sync':
             return [('--dry-run', 'só mostra o que faria')] if not done else []
         if command == '/parallel':
-            return [('codex:', 'subtarefa no Codex (somente leitura)'), ('openrouter:', 'subtarefa no OpenRouter'), ('|', 'separa subtarefas')]
+            return [('codex:', 'subtarefa no Codex (somente leitura)'), ('openrouter:', 'subtarefa no OpenRouter'), ('grok:', 'subtarefa no Grok'), ('|', 'separa subtarefas')]
         entry = skills.discover(session.data['cwd']).get(command[1:])
         if entry:
             tool = skills.pick_tool(entry, session.data['engine'])
@@ -717,6 +727,8 @@ def main(argv=None):
                    session.data.get('mode', 'default'), tr('hint_line'), animate=not splashed)
         if session.data['messages']:
             ui.replay(session.data['messages'])
+        if onboarding.first_run():
+            display(onboarding.guide(LANG[0]))
     try:
         while True:
             try:
@@ -763,6 +775,8 @@ def main(argv=None):
                     session.data['mode'] = argument
                     session.save()
                     display(tr('mode_now', v=argument))
+                elif command == '/setup':
+                    display(onboarding.guide(LANG[0]))
                 elif command == '/terminal-setup':
                     display(terminal_setup())
                 elif command == '/lang':

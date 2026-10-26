@@ -3,9 +3,10 @@
 
   ai                                  open the chat
   ai "question"                       automatic routing
-  ai --claude|--codex|--agy|--openrouter "question"
+  ai --claude|--codex|--agy|--openrouter|--grok "question"
   ai --mode plan|edits|auto|yolo "question"
   ai --usage                         Uso e limites de todas as ferramentas e contas
+  ai --setup                         First-run guide: logins and API keys
   ai --status | --reset | --log | --classify "prompt"
   ai --model ... | --account ... | --key ... | --sync ...
 """
@@ -22,7 +23,7 @@ from .osutils import REPO, enable_ansi, module_cmd, module_env, resolve_bin
 
 STATE_FILE = Path(os.environ.get('SMART_AI_STATE', '~/.cache/smart-ai/state.json')).expanduser()
 LOG_FILE = Path(os.environ.get('SMART_AI_LOG', '~/.cache/smart-ai/usage.log')).expanduser()
-BINS = {tool: os.environ.get(tool.upper() + '_BIN', tool) for tool in ('claude', 'codex', 'agy')}
+BINS = {tool: os.environ.get(tool.upper() + '_BIN', tool) for tool in ('claude', 'codex', 'agy', 'grok')}
 MODES = ('default', 'plan', 'edits', 'auto', 'yolo')
 RATE_LIMITED = 2
 NOT_READY = 3  # account without login: skip it, don't stop the fallback
@@ -225,9 +226,22 @@ def hit_limit(output, code):
 
 
 def run_with_key_retry(tool, argv, env_var, label):
-    """Subscription first; if it fails and an API key is saved, try once more with the key."""
-    code, output = run(argv)
-    remember_limit(tool, output if code != 0 else '')
+    """Main login first, then each extra account of the tool (/account add TOOL NAME), then the saved API key."""
+    accounts = [('primary', {})] + [(name, config_tool.tool_env(tool, conf)) for name, conf in config_tool.tool_accounts(tool, True)]
+    code = 1
+    for name, env in accounts:
+        account = tool if name == 'primary' else f'{tool}:{name}'
+        if cooldown_left(account):
+            say(f'{DIM}  ⏳ {label}: conta {name} em cooldown{NC}')
+            continue
+        if name != 'primary':
+            say(f'{YELLOW}🔄 {label}: tentando a conta {name}{NC}')
+        code, output = run(argv, dict(os.environ, **env) if env else None)
+        remember_limit(account, output if code != 0 else '')
+        if code == 0:
+            break
+        if LIMIT_TEXT.search(output[-3000:]):
+            mark_rate_limited(account)
     key = config_tool.stored_key(tool)[0]
     if code != 0 and not os.environ.get(env_var) and key:
         say(f'{YELLOW}🔑 {label}: tentando com chave de API{NC}')
@@ -284,13 +298,104 @@ def run_openrouter(prompt):
     return code
 
 
+def run_grok(prompt):
+    emit_provider('grok')
+    model = models()['grok']
+    if installed('grok'):
+        # Grok Build: SuperGrok/X Premium+ login first, the saved xAI key as fallback
+        header(f'{BLUE}✦ Grok Build{NC}', 'economizando Claude')
+        argv = [BINS['grok'], '--no-auto-update', '--cwd', os.getcwd()]
+        if os.environ.get('SMART_AI_EVENTS') == '1':
+            argv += ['--output-format', 'streaming-messages-json']  # same events as Claude Code's stream-json
+        if model:
+            argv += ['-m', model]
+        # Headless 'plan' is only a compatibility alias; dontAsk keeps it to read-only tools
+        argv += {'plan': ['--permission-mode', 'dontAsk'], 'edits': ['--permission-mode', 'acceptEdits'],
+                 'auto': ['--permission-mode', 'auto'], 'yolo': ['--permission-mode', 'bypassPermissions']}.get(mode(), [])
+        return run_with_key_retry('grok', argv + ['-p', prompt], 'XAI_API_KEY', 'Grok')
+    # No CLI: plain chat over the API, paid per use
+    key = config_tool.stored_key('grok')[0]
+    if not key:
+        say(f'{RED}✗ Grok Build não instalado e sem chave da xAI.{NC}')
+        say(f'{DIM}  Instale: curl -fsSL https://x.ai/cli/install.sh | bash  e rode: grok login{NC}')
+        say(f'{DIM}  Ou use uma chave: ai --key grok (ou /key grok no chat){NC}')
+        log_usage('grok', 'N/A', 'no_api_key')
+        return 1
+    header(f'{BLUE}✦ Grok{NC}', 'API da xAI, pago por uso + PII masking')
+    argv = module_cmd('grok') + (['--model', model] if model else [])
+    code, _ = run(argv, module_env(dict(os.environ, XAI_API_KEY=key)), stdin=prompt)
+    log_usage('grok', 'N/A', 'success' if code == 0 else 'error')
+    return code
+
+
 # ─── routing ─────────────────────────────────────────────────────
+
+# Groq retires models often; the second one covers the first going away
+GROQ_CLASSIFIER_MODELS = [('qwen/qwen3.8-27b', 'none'), ('openai/gpt-oss-20b', 'low')]
+GROK_CLASSIFIER_MODEL = 'grok-4-fast-non-reasoning'
+CLASSIFIER_MODELS = ['nvidia/nemotron-3.5-lightning:free', 'google/gemma-4-26b-a4b-it:free', 'openrouter/free']
+CLASSIFIER_SYSTEM = (
+    'You are a router, not an assistant: never answer or carry out the prompt, only label it.\n'
+    'The CLI runs inside the user\'s project directory.\n'
+    'complex: asks to analyze, change, create, fix, improve, run or test something (code, files, repository, '
+    'shell, GitHub), even without naming a file, or needs real coding work.\n'
+    'simple: a general question a plain chat model answers without seeing any file '
+    '(concepts, definitions, translations, trivia, short text).\n'
+    'Reply with exactly one word: complex or simple.')
+
+
+def ask_classifier(url, key, data):
+    """One labelling request to an OpenAI-compatible endpoint; None on any failure."""
+    import urllib.request
+    request = urllib.request.Request(url, data=json.dumps(data).encode(), method='POST', headers={
+        'Content-Type': 'application/json', 'Authorization': f'Bearer {key}', 'User-Agent': 'omni-ai-cli'})
+    try:
+        with urllib.request.urlopen(request, timeout=6) as resp:
+            answer = (json.loads(resp.read().decode())['choices'][0]['message']['content'] or '').lower()
+    except (OSError, ValueError, KeyError, IndexError, TypeError):
+        return None
+    return next((label for label in ('complex', 'simple') if label in answer), None)
+
+
+def classify_llm(prompt):
+    """Groq first (large free quota), then free OpenRouter, then paid Grok; None when neither gives a usable answer."""
+    from .pii import PIIMasker
+    masked, _ = PIIMasker().mask(prompt)
+    messages = [{'role': 'system', 'content': CLASSIFIER_SYSTEM},
+                {'role': 'user', 'content': f'<prompt>\n{masked[:4000]}\n</prompt>\nLabel (complex or simple):'}]
+    groq = 'https://api.groq.com/openai/v1/chat/completions'
+    backends = [('groq', groq, {'model': model, 'reasoning_effort': effort}) for model, effort in GROQ_CLASSIFIER_MODELS] + [
+        # Free OpenRouter models fail now and then (rate limit, empty reply); the second try covers most of it
+        ('openrouter', 'https://openrouter.ai/api/v1/chat/completions',
+         {'models': CLASSIFIER_MODELS, 'reasoning': {'enabled': False},
+          'provider': {'max_price': {'prompt': 0, 'completion': 0}}}),
+    ] * 2 + [
+        # Paid: only reached when both free services fail
+        ('grok', 'https://api.x.ai/v1/chat/completions', {'model': models()['grok'] or GROK_CLASSIFIER_MODEL}),
+    ]
+    for provider, url, extra in backends:
+        key = config_tool.stored_key(provider)[0]
+        # Room for a short reasoning pass on models that can't switch it off
+        label = key and ask_classifier(url, key, dict(extra, messages=messages, temperature=0, max_tokens=300))
+        if label:
+            return label
+    return None
+
 
 def classify(prompt):
     prompt = os.environ.get('SMART_AI_CLASSIFY_PROMPT') or prompt
+    return classify_llm(prompt) or classify_rules(prompt)
+
+
+def classify_rules(prompt):
     lower = prompt.lower()
     routing = config().get('routing', {})
     if any(k in lower for k in routing.get('complex_keywords', [])):
+        return 'complex'
+    # Anything that acts on the workspace needs an agent with file access; OpenRouter only chats
+    if re.search(r'\b(projeto|project|repo|reposit[oó]rio|codebase|c[oó]digo|code|arquivos?|files?|pastas?|folder|'
+                 r'github|git|commit|push|pull request|pr|readme|about|branch|analis|analy[sz]|atuali[sz]|update|'
+                 r'edit|alter|mud[ae]|ajust|adicion|add|remov|delet|instal|rod[ae]|run|execut|test)', lower):
         return 'complex'
     if re.search(r'\.(py|js|ts|go|rs|java|kt|dart|swift|rb|sh|yml|yaml|json|toml|sql)', prompt):
         return 'complex'
@@ -335,7 +440,7 @@ def claude_with_fallback(prompt):
 
 
 def route(prompt, tool='auto'):
-    forced = {'claude': claude_with_fallback, 'codex': run_codex, 'agy': run_agy, 'openrouter': run_openrouter}
+    forced = {'claude': claude_with_fallback, 'codex': run_codex, 'agy': run_agy, 'openrouter': run_openrouter, 'grok': run_grok}
     if tool in forced:
         return forced[tool](prompt)
     if classify(prompt) == 'complex':
@@ -344,8 +449,11 @@ def route(prompt, tool='auto'):
     say(f'{DIM}📊 Classificado como: {YELLOW}query simples{NC}{DIM} → roteando para alternativa{NC}\n')
     routing = config().get('routing', {})
     order = [routing.get('prefer_tool_for_simple', 'codex')] + routing.get('fallback_order', ['openrouter', 'codex', 'agy'])
-    for name in dict.fromkeys(t for t in order if t in ('openrouter', 'codex', 'agy')):
-        if name != 'openrouter' and not installed(name):
+    # Grok needs a subscription or a paid key, so auto mode only uses it when listed in routing.fallback_order
+    for name in dict.fromkeys(t for t in order if t in ('openrouter', 'codex', 'agy', 'grok')):
+        if name == 'grok' and not (installed('grok') or config_tool.stored_key('grok')[0]):
+            continue
+        if name in ('codex', 'agy') and not installed(name):
             continue
         if forced[name](prompt) == 0:
             return 0
@@ -386,11 +494,11 @@ def show_status():
     say(f"  Chaves de API: {', '.join(keys) if keys else 'nenhuma (ai --key)'}")
     say(f'  Modo padrão: {mode()}\n')
     say(f'{BOLD}  Ferramentas:{NC}\n')
-    for tool, label in (('claude', 'Claude Code'), ('codex', 'Codex CLI'), ('agy', 'Antigravity')):
+    for tool, label in (('claude', 'Claude Code'), ('codex', 'Codex CLI'), ('agy', 'Antigravity'), ('grok', 'Grok Build')):
         say(f'  {GREEN}●{NC} {label}: {version(tool)}' if installed(tool) else f'  {RED}○{NC} {label}: não instalado')
     if LOG_FILE.is_file():
         lines = LOG_FILE.read_text(errors='replace').splitlines()
-        counts = {t: sum(f'tool={t} ' in l for l in lines) for t in ('claude', 'codex', 'agy', 'openrouter')}
+        counts = {t: sum(f'tool={t} ' in l for l in lines) for t in ('claude', 'codex', 'agy', 'openrouter', 'grok')}
         say(f'\n{BOLD}  📊 Estatísticas de uso:{NC}')
         say(f'    Total de chamadas: {len(lines)}')
         say('    ' + ' | '.join(f'{t}: {n}' for t, n in counts.items()))
@@ -431,12 +539,14 @@ def show_usage():
         say(f'  {name:<12} {status}')
     if config_tool.stored_key('claude')[0]:
         say(f"  {'chave API':<12} " + (limit_line('claude:api-key') or f'{GREEN}configurada{NC}'))
-    for tool, label in (('codex', 'Codex'), ('agy', 'Antigravity')):
+    for tool, label in (('codex', 'Codex'), ('agy', 'Antigravity'), ('grok', 'Grok Build')):
         say(f'\n{BOLD}{label}{NC}  {DIM}{calls(tool)} chamadas hoje{NC}')
         if not installed(tool):
             say(f'  {RED}não instalado{NC}')
             continue
         say('  assinatura   ' + (limit_line(tool) or f'{GREEN}sem limite registrado{NC}'))
+        for name, _ in config_tool.tool_accounts(tool, True):
+            say(f'  {name:<12} ' + (limit_line(f'{tool}:{name}') or f'{GREEN}sem limite registrado{NC}'))
         if config_tool.stored_key(tool)[0]:
             say('  chave API    ' + (limit_line(f'{tool}:api-key') or f'{GREEN}configurada{NC}'))
     say(f'\n{BOLD}OpenRouter{NC}  {DIM}{calls("openrouter")} chamadas hoje{NC}')
@@ -483,13 +593,14 @@ def update():
 USAGE = f'''{BOLD}Uso:{NC}
   ai                                 Abrir o chat (/help dentro dele)
   ai "pergunta"                      Roteamento automático
-  ai --claude|--codex|--agy|--openrouter "pergunta"
+  ai --claude|--codex|--agy|--openrouter|--grok "pergunta"
   ai --mode plan|edits|auto|yolo "pergunta"
   ai --model [chave valor]           Modelos
   ai --account [list|add|login|sync|remove] NOME
-  ai --key [claude|codex|agy|openrouter|remove X]
+  ai --key [claude|codex|agy|openrouter|grok|groq|remove X]
   ai --sync [--dry-run]              MCPs e skills entre Claude, Codex e agy
   ai --usage                         Uso e limites de todas as ferramentas e contas
+  ai --setup                          Guia de primeiro acesso: logins e chaves
   ai --status | --reset | --log | --classify "prompt"
   ai --update                        Atualizar para a versão mais nova
 '''
@@ -504,8 +615,7 @@ def main(argv):
     delegated = {'--model': ('config_tool', ['model']), '-m': ('config_tool', ['model']),
                  '--account': ('config_tool', ['account']), '--key': ('config_tool', ['key']),
                  '--keys': ('config_tool', ['key']), '--setup-openrouter': ('config_tool', ['key', 'set', 'openrouter']),
-                 '--setup-secondary': ('config_tool', ['account', 'add', 'secondary']),
-                 '--setup': ('config_tool', ['account', 'add', 'secondary'])}
+                 '--setup-secondary': ('config_tool', ['account', 'add', 'secondary'])}
     if head in ('--chat', '--interactive', '-i', '--resume', '--sessions'):
         from . import chat
         return chat.main(argv[1:] if head in ('--chat', '--interactive', '-i') else argv)
@@ -529,8 +639,8 @@ def main(argv):
         if arg == '--':
             words += argv[i + 1:]
             break
-        if arg in ('--claude', '-c', '--codex', '-x', '--agy', '-a', '--openrouter', '-o'):
-            tool = {'c': 'claude', 'x': 'codex', 'a': 'agy', 'o': 'openrouter'}.get(arg.lstrip('-'), arg.lstrip('-'))
+        if arg in ('--claude', '-c', '--codex', '-x', '--agy', '-a', '--openrouter', '-o', '--grok', '-g'):
+            tool = {'c': 'claude', 'x': 'codex', 'a': 'agy', 'o': 'openrouter', 'g': 'grok'}.get(arg.lstrip('-'), arg.lstrip('-'))
         elif arg == '--mode':
             value = argv[i + 1] if i + 1 < len(argv) else ''
             if value not in MODES:
@@ -540,6 +650,10 @@ def main(argv):
             i += 1
         elif arg in ('--status', '-s'):
             show_status()
+            return 0
+        elif arg == '--setup':
+            from . import onboarding
+            onboarding.main()
             return 0
         elif arg in ('--usage', '--limits'):
             show_usage()

@@ -76,6 +76,18 @@ if [[ "${SMART_AI_SKIP_CLAUDE_INSTALL:-0}" != "1" ]]; then
         exit 1
     }
 fi
+install_grok() {
+    echo -e "    ${CYAN}→ Instalando Grok Build (instalador oficial da xAI)...${NC}"
+    command -v curl &>/dev/null || return 1
+    curl -fsSL https://x.ai/cli/install.sh | bash || return 1
+    export PATH="$HOME/.grok/bin:$HOME/.local/bin:$PATH"
+    check_dep "Grok Build" "grok"
+}
+
+if [[ "${SMART_AI_SKIP_GROK_INSTALL:-0}" != "1" ]]; then
+    check_dep "Grok Build" "grok" || install_grok || \
+        echo -e "    ${YELLOW}ℹ Grok Build não instalado (opcional): curl -fsSL https://x.ai/cli/install.sh | bash${NC}"
+fi
 check_dep "Codex CLI" "codex" || echo -e "    ${YELLOW}ℹ Codex é opcional (roteamento inteligente)${NC}"
 check_dep "Antigravity" "agy" || echo -e "    ${YELLOW}ℹ AGY é opcional (roteamento inteligente)${NC}"
 

@@ -42,6 +42,15 @@ if (Get-Command claude -ErrorAction SilentlyContinue) {
 } else {
     Write-Host "  x Claude Code não pôde ser instalado." -ForegroundColor Red; exit 1
 }
+# Grok Build (instalador oficial da xAI); opcional, não interrompe a instalação
+if (-not (Get-Command grok -ErrorAction SilentlyContinue) -and $env:SMART_AI_SKIP_GROK_INSTALL -ne '1') {
+    Write-Host "  -> Instalando Grok Build (instalador oficial da xAI)..." -ForegroundColor Cyan
+    try {
+        Invoke-RestMethod https://x.ai/cli/install.ps1 | Invoke-Expression
+        $env:Path = "$env:USERPROFILE\.grok\bin;$env:Path"
+    } catch { Write-Host "  i Grok Build não instalado (opcional): irm https://x.ai/cli/install.ps1 | iex" -ForegroundColor Yellow }
+}
+if (Get-Command grok -ErrorAction SilentlyContinue) { Write-Host "  ok Grok Build" -ForegroundColor Green }
 foreach ($t in @('codex', 'agy')) {
     if (Get-Command $t -ErrorAction SilentlyContinue) { Write-Host "  ok $t" -ForegroundColor Green }
     else { Write-Host "  i $t é opcional (não encontrado)" -ForegroundColor Yellow }

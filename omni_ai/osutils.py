@@ -26,7 +26,8 @@ def resolve_bin(name):
     """Full path of an executable; on Windows this finds npm's claude.cmd / codex.cmd shims."""
     if os.path.sep in name or (os.altsep and os.altsep in name):
         return name if os.path.exists(name) else None
-    return shutil.which(name)
+    # Grok Build installs to ~/.grok/bin, which the shell only adds to PATH after a restart
+    return shutil.which(name) or (shutil.which(name, path=str(Path.home() / '.grok' / 'bin')) if name == 'grok' else None)
 
 
 def group_kwargs():
