@@ -305,6 +305,60 @@ def orbit(step=0):
     return [f' {d}  {at["top"]}  {d} ', f'{at["left"]}   {star}   {at["right"]}', f' {d}  {at["bottom"]}  {d} ']
 
 
+BIG_TITLE = [
+    ' ██████  ███    ███ ███    ██ ██      █████  ██',
+    '██    ██ ████  ████ ████   ██ ██     ██   ██ ██',
+    '██    ██ ██ ████ ██ ██ ██  ██ ██     ███████ ██',
+    '██    ██ ██  ██  ██ ██  ██ ██ ██     ██   ██ ██',
+    ' ██████  ██      ██ ██   ████ ██     ██   ██ ██',
+]
+
+
+def splash(seconds=1.5):
+    """Full-screen intro on the alternate screen (like vim/less), so nothing is left in the scrollback."""
+    if not (COLOR and sys.stdout.isatty()) or os.environ.get('SMART_AI_NO_SPLASH') == '1':
+        return False
+    cols, rows = shutil.get_terminal_size((100, 30))
+    big = cols >= len(BIG_TITLE[0]) + 4 and rows >= 16
+    title_w = len(BIG_TITLE[0]) if big else len('O M N I   A I')
+    tools = dim(' · ').join(rgb(TOOL_RGB[t], t) for t in ('claude', 'codex', 'agy', 'openrouter'))
+    tools_w = len('claude · codex · agy · openrouter')
+    bar_w = min(44, cols - 8)
+    height = 3 + 1 + (len(BIG_TITLE) if big else 1) + 1 + 1 + 1 + 1
+    top = max(0, (rows - height) // 2)
+
+    def center(text, visible):
+        return ' ' * max(0, (cols - visible) // 2) + text
+
+    frames = max(1, int(seconds / 0.06))
+    sys.stdout.write('\033[?1049h\033[?25l')  # alternate screen, hide cursor
+    try:
+        for f in range(frames + 1):
+            progress = f / frames
+            phase = progress * 1.5
+            logo = orbit(f // 3)
+            lines = [center(l, 11) for l in logo] + ['']
+            if big:
+                for r, row in enumerate(BIG_TITLE):
+                    lines.append(center(''.join(rgb(hue(phase + c / 70 + r / 40), ch) if ch != ' ' else ' '
+                                                for c, ch in enumerate(row)), title_w))
+            else:
+                lines.append(center(bold(rainbow('O M N I   A I', phase)), title_w))
+            filled = round(bar_w * progress)
+            bar = ''.join(rgb(hue(phase + i / bar_w / 2), '━') for i in range(filled)) + dim('─' * (bar_w - filled))
+            lines += ['', center(tools, tools_w), '', center(bar, bar_w)]
+            with LOCK:
+                sys.stdout.write('\033[H\033[2J' + '\n' * top + '\n'.join(lines))
+                sys.stdout.flush()
+            time.sleep(seconds / frames)
+    except KeyboardInterrupt:
+        pass  # Ctrl-C just skips the intro
+    finally:
+        sys.stdout.write('\033[?25h\033[?1049l')  # cursor back, normal screen
+        sys.stdout.flush()
+    return True
+
+
 def welcome(session_id, cwd, engine, model, mode, lang_hint, animate=True):
     w = min(width() - 2, 78)
     tools = dim(' · ').join(rgb(TOOL_RGB[t], t) for t in ('claude', 'codex', 'agy', 'openrouter'))

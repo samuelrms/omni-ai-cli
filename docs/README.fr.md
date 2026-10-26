@@ -188,7 +188,8 @@ demande : Tab montre les options, vous pouvez écrire votre propre texte, et Ent
 L'écran suit le style de Claude Code et Codex : zone de saisie en bas avec barre d'état (outil,
 modèle, mode et dossier), Tab pour compléter commandes et skills, chaque action de l'IA sur une
 ligne (`● Ran …`, `● Edited …`, `● Called …`) avec la sortie repliée, réponses en markdown et un
-indicateur « Au travail… » avec la durée.
+indicateur « Au travail… » avec la durée. Au démarrage, un écran d'accueil de 1,5 s en plein écran
+(Ctrl-C le passe ; `SMART_AI_NO_SPLASH=1` le désactive).
 
 À la sortie, il affiche la commande pour revenir à la même conversation :
 

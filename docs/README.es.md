@@ -188,7 +188,8 @@ las opciones, puedes escribir tu propio texto, y Enter vacío la ejecuta sin arg
 La pantalla sigue el estilo de Claude Code y Codex: caja de entrada abajo con barra de estado
 (herramienta, modelo, modo y carpeta), Tab para completar comandos y skills, cada acción de la IA
 en una línea (`● Ran …`, `● Edited …`, `● Called …`) con la salida recogida, respuestas en markdown
-y un indicador "Trabajando…" con el tiempo.
+y un indicador "Trabajando…" con el tiempo. Al abrir, una splash de 1,5 s a pantalla completa (Ctrl-C la
+salta; `SMART_AI_NO_SPLASH=1` la desactiva).
 
 Al salir, muestra el comando para volver a la misma conversación:
 

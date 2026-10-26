@@ -710,10 +710,11 @@ def main(argv=None):
     if box.session is None:
         display(tr('welcome', id=session.id, cwd=session.data['cwd']))
     else:
-        ui.clear_screen()
         ui.set_title(f"Omni AI · {session.data.get('title') or session.id}")
+        splashed = ui.splash(1.5)
+        ui.clear_screen()
         ui.welcome(session.id, session.data['cwd'], session.data['engine'], engine_model(),
-                   session.data.get('mode', 'default'), tr('hint_line'))
+                   session.data.get('mode', 'default'), tr('hint_line'), animate=not splashed)
         if session.data['messages']:
             ui.replay(session.data['messages'])
     try:

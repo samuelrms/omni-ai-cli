@@ -187,7 +187,8 @@ shows the options, you can type your own text, and Enter alone runs it without a
 The screen follows Claude Code and Codex: an input box at the bottom with a status bar (tool,
 model, mode and folder), Tab to complete commands and skills, each AI action on one line
 (`● Ran …`, `● Edited …`, `● Called …`) with its output collapsed, markdown answers and a
-"Working…" indicator with elapsed time.
+"Working…" indicator with elapsed time. On start, a 1.5s full-screen splash (Ctrl-C skips;
+`SMART_AI_NO_SPLASH=1` turns it off).
 
 On exit, it shows the command to return to the same conversation:
 

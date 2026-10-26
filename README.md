@@ -187,7 +187,8 @@ argumentos: Tab mostra as opções, dá para escrever o próprio texto, e Enter 
 A tela segue o estilo do Claude Code e do Codex: caixa de entrada no rodapé com a barra de status
 (ferramenta, modelo, modo e pasta), Tab para completar comandos e skills, cada ação da IA numa linha
 (`● Ran …`, `● Edited …`, `● Called …`) com a saída recolhida, respostas em markdown e um indicador
-"Trabalhando…" com o tempo.
+"Trabalhando…" com o tempo. Ao abrir, uma splash de 1,5 s em tela cheia (Ctrl-C pula;
+`SMART_AI_NO_SPLASH=1` desliga).
 
 Ao sair, ele mostra o comando para voltar à mesma conversa:
 
