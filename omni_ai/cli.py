@@ -574,6 +574,10 @@ def entry():
         return main(sys.argv[1:])
     except KeyboardInterrupt:
         return 130
+    except BrokenPipeError:
+        # Output piped into something that stopped reading (e.g. `ai --usage | head`)
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        return 0
 
 
 if __name__ == '__main__':
