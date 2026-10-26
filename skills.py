@@ -78,3 +78,47 @@ def build_prompt(name, args, tool, entry):
                        else f'\n\nArgumentos: {args}'), False
     return (f'Use a skill "{name}" definida em {path}. Leia esse arquivo e siga as instruções dele.'
             + (f'\n\nPedido: {args}' if args else '')), False
+
+
+# Built-in slash commands of each CLI. They only work in the tool's own screen, so /tool:command
+# opens it; Claude accepts the command as its first input, Codex and Antigravity need it typed.
+NATIVE = {
+    'claude': [('usage', 'Uso e limites do plano'), ('cost', 'Custo e tokens da sessão'),
+               ('status', 'Conta, modelo e conexões'), ('model', 'Trocar o modelo'), ('mcp', 'Servidores MCP'),
+               ('agents', 'Subagentes'), ('memory', 'Editar CLAUDE.md'), ('permissions', 'Permissões de ferramentas'),
+               ('config', 'Configurações'), ('doctor', 'Diagnóstico da instalação'), ('login', 'Entrar em outra conta'),
+               ('review', 'Revisar um PR'), ('init', 'Criar CLAUDE.md do projeto')],
+    'codex': [('status', 'Modelo, limites e uso'), ('model', 'Trocar modelo e esforço'), ('mcp', 'Servidores MCP'),
+              ('approvals', 'Política de aprovação'), ('diff', 'Diferenças do git'), ('review', 'Revisar mudanças'),
+              ('init', 'Criar AGENTS.md do projeto'), ('logout', 'Sair da conta')],
+    'agy': [('usage', 'Uso e cota'), ('permissions', 'Permissões'), ('clear', 'Limpar conversa')],
+}
+
+
+def native_command(name):
+    """'/codex:status' -> ('codex', 'status') when it's a known built-in; otherwise None."""
+    tool, sep, command = name.partition(':')
+    if sep and tool in NATIVE and any(command == c for c, _ in NATIVE[tool]):
+        return tool, command
+    return None
+
+
+def argument_hint(path):
+    try:
+        text = Path(path).read_text(errors='replace')
+    except OSError:
+        return ''
+    match = re.search(r'^argument-hint:[ \t]*(.+)$', text, re.M)
+    return match.group(1).strip().strip('"\'') if match else ''
+
+
+def hint_options(hint):
+    """Concrete choices offered in a hint like "[pr-number | --branch]" or "<a|b>": alternatives and flags."""
+    options = []
+    for group in re.findall(r'[\[<(]([^\]>)]*)[\]>)]', hint):
+        parts = [p.strip() for p in group.split('|')]
+        if len(parts) > 1:
+            options += parts
+        options += [p for p in parts if p.startswith('-')]
+    options += re.findall(r'(?<![\w-])(--?[a-z][\w-]*)', hint)
+    return list(dict.fromkeys(o for o in options if o))

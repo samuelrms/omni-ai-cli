@@ -85,6 +85,8 @@ T = {
     'help': {
         'pt': """Escreva normalmente e tecle Enter. Setas: histórico de linhas. Ctrl-C: cancela resposta / sai. Ctrl-D: sai.
 /tool auto|claude|codex|agy|openrouter   Escolher ferramenta (auto = decide sozinho)
+/usage   /limits                        Uso e limites de todas as ferramentas e contas
+/claude:usage  /codex:status  /agy:usage  Comandos nativos de cada ferramenta (Tab lista todos)
 /model [chave valor]                     Ver/alterar modelos (claude, codex, codex_effort, agy, openrouter)
 /account [list|add|login|sync|remove] NOME    Contas Claude (login dentro do ai)
 /key [claude|codex|agy|openrouter|remove X] Chaves de API (reserva da assinatura)
@@ -100,6 +102,8 @@ T = {
 /exit                                    Sair""",
         'en': """Type normally and press Enter. Arrows: line history. Ctrl-C: cancel answer / exit. Ctrl-D: exit.
 /tool auto|claude|codex|agy|openrouter   Pick tool (auto = decides for you)
+/usage   /limits                        Usage and limits of every tool and account
+/claude:usage  /codex:status  /agy:usage  Native commands of each tool (Tab lists them all)
 /model [key value]                       Show/change models (claude, codex, codex_effort, agy, openrouter)
 /account [list|add|login|sync|remove] NAME    Claude accounts (login inside ai)
 /key [claude|codex|agy|openrouter|remove X] API keys (subscription fallback)
@@ -115,6 +119,8 @@ T = {
 /exit                                    Exit""",
         'es': """Escribe normalmente y pulsa Enter. Flechas: historial. Ctrl-C: cancela respuesta / sale. Ctrl-D: sale.
 /tool auto|claude|codex|agy|openrouter   Elegir herramienta (auto = decide sola)
+/usage   /limits                        Uso y límites de todas las herramientas y cuentas
+/claude:usage  /codex:status  /agy:usage  Comandos nativos de cada herramienta (Tab los lista)
 /model [clave valor]                     Ver/cambiar modelos (claude, codex, codex_effort, agy, openrouter)
 /account [list|add|login|sync|remove] NOMBRE  Cuentas Claude (login dentro de ai)
 /key [claude|codex|agy|openrouter|remove X] Claves de API (respaldo de la suscripción)
@@ -130,6 +136,8 @@ T = {
 /exit                                    Salir""",
         'fr': """Tapez normalement puis Entrée. Flèches : historique. Ctrl-C : annule la réponse / quitte. Ctrl-D : quitte.
 /tool auto|claude|codex|agy|openrouter   Choisir l'outil (auto = choix automatique)
+/usage   /limits                        Usage et limites de tous les outils et comptes
+/claude:usage  /codex:status  /agy:usage  Commandes natives de chaque outil (Tab les liste)
 /model [clé valeur]                      Voir/changer les modèles (claude, codex, codex_effort, agy, openrouter)
 /account [list|add|login|sync|remove] NOM     Comptes Claude (connexion dans ai)
 /key [claude|codex|agy|openrouter|remove X] Clés API (secours de l'abonnement)
@@ -483,7 +491,7 @@ def parse_parallel(text):
 
 
 
-TOOL_COMMANDS = {'/model': ['--model'], '/account': ['--account'], '/key': ['--key'],
+TOOL_COMMANDS = {'/usage': ['--usage'], '/limits': ['--usage'], '/model': ['--model'], '/account': ['--account'], '/key': ['--key'],
                  '/status': ['--status'], '/sync': ['--sync'], '/update': ['--update'], '/reset': ['--reset']}
 
 
@@ -495,8 +503,41 @@ def run_tool(args):
         pass
 
 
-BUILTIN = ['/tool', '/model', '/account', '/key', '/status', '/reset', '/sync', '/update', '/mode', '/lang',
+BUILTIN = ['/usage', '/tool', '/model', '/account', '/key', '/status', '/reset', '/sync', '/update', '/mode', '/lang',
            '/skills', '/history', '/sent', '/trace', '/sessions', '/resume', '/new', '/parallel', '/help', '/exit']
+
+
+NATIVE_HINT = {
+    'codex': {'pt': 'Abrindo o Codex. Digite /{c} e, para voltar ao Omni, saia com Ctrl-C duas vezes.',
+              'en': 'Opening Codex. Type /{c}; to come back to Omni, press Ctrl-C twice.',
+              'es': 'Abriendo Codex. Escribe /{c}; para volver a Omni, Ctrl-C dos veces.',
+              'fr': 'Ouverture de Codex. Tapez /{c} ; pour revenir à Omni, Ctrl-C deux fois.'},
+    'agy': {'pt': 'Abrindo o Antigravity. Digite /{c} e, para voltar ao Omni, saia com Ctrl-C.',
+            'en': 'Opening Antigravity. Type /{c}; to come back to Omni, press Ctrl-C.',
+            'es': 'Abriendo Antigravity. Escribe /{c}; para volver a Omni, Ctrl-C.',
+            'fr': "Ouverture d'Antigravity. Tapez /{c} ; pour revenir à Omni, Ctrl-C."},
+    'claude': {'pt': 'Abrindo o Claude com /{c}. Para voltar ao Omni, saia com Ctrl-C duas vezes.',
+               'en': 'Opening Claude with /{c}. To come back to Omni, press Ctrl-C twice.',
+               'es': 'Abriendo Claude con /{c}. Para volver a Omni, Ctrl-C dos veces.',
+               'fr': 'Ouverture de Claude avec /{c}. Pour revenir à Omni, Ctrl-C deux fois.'},
+}
+
+
+def run_native(tool, command, cwd):
+    """Built-in commands live in each tool's own screen: open it attached to this terminal, then come back."""
+    from platform_utils import resolve_bin
+    binary = resolve_bin(os.environ.get(tool.upper() + '_BIN', tool))
+    if not binary:
+        raise ValueError(f'{tool} não está instalado')
+    ui.out(ui.dim(NATIVE_HINT[tool][LANG[0]].format(c=command)))
+    # Claude runs a slash command given as its first input; Codex and Antigravity would send it to the model
+    argv = [binary, '/' + command] if tool == 'claude' else [binary]
+    env = {k: v for k, v in os.environ.items() if k != 'CLAUDE_CONFIG_DIR'}
+    try:
+        subprocess.call(argv, cwd=cwd, env=env)
+    except KeyboardInterrupt:
+        pass
+    ui.out(ui.dim('↩ Omni AI'))
 
 
 def setup_completion(cwd):
@@ -555,9 +596,13 @@ def main(argv=None):
             *usage, meta = re.split(r'\s{2,}', line.strip())
             for name in re.findall(r'(/[a-z]+)', ' '.join(usage)):
                 described.setdefault(name, meta)
-        listed = [(name, described.get(name, '')) for name in BUILTIN]
-        listed += [('/' + name, skills.description(next(iter(entry.values()))[1]))
-                   for name, entry in sorted(skills.discover(session.data['cwd']).items())]
+        # Every entry ends with who owns it: omni (this chat), claude, codex or agy
+        listed = [(name, f"{described.get(name, '')} · omni") for name in BUILTIN]
+        for name, entry in sorted(skills.discover(session.data['cwd']).items()):
+            kind, path, scope = next(iter(entry.values()))
+            listed.append(('/' + name, f"{skills.description(path)} · {'/'.join(entry)} ({scope})"))
+        for tool, items in skills.NATIVE.items():
+            listed += [(f'/{tool}:{command}', f'{meta} · {tool}') for command, meta in items]
         return listed
 
     box = ui.InputBox(Path(session_dir()).parent / 'input_history', commands, status, tr('placeholder'), tr('hints'))
@@ -644,11 +689,19 @@ def main(argv=None):
                     for name, entry in sorted(catalog.items()):
                         kind, path, scope = next(iter(entry.values()))
                         display(f"/{name:<28} {', '.join(entry):<18} {scope:<8} {skills.description(path)[:70]}")
+                elif skills.native_command(command[1:]):
+                    run_native(*skills.native_command(command[1:]), session.data['cwd'])
                 elif line.startswith('/') and '\n' not in command:
                     entry = skills.discover(session.data['cwd']).get(command[1:])
                     if not entry:
                         raise ValueError(tr('unknown'))
                     tool = skills.pick_tool(entry, session.data['engine'])
+                    hint = skills.argument_hint(entry[tool][1])
+                    if not argument and hint and box.session:
+                        try:
+                            argument = box.ask_args(command, hint, skills.hint_options(hint)).strip()
+                        except KeyboardInterrupt:
+                            continue
                     prompt, raw = skills.build_prompt(command[1:], argument, tool, entry)
                     display(tr('skill_run', name=command[1:], tool=tool))
                     execute(session, [(tool, prompt)], raw=raw)

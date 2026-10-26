@@ -5,6 +5,7 @@
   ai "question"                       automatic routing
   ai --claude|--codex|--agy|--openrouter "question"
   ai --mode plan|edits|auto|yolo "question"
+  ai --usage                         Uso e limites de todas as ferramentas e contas
   ai --status | --reset | --log | --classify "prompt"
   ai --model ... | --account ... | --key ... | --sync ...
 """
@@ -176,11 +177,29 @@ def run_claude(profile, prompt):
         if backup is not None:
             main_creds.write_bytes(backup)
     if hit_limit(output, code):
+        remember_limit(f'claude:{profile}', output)
         mark_rate_limited(profile)
         log_usage('claude', profile, 'rate_limited')
         return RATE_LIMITED
+    if code == 0:
+        remember_limit(f'claude:{profile}', '')
     log_usage('claude', profile, 'success' if code == 0 else f'error:{code}')
     return code
+
+
+LIMIT_MESSAGE = re.compile(r"[^\n]*(?:hit your (?:usage|session) limit|quota reached|rate limit|try again at|resets? (?:at|in))[^\n]*", re.I)
+
+
+def remember_limit(key, output):
+    """Keep the tool's own words about its limit (e.g. 'resets 7:40pm') for /usage."""
+    match = LIMIT_MESSAGE.search(re.sub(r'\\u2019', "'", output))
+    data = state()
+    limits = data.setdefault('limits', {})
+    if match:
+        limits[key] = {'text': ' '.join(match.group(0).split())[:220], 'at': int(time.time())}
+    else:
+        limits.pop(key, None)
+    config_tool.write_json(STATE_FILE, data)
 
 
 def hit_limit(output, code):
@@ -209,11 +228,13 @@ def hit_limit(output, code):
 
 def run_with_key_retry(tool, argv, env_var, label):
     """Subscription first; if it fails and an API key is saved, try once more with the key."""
-    code, _ = run(argv)
+    code, output = run(argv)
+    remember_limit(tool, output if code != 0 else '')
     key = config_tool.stored_key(tool)[0]
     if code != 0 and not os.environ.get(env_var) and key:
         say(f'{YELLOW}🔑 {label}: tentando com chave de API{NC}')
-        code, _ = run(argv, dict(os.environ, **{env_var: key}))
+        code, output = run(argv, dict(os.environ, **{env_var: key}))
+        remember_limit(f'{tool}:api-key', output if code != 0 else '')
     log_usage(tool, 'N/A', 'success' if code == 0 else 'error')
     return code
 
@@ -378,6 +399,53 @@ def show_status():
     say()
 
 
+def ago(seconds):
+    seconds = int(seconds)
+    return f'{seconds // 3600}h{seconds % 3600 // 60:02d}m' if seconds >= 3600 else f'{seconds // 60}m'
+
+
+def show_usage():
+    """One screen for every tool and account: available, limited (with the tool's own reset text), or not set up."""
+    limits = state().get('limits', {})
+    today = time.strftime('%Y-%m-%d')
+    lines = LOG_FILE.read_text(errors='replace').splitlines() if LOG_FILE.is_file() else []
+
+    def calls(tool):
+        return sum(1 for l in lines if l.startswith('[' + today) and f'tool={tool} ' in l)
+
+    def limit_line(key):
+        item = limits.get(key)
+        return f"{YELLOW}limitado{NC} {DIM}· {item['text']} (visto há {ago(time.time() - item['at'])}){NC}" if item else ''
+
+    say(f'{BOLD}Uso e limites{NC}  {DIM}hoje: chamadas por ferramenta · limites como cada ferramenta informou{NC}\n')
+    say(f'{BOLD}Claude{NC}  {DIM}{calls("claude")} chamadas hoje{NC}')
+    for name, conf in config_tool.ordered(config_tool.profiles()):
+        left = cooldown_left(name)
+        if not conf.get('enabled', True):
+            status = f'{DIM}desativada{NC}'
+        elif config_tool.logged_in(conf) is False:
+            status = f'{RED}sem login{NC} {DIM}· /account login {name}{NC}'
+        elif left:
+            status = limit_line(f'claude:{name}') or f'{YELLOW}limitado{NC}'
+            status += f' {DIM}· o Omni tenta de novo em {left // 60}m{NC}'
+        else:
+            status = f'{GREEN}disponível{NC}'
+        say(f'  {name:<12} {status}')
+    if config_tool.stored_key('claude')[0]:
+        say(f"  {'chave API':<12} " + (limit_line('claude:api-key') or f'{GREEN}configurada{NC}'))
+    for tool, label in (('codex', 'Codex'), ('agy', 'Antigravity')):
+        say(f'\n{BOLD}{label}{NC}  {DIM}{calls(tool)} chamadas hoje{NC}')
+        if not installed(tool):
+            say(f'  {RED}não instalado{NC}')
+            continue
+        say('  assinatura   ' + (limit_line(tool) or f'{GREEN}sem limite registrado{NC}'))
+        if config_tool.stored_key(tool)[0]:
+            say('  chave API    ' + (limit_line(f'{tool}:api-key') or f'{GREEN}configurada{NC}'))
+    say(f'\n{BOLD}OpenRouter{NC}  {DIM}{calls("openrouter")} chamadas hoje{NC}')
+    say('  ' + (f'{GREEN}chave configurada{NC}' if config_tool.stored_key('openrouter')[0] else f'{DIM}sem chave · /key openrouter{NC}'))
+    say(f'\n{DIM}Detalhes oficiais de cada plano: /claude:usage · /codex:status · /agy:usage{NC}')
+
+
 def reset_cooldowns():
     data = state()
     for key in list(data):
@@ -423,6 +491,7 @@ USAGE = f'''{BOLD}Uso:{NC}
   ai --account [list|add|login|sync|remove] NOME
   ai --key [claude|codex|agy|openrouter|remove X]
   ai --sync [--dry-run]              MCPs e skills entre Claude, Codex e agy
+  ai --usage                         Uso e limites de todas as ferramentas e contas
   ai --status | --reset | --log | --classify "prompt"
   ai --update                        Atualizar para a versão mais nova
 '''
@@ -473,6 +542,9 @@ def main(argv):
             i += 1
         elif arg in ('--status', '-s'):
             show_status()
+            return 0
+        elif arg in ('--usage', '--limits'):
+            show_usage()
             return 0
         elif arg in ('--reset', '-r'):
             reset_cooldowns()

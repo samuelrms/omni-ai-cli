@@ -63,3 +63,15 @@ class SkillTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class NativeAndHintTests(unittest.TestCase):
+    def test_native_commands_are_namespaced_by_owner(self):
+        self.assertEqual(skills.native_command('claude:usage'), ('claude', 'usage'))
+        self.assertEqual(skills.native_command('codex:status'), ('codex', 'status'))
+        self.assertIsNone(skills.native_command('codex:unknown'))
+        self.assertIsNone(skills.native_command('usage'))
+
+    def test_hint_options(self):
+        self.assertEqual(skills.hint_options('[pr-number | --branch]'), ['pr-number', '--branch'])
+        self.assertEqual(skills.hint_options('<codigo> <o que foi feito>'), [])

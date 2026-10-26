@@ -43,3 +43,14 @@ class LimitDetectionTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class RememberLimitTests(unittest.TestCase):
+    def test_keeps_tool_words_and_clears_on_success(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as d, patch.object(smart_ai, 'STATE_FILE', Path(d) / 's.json'):
+            smart_ai.remember_limit('codex', 'x\n■ You’ve hit your usage limit. try again at 9:20 PM.\ny')
+            self.assertIn('9:20 PM', smart_ai.state()['limits']['codex']['text'])
+            smart_ai.remember_limit('codex', '')
+            self.assertNotIn('codex', smart_ai.state()['limits'])

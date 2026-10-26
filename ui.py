@@ -225,6 +225,14 @@ class InputBox:
                                    'completion-menu.completion.current': 'bg:#444444 #ffffff bold',
                                    'completion-menu.meta.completion': 'bg:#262626 #808080'}))
 
+    def ask_args(self, command, hint, options):
+        """Second prompt for a skill's arguments: Tab offers its options, any text is accepted, Enter alone skips."""
+        from prompt_toolkit.completion import WordCompleter
+        message = self.HTML(f'  <arrow>{escape(command)}</arrow> ')
+        return self.session.prompt(message, completer=WordCompleter(options, sentence=True),
+                                   placeholder=self.HTML(f'<placeholder>{escape(hint)} · Tab mostra opções · Enter sem nada pula</placeholder>'),
+                                   bottom_toolbar=None)
+
     def ask(self):
         """Returns the typed text; raises EOFError (Ctrl-D) or KeyboardInterrupt (Ctrl-C)."""
         if not self.session:
