@@ -242,7 +242,7 @@ class Session:
                 + json.dumps(chosen, ensure_ascii=False) + '\n\n' + tr('reply_in') + '\nPedido atual:\n' + prompt)
 
 
-NOISE = re.compile(r'^[─━-]{5,}$|^(🤖|📦|🚀|🌐|📊|→ Credenciais)|Reading additional input from stdin|'
+NOISE = re.compile(r'^[─━-]{5,}$|^(🤖|📦|🚀|🌐|📊|→ Credenciais)|Reading additional input from stdin|^AGY_ERROR: |'
                    r'^\d{4}-\d\d-\d\dT[\d:.]+Z\s+(ERROR|WARN|INFO)|^\s*$')
 
 

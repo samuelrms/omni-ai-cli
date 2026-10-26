@@ -154,18 +154,23 @@ def logged_in(profile):
     config_dir = profile.get('config_dir')
     env = dict(os.environ)
     if config_dir:
-        env['CLAUDE_CONFIG_DIR'] = str(Path(config_dir).expanduser())
+        folder = Path(config_dir).expanduser()
+        if not folder.is_dir():
+            return False
+        env['CLAUDE_CONFIG_DIR'] = str(folder)
     elif profile.get('credentials_file') and not Path(profile['credentials_file']).expanduser().exists():
         return False
     try:
-        result = subprocess.run([resolve_bin(os.environ.get('CLAUDE_BIN', 'claude')) or 'claude', 'auth', 'status'], env=env,
-                                capture_output=True, text=True, timeout=20)
+        result = subprocess.run([resolve_bin(os.environ.get('CLAUDE_BIN', 'claude')) or 'claude', 'auth', 'status', '--json'],
+                                env=env, capture_output=True, text=True, timeout=20)
     except (OSError, subprocess.TimeoutExpired):
         return None
-    return result.returncode == 0 and 'not logged' not in (result.stdout + result.stderr).lower()
-
-
-SHARED = ('skills', 'plugins', 'agents', 'commands', 'hooks', 'CLAUDE.md', 'settings.json')
+    try:
+        status = json.loads(result.stdout)
+    except ValueError:
+        return result.returncode == 0 and 'not logged' not in (result.stdout + result.stderr).lower()
+    # "authMethod": "none" means no login, even though the command itself succeeds
+    return bool(status.get('loggedIn', status.get('authMethod') not in (None, '', 'none')))
 
 
 def share_claude_setup(config_dir):
@@ -260,6 +265,10 @@ def cmd_account(args):
         write_json(profiles_path(), data)
         folder = profile.get('config_dir')
         if folder and Path(folder).expanduser().is_dir():
+            # Log out first: on macOS the login lives in the Keychain, not only in the folder
+            subprocess.run([resolve_bin(os.environ.get('CLAUDE_BIN', 'claude')) or 'claude', 'auth', 'logout'],
+                           env=dict(os.environ, CLAUDE_CONFIG_DIR=str(Path(folder).expanduser())),
+                           capture_output=True, timeout=30)
             shutil.rmtree(Path(folder).expanduser())
         print(f'✓ Conta "{name}" removida.')
     else:

@@ -149,7 +149,11 @@ class View:
         self._p(dim('  ' + text))
 
     def error(self, text):
-        self._p(red('  ✗ ' + short(text, width() - 6)))
+        line = short(text, width() - 6)
+        if line == getattr(self, 'last_error', None):
+            return  # tools often report the same failure twice (item + turn)
+        self.last_error = line
+        self._p(red('  ✗ ' + line))
 
 
 def clear_screen():

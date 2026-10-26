@@ -25,8 +25,9 @@ STATE_FILE = Path(os.environ.get('SMART_AI_STATE', '~/.cache/smart-ai/state.json
 LOG_FILE = Path(os.environ.get('SMART_AI_LOG', '~/.cache/smart-ai/usage.log')).expanduser()
 BINS = {tool: os.environ.get(tool.upper() + '_BIN', tool) for tool in ('claude', 'codex', 'agy')}
 MODES = ('default', 'plan', 'edits', 'auto', 'yolo')
-RATE_LIMIT = re.compile(r'rate.?limit|too many requests|429|usage limit|exceeded.*limit|out of.*messages', re.I)
 RATE_LIMITED = 2
+NOT_READY = 3  # account without login: skip it, don't stop the fallback
+LIMIT_TEXT = re.compile(r'rate.?limit|too many requests|usage limit|session limit|limit reached|quota|resets? (at|in)|out of .*messages', re.I)
 
 COLOR = sys.stdout.isatty() and not os.environ.get('NO_COLOR')
 RED, GREEN, YELLOW, BLUE, CYAN, MAGENTA, BOLD, DIM, NC = (
@@ -148,7 +149,7 @@ def run_claude(profile, prompt):
             if not folder.is_dir():
                 say(f"{RED}✗ Conta '{profile}' sem login.{NC}")
                 say(f'{DIM}  Execute: ai --account login {profile}{NC}')
-                return 1
+                return NOT_READY
             env['CLAUDE_CONFIG_DIR'] = str(folder)
         elif conf.get('credentials_file'):
             # Legacy profiles: swap the credentials file for this call only
@@ -157,7 +158,7 @@ def run_claude(profile, prompt):
                 if not creds.is_file():
                     say(f'{RED}✗ Arquivo de credenciais não encontrado: {creds}{NC}')
                     say(f'{DIM}  Execute: ai --account add {profile}{NC}')
-                    return 1
+                    return NOT_READY
                 backup = main_creds.read_bytes() if main_creds.exists() else b''
                 main_creds.write_bytes(creds.read_bytes())
                 say(f'{DIM}  → Credenciais trocadas para perfil: {profile}{NC}')
@@ -174,12 +175,36 @@ def run_claude(profile, prompt):
     finally:
         if backup is not None:
             main_creds.write_bytes(backup)
-    if RATE_LIMIT.search(output) or (code == 1 and re.search(r'error|limit|quota', output, re.I)):
+    if hit_limit(output, code):
         mark_rate_limited(profile)
         log_usage('claude', profile, 'rate_limited')
         return RATE_LIMITED
     log_usage('claude', profile, 'success' if code == 0 else f'error:{code}')
     return code
+
+
+def hit_limit(output, code):
+    """Only Claude's own verdict counts: the final error result, a rejected rate-limit event, or its
+    plain error lines. Tool output (files, PR text, command logs) is ignored, so a review that mentions
+    "rate limit" can't put an account in cooldown."""
+    verdicts = []
+    for line in output.splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            verdicts.append(line)  # Claude's stderr/plain error lines
+            continue
+        if not isinstance(event, dict):
+            continue
+        if event.get('type') == 'result' and event.get('is_error'):
+            verdicts.append(str(event.get('result', '')))
+        elif event.get('type') == 'rate_limit_event' and \
+                (event.get('rate_limit_info') or {}).get('status') in ('rejected', 'exceeded'):
+            return True
+    if os.environ.get('SMART_AI_EVENTS') != '1':
+        # Text mode: only the tail of a failed run is Claude talking about itself
+        verdicts = output.splitlines()[-5:] if code != 0 else []
+    return any(LIMIT_TEXT.search(v) for v in verdicts)
 
 
 def run_with_key_retry(tool, argv, env_var, label):
@@ -269,9 +294,9 @@ def claude_with_fallback(prompt):
         result = run_claude(profile, prompt)
         if result == 0:
             return 0
-        if result != RATE_LIMITED:
+        if result not in (RATE_LIMITED, NOT_READY):
             return result
-        say(f'\n{YELLOW}🔄 Tentando próximo perfil...{NC}\n')
+        say(f'{YELLOW}🔄 Tentando próximo perfil...{NC}')
     if config_tool.stored_key('claude')[0] and not cooldown_left('api-key'):
         say(f'{YELLOW}🔑 Claude: tentando com chave de API{NC}')
         result = run_claude('api-key', prompt)
