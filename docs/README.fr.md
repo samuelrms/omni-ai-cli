@@ -461,6 +461,57 @@ SMART_AI_SIM_URL=http://127.0.0.1:4901/openrouter python3 -m unittest discover -
 
 ---
 
+## Releases et branches
+
+La publication sur npm est automatique, faite par GitHub Actions avec semantic-release.
+La version découle des messages de commit (Conventional Commits) — personne ne modifie
+`version` dans `package.json` à la main.
+
+| Branche | Publie comme | Exemple |
+|---|---|---|
+| `main` | `latest` | `1.4.0` |
+| `next` | `next` (release candidate) | `1.5.0-rc.1` |
+| `beta` | `beta` | `2.0.0-beta.1` |
+| autres / PR | rien, CI seulement | — |
+
+| Commit | Effet sur la version |
+|---|---|
+| `fix: ...` | patch (`1.4.0` → `1.4.1`) |
+| `feat: ...` | minor (`1.4.0` → `1.5.0`) |
+| `feat!: ...` ou `BREAKING CHANGE:` dans le corps | major (`1.4.0` → `2.0.0`) |
+| `docs:`, `ci:`, `chore:`, `test:`, `refactor:` | pas de release |
+
+Utilisez le squash merge : le titre de la PR devient le commit, et le workflow `PR title`
+bloque les titres hors convention.
+
+```mermaid
+flowchart TD
+    A[PR ouverte] --> B[CI : tests Python 3.11-3.13 sur Linux et macOS<br/>+ npm pack + launcher]
+    A --> C[PR title : Conventional Commits ?]
+    B -->|échec| X[Merge bloqué]
+    C -->|invalide| X
+    B -->|ok| D[Squash merge dans main / next / beta]
+    C -->|ok| D
+    D --> E[Release : la CI tourne à nouveau]
+    E -->|échec| Y[Rien n'est publié]
+    E -->|ok| F{semantic-release :<br/>feat/fix/breaking<br/>depuis le dernier tag ?}
+    F -->|non| Z[Pas de release]
+    F -->|oui| G[Calcule la version et crée le tag vX.Y.Z]
+    G --> H[npm publish avec provenance<br/>sur le dist-tag de la branche]
+    G --> I[GitHub Release avec notes]
+```
+
+Configuration unique sur GitHub :
+
+1. **Settings → Secrets and variables → Actions** : créer `NPM_TOKEN` (jeton *Automation*
+   ou *Granular* npmjs.com avec droit de publish).
+2. **Settings → Branches** : protéger `main` (et `next`/`beta` si utilisées) en exigeant
+   une PR et les checks `Tests (...)`, `npm package` et `conventional`.
+3. **Settings → General → Pull Requests** : n'autoriser que le *squash merging* et cocher
+   *Default to pull request title*.
+
+---
+
 ## Dépannage
 
 | Problème | Solution |

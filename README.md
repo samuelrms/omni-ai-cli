@@ -455,6 +455,57 @@ SMART_AI_SIM_URL=http://127.0.0.1:4901/openrouter python3 -m unittest discover -
 
 ---
 
+## Releases e branches
+
+Publicação no npm é automática, feita pelo GitHub Actions com semantic-release. A versão
+sai das mensagens de commit (Conventional Commits) — ninguém edita `version` no
+`package.json` à mão.
+
+| Branch | Publica como | Exemplo |
+|---|---|---|
+| `main` | `latest` | `1.4.0` |
+| `next` | `next` (release candidate) | `1.5.0-rc.1` |
+| `beta` | `beta` | `2.0.0-beta.1` |
+| outras / PR | nada, só CI | — |
+
+| Commit | Efeito na versão |
+|---|---|
+| `fix: ...` | patch (`1.4.0` → `1.4.1`) |
+| `feat: ...` | minor (`1.4.0` → `1.5.0`) |
+| `feat!: ...` ou `BREAKING CHANGE:` no corpo | major (`1.4.0` → `2.0.0`) |
+| `docs:`, `ci:`, `chore:`, `test:`, `refactor:` | sem release |
+
+Use squash merge: o título do PR vira o commit, e o workflow `PR title` bloqueia título
+fora do padrão.
+
+```mermaid
+flowchart TD
+    A[PR aberto] --> B[CI: testes Python 3.11-3.13 em Linux e macOS<br/>+ npm pack + launcher]
+    A --> C[PR title: Conventional Commits?]
+    B -->|falhou| X[Merge bloqueado]
+    C -->|fora do padrão| X
+    B -->|ok| D[Squash merge em main / next / beta]
+    C -->|ok| D
+    D --> E[Release: CI roda de novo]
+    E -->|falhou| Y[Nada é publicado]
+    E -->|ok| F{semantic-release:<br/>há feat/fix/breaking<br/>desde a última tag?}
+    F -->|não| Z[Sem release]
+    F -->|sim| G[Calcula versão e cria tag vX.Y.Z]
+    G --> H[npm publish com provenance<br/>no dist-tag da branch]
+    G --> I[GitHub Release com notas]
+```
+
+Configuração única no GitHub:
+
+1. **Settings → Secrets and variables → Actions**: criar `NPM_TOKEN` (token *Automation*
+   ou *Granular* com permissão de publish no npmjs.com).
+2. **Settings → Branches**: proteger `main` (e `next`/`beta`, se usar) exigindo PR e os
+   checks `Tests (...)`, `npm package` e `conventional`.
+3. **Settings → General → Pull Requests**: deixar só *Allow squash merging* e marcar
+   *Default to pull request title*.
+
+---
+
 ## Troubleshooting
 
 | Problema | Solução |

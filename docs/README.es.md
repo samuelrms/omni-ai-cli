@@ -456,6 +456,57 @@ SMART_AI_SIM_URL=http://127.0.0.1:4901/openrouter python3 -m unittest discover -
 
 ---
 
+## Releases y ramas
+
+La publicación en npm es automática, hecha por GitHub Actions con semantic-release. La
+versión sale de los mensajes de commit (Conventional Commits) — nadie edita `version` en
+`package.json` a mano.
+
+| Rama | Publica como | Ejemplo |
+|---|---|---|
+| `main` | `latest` | `1.4.0` |
+| `next` | `next` (release candidate) | `1.5.0-rc.1` |
+| `beta` | `beta` | `2.0.0-beta.1` |
+| otras / PR | nada, solo CI | — |
+
+| Commit | Efecto en la versión |
+|---|---|
+| `fix: ...` | patch (`1.4.0` → `1.4.1`) |
+| `feat: ...` | minor (`1.4.0` → `1.5.0`) |
+| `feat!: ...` o `BREAKING CHANGE:` en el cuerpo | major (`1.4.0` → `2.0.0`) |
+| `docs:`, `ci:`, `chore:`, `test:`, `refactor:` | sin release |
+
+Usa squash merge: el título del PR se vuelve el commit, y el workflow `PR title` bloquea
+títulos fuera del estándar.
+
+```mermaid
+flowchart TD
+    A[PR abierto] --> B[CI: tests Python 3.11-3.13 en Linux y macOS<br/>+ npm pack + launcher]
+    A --> C[PR title: ¿Conventional Commits?]
+    B -->|falló| X[Merge bloqueado]
+    C -->|inválido| X
+    B -->|ok| D[Squash merge en main / next / beta]
+    C -->|ok| D
+    D --> E[Release: CI corre de nuevo]
+    E -->|falló| Y[No se publica nada]
+    E -->|ok| F{semantic-release:<br/>¿hay feat/fix/breaking<br/>desde la última tag?}
+    F -->|no| Z[Sin release]
+    F -->|sí| G[Calcula versión y crea tag vX.Y.Z]
+    G --> H[npm publish con provenance<br/>en el dist-tag de la rama]
+    G --> I[GitHub Release con notas]
+```
+
+Configuración única en GitHub:
+
+1. **Settings → Secrets and variables → Actions**: crear `NPM_TOKEN` (token *Automation*
+   o *Granular* de npmjs.com con permiso de publish).
+2. **Settings → Branches**: proteger `main` (y `next`/`beta` si se usan) exigiendo PR y
+   los checks `Tests (...)`, `npm package` y `conventional`.
+3. **Settings → General → Pull Requests**: permitir solo *squash merging* y marcar
+   *Default to pull request title*.
+
+---
+
 ## Troubleshooting
 
 | Problema | Solución |
