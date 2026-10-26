@@ -4,6 +4,7 @@
   "description": "One chat for Claude Code, Codex, Antigravity and OpenRouter, with automatic routing, account fallback, API keys, permission modes and MCP/skill sync.",
   "bin": {
     "ai": "bin/ai.js",
+    "omni-ai": "bin/ai.js",
     "smart-ai": "bin/ai.js"
   },
   "files": [
@@ -28,13 +29,22 @@
   "engines": {
     "node": ">=18"
   },
-  "keywords": ["ai", "cli", "claude", "codex", "antigravity", "openrouter", "mcp", "router"],
+  "keywords": [
+    "ai",
+    "cli",
+    "claude",
+    "codex",
+    "antigravity",
+    "openrouter",
+    "mcp",
+    "router"
+  ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/samuelrms/smart-ai-cli.git"
+    "url": "git+https://github.com/samuelrms/omni-ai-cli.git"
   },
-  "homepage": "https://github.com/samuelrms/smart-ai-cli#readme",
-  "bugs": "https://github.com/samuelrms/smart-ai-cli/issues",
+  "homepage": "https://github.com/samuelrms/omni-ai-cli#readme",
+  "bugs": "https://github.com/samuelrms/omni-ai-cli/issues",
   "author": "samuelrms",
   "license": "MIT"
 }

@@ -1,4 +1,4 @@
-# Smart AI CLI
+# Omni AI CLI
 
 ![npm](https://img.shields.io/badge/npm-em%20breve-1A1714)
 [![License: MIT](https://img.shields.io/badge/license-MIT-C4552F.svg)](LICENSE)
@@ -114,13 +114,13 @@ Um comando instala tudo e, rodado de novo, atualiza. Suas contas, chaves e model
 **macOS e Linux**:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/samuelrms/smart-ai-cli/main/get.sh | bash
+curl -fsSL https://raw.githubusercontent.com/samuelrms/omni-ai-cli/main/get.sh | bash
 ```
 
 **Windows** (PowerShell):
 
 ```powershell
-irm https://raw.githubusercontent.com/samuelrms/smart-ai-cli/main/get.ps1 | iex
+irm https://raw.githubusercontent.com/samuelrms/omni-ai-cli/main/get.ps1 | iex
 ```
 
 **Em breve no npm, yarn, pnpm e bun.** O pacote `omni-ai-cli` está pronto e sai assim que a publicação for liberada:
@@ -139,8 +139,8 @@ Para atualizar depois: `ai --update` (ou `/update` no chat).
 Pelo código-fonte, para desenvolver:
 
 ```bash
-git clone https://github.com/samuelrms/smart-ai-cli ~/dev/smart-ai-cli
-cd ~/dev/smart-ai-cli && ./install.sh        # Windows: powershell -File install.ps1
+git clone https://github.com/samuelrms/omni-ai-cli ~/dev/omni-ai-cli
+cd ~/dev/omni-ai-cli && ./install.sh        # Windows: powershell -File install.ps1
 ```
 
 O instalador:
@@ -150,7 +150,7 @@ O instalador:
 3. cria o comando `ai` em `~/.local/bin`;
 4. mostra as contas Claude configuradas.
 
-Requisitos: nenhum além de `curl` (macOS/Linux) ou PowerShell (Windows). Se não houver Python 3.11+, o instalador baixa um Python 3.12 só para o Smart AI, sem sudo e sem mexer no Python do sistema.
+Requisitos: nenhum além de `curl` (macOS/Linux) ou PowerShell (Windows). Se não houver Python 3.11+, o instalador baixa um Python 3.12 só para o Omni AI, sem sudo e sem mexer no Python do sistema.
 Codex (`codex`) e Antigravity (`agy`) são opcionais e entram na fila de alternativas quando estão instalados.
 
 Se `~/.local/bin` não estiver no `PATH`, adicione ao `~/.zshrc`:
@@ -383,7 +383,7 @@ ai --log                               # últimas chamadas
 ## Estrutura do projeto
 
 ```text
-smart-ai-cli/
+omni-ai-cli/
 ├── bin/ai.js                 # lançador npm: acha ou instala o Python e chama smart_ai.py
 ├── package.json              # pacote npm omni-ai-cli
 ├── smart_ai.py               # comando ai: classifica, roteia e executa cada ferramenta

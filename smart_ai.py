@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smart AI router: the `ai` command on macOS, Linux and Windows.
+"""Omni AI router: the `ai` command on macOS, Linux and Windows.
 
   ai                                  open the chat
   ai "question"                       automatic routing
@@ -320,7 +320,7 @@ def version(tool):
 
 
 def show_status():
-    say(f'{BOLD}{CYAN}  🧠 Smart AI CLI{NC}\n')
+    say(f'{BOLD}{CYAN}  🧠 Omni AI CLI{NC}\n')
     say(f'{BOLD}  Perfis Claude:{NC}\n')
     for name, conf in config_tool.ordered(config_tool.profiles()):
         left = cooldown_left(name)
@@ -374,7 +374,7 @@ def update():
     """Pull the latest version into the install folder; settings live in ~/.config and are kept."""
     if (ROOT / '.git').is_dir() and resolve_bin('git'):
         code = subprocess.call(['git', '-C', str(ROOT), 'pull', '--ff-only'])
-        say(f'{GREEN}✓ Smart AI atualizado.{NC}' if code == 0 else f'{RED}✗ Não consegui atualizar; veja a mensagem acima.{NC}')
+        say(f'{GREEN}✓ Omni AI atualizado.{NC}' if code == 0 else f'{RED}✗ Não consegui atualizar; veja a mensagem acima.{NC}')
         return code
     if os.environ.get('SMART_AI_INSTALLER') == 'npm':
         command = 'npm install -g omni-ai-cli@latest'
@@ -382,9 +382,9 @@ def update():
         npm = resolve_bin('npm')
         return subprocess.call([npm, 'install', '-g', 'omni-ai-cli@latest']) if npm else 1
     if os.name == 'nt':
-        command = 'irm https://raw.githubusercontent.com/samuelrms/smart-ai-cli/main/get.ps1 | iex'
+        command = 'irm https://raw.githubusercontent.com/samuelrms/omni-ai-cli/main/get.ps1 | iex'
     else:
-        command = 'curl -fsSL https://raw.githubusercontent.com/samuelrms/smart-ai-cli/main/get.sh | bash'
+        command = 'curl -fsSL https://raw.githubusercontent.com/samuelrms/omni-ai-cli/main/get.sh | bash'
     say(f'Instalação sem git. Para atualizar, rode:\n  {command}')
     return 1
 

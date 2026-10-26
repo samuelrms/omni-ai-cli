@@ -1,9 +1,9 @@
-# Smart AI CLI - instalação no Windows (PowerShell 5.1+)
+# Omni AI CLI - instalação no Windows (PowerShell 5.1+)
 #   powershell -ExecutionPolicy Bypass -File install.ps1
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-Write-Host "Smart AI CLI - Instalação" -ForegroundColor Cyan
+Write-Host "Omni AI CLI - Instalação" -ForegroundColor Cyan
 
 # 1. Python 3.11+: the system one, or a private 3.12 via uv (no admin rights)
 $Python = $null
@@ -15,7 +15,7 @@ foreach ($c in @(@('py', '-3'), @('python'), @('python3'))) {
     if ($LASTEXITCODE -eq 0 -and $exe) { $Python = $exe.Trim(); break }
 }
 if (-not $Python) {
-    Write-Host "  ! Python 3.11+ não encontrado. Instalando Python 3.12 só para o Smart AI..." -ForegroundColor Yellow
+    Write-Host "  ! Python 3.11+ não encontrado. Instalando Python 3.12 só para o Omni AI..." -ForegroundColor Yellow
     $Data = Join-Path $env:LOCALAPPDATA 'smart-ai'
     $env:UV_INSTALL_DIR = Join-Path $Data 'uv'; $env:UV_NO_MODIFY_PATH = '1'
     $env:UV_PYTHON_INSTALL_DIR = Join-Path $Data 'python'

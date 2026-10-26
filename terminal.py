@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Persistent interactive front end for the existing Smart AI router."""
+"""Persistent interactive front end for the existing Omni AI router."""
 import argparse
 import concurrent.futures
 import json
@@ -33,10 +33,10 @@ def display(text):
 
 LANGS = {'pt': 'Português (Brasil)', 'en': 'English', 'es': 'Español', 'fr': 'Français'}
 T = {
-    'welcome': {'pt': 'Smart AI · sessão {id}\nProjeto: {cwd}\nEscreva sua pergunta e tecle Enter. /help mostra comandos · Ctrl-C sai.',
-                'en': 'Smart AI · session {id}\nProject: {cwd}\nType your question and press Enter. /help lists commands · Ctrl-C exits.',
-                'es': 'Smart AI · sesión {id}\nProyecto: {cwd}\nEscribe tu pregunta y pulsa Enter. /help muestra comandos · Ctrl-C sale.',
-                'fr': 'Smart AI · session {id}\nProjet : {cwd}\nTapez votre question puis Entrée. /help liste les commandes · Ctrl-C quitte.'},
+    'welcome': {'pt': 'Omni AI · sessão {id}\nProjeto: {cwd}\nEscreva sua pergunta e tecle Enter. /help mostra comandos · Ctrl-C sai.',
+                'en': 'Omni AI · session {id}\nProject: {cwd}\nType your question and press Enter. /help lists commands · Ctrl-C exits.',
+                'es': 'Omni AI · sesión {id}\nProyecto: {cwd}\nEscribe tu pregunta y pulsa Enter. /help muestra comandos · Ctrl-C sale.',
+                'fr': 'Omni AI · session {id}\nProjet : {cwd}\nTapez votre question puis Entrée. /help liste les commandes · Ctrl-C quitte.'},
     'saved': {'pt': 'Sessão salva. Retome com: ai --resume {id}', 'en': 'Session saved. Resume with: ai --resume {id}',
               'es': 'Sesión guardada. Retoma con: ai --resume {id}', 'fr': 'Session enregistrée. Reprenez avec : ai --resume {id}'},
     'cancelling': {'pt': 'Cancelando agentes... (Ctrl-C de novo no prompt para sair)', 'en': 'Cancelling agents... (Ctrl-C again at the prompt to exit)',
@@ -414,7 +414,7 @@ def list_sessions():
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description='Smart AI terminal interativo')
+    parser = argparse.ArgumentParser(description='Omni AI terminal interativo')
     parser.add_argument('--resume')
     parser.add_argument('--sessions', action='store_true')
     args = parser.parse_args(argv)

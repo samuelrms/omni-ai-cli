@@ -39,7 +39,7 @@ function findPython() {
 // No usable Python: fetch a private Python 3.12 with uv (no sudo, system Python untouched)
 function installPython() {
   if (process.env.SMART_AI_NO_AUTO_PYTHON === '1') return null;
-  console.error('Python 3.11+ não encontrado. Instalando um Python 3.12 só para o Smart AI (sem sudo)...');
+  console.error('Python 3.11+ não encontrado. Instalando um Python 3.12 só para o Omni AI (sem sudo)...');
   const uvDir = path.join(dataDir, 'uv');
   const uv = path.join(uvDir, process.platform === 'win32' ? 'uv.exe' : 'uv');
   const env = { ...process.env, UV_INSTALL_DIR: uvDir, UV_NO_MODIFY_PATH: '1',
@@ -65,7 +65,7 @@ function installPython() {
 
 const python = findPython() || installPython();
 if (!python) {
-  console.error('Smart AI precisa do Python 3.11 ou mais novo e não conseguiu instalá-lo sozinho.');
+  console.error('Omni AI precisa do Python 3.11 ou mais novo e não conseguiu instalá-lo sozinho.');
   console.error(process.platform === 'win32'
     ? 'Instale em https://www.python.org/downloads/ (marque "Add to PATH").'
     : 'macOS: brew install python  ·  Ubuntu/Debian: sudo apt install python3');

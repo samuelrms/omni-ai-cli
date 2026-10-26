@@ -1,4 +1,4 @@
-# Smart AI OpenRouter simulation
+# Omni AI OpenRouter simulation
 
 Local mock derived from official OpenRouter docs and Orbit contracts; no owner mock imported.
 

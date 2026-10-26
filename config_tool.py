@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Model and Claude account settings for Smart AI.
+"""Model and Claude account settings for Omni AI.
 
   config_tool.py env                     shell assignments (SMART_AI_* model variables)
   config_tool.py model [KEY [VALUE|default]]

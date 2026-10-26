@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Smart AI CLI - one-command install / update for macOS and Linux:
-#   curl -fsSL https://raw.githubusercontent.com/samuelrms/smart-ai-cli/main/get.sh | bash
+# Omni AI CLI - one-command install / update for macOS and Linux:
+#   curl -fsSL https://raw.githubusercontent.com/samuelrms/omni-ai-cli/main/get.sh | bash
 set -euo pipefail
 
-REPO="${SMART_AI_REPO:-https://github.com/samuelrms/smart-ai-cli}"
+REPO="${SMART_AI_REPO:-https://github.com/samuelrms/omni-ai-cli}"
 BRANCH="${SMART_AI_BRANCH:-main}"
-DEST="${SMART_AI_DIR:-$HOME/.local/share/smart-ai-cli}"
+DEST="${SMART_AI_DIR:-$HOME/.local/share/omni-ai-cli}"
 
-echo "Smart AI CLI → $DEST"
+echo "Omni AI CLI → $DEST"
 if command -v git >/dev/null 2>&1; then
     if [[ -d "$DEST/.git" ]]; then
         echo "Atualizando..."
@@ -23,7 +23,7 @@ else
     curl -fsSL "$REPO/archive/refs/heads/$BRANCH.tar.gz" | tar -xz -C "$tmp"
     rm -rf "$DEST"
     mkdir -p "$(dirname "$DEST")"
-    mv "$tmp"/smart-ai-cli-"$BRANCH" "$DEST"
+    mv "$tmp"/omni-ai-cli-"$BRANCH" "$DEST"
     rm -rf "$tmp"
 fi
 

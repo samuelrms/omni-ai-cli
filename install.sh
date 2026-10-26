@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Script de instalação do Smart AI CLI
+# Script de instalação do Omni AI CLI
 #
 
 set -euo pipefail
@@ -16,7 +16,7 @@ NC='\033[0m'
 
 echo -e "${BOLD}${CYAN}"
 echo "  ╔═══════════════════════════════════════╗"
-echo "  ║     🧠 Smart AI CLI - Instalação      ║"
+echo "  ║     🧠 Omni AI CLI - Instalação      ║"
 echo "  ╚═══════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -45,7 +45,7 @@ for candidate in python3 python; do
     fi
 done
 if [[ -z "$PYTHON" ]]; then
-    echo -e "  ${YELLOW}⚠${NC} Python 3.11+ não encontrado. Instalando Python 3.12 só para o Smart AI..."
+    echo -e "  ${YELLOW}⚠${NC} Python 3.11+ não encontrado. Instalando Python 3.12 só para o Omni AI..."
     DATA="$HOME/.local/share/smart-ai"
     export UV_INSTALL_DIR="$DATA/uv" UV_NO_MODIFY_PATH=1 UV_PYTHON_INSTALL_DIR="$DATA/python"
     [[ -x "$UV_INSTALL_DIR/uv" ]] || curl -LsSf https://astral.sh/uv/install.sh | sh

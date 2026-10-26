@@ -80,8 +80,8 @@ class OpenRouterClient:
         url = f"{OPENROUTER_BASE}{endpoint}"
         headers = {
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/smart-ai-cli",
-            "X-Title": "Smart AI CLI",
+            "HTTP-Referer": "https://github.com/samuelrms/omni-ai-cli",
+            "X-Title": "Omni AI CLI",
         }
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
