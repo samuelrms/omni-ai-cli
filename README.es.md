@@ -178,6 +178,13 @@ La primera vez pregunta el idioma. Después solo escribe y presiona Enter.
 | ↑ / ↓ | Líneas anteriores |
 | Ctrl-C | Durante la respuesta: cancela. En el prompt: guarda y sale |
 | Ctrl-D | Guarda y sale |
+| Esc+Enter | Nueva línea sin enviar |
+| Tab | Completa comandos y skills |
+
+La pantalla sigue el estilo de Claude Code y Codex: caja de entrada abajo con barra de estado
+(herramienta, modelo, modo y carpeta), Tab para completar comandos y skills, cada acción de la IA
+en una línea (`● Ran …`, `● Edited …`, `● Called …`) con la salida recogida, respuestas en markdown
+y un indicador "Trabajando…" con el tiempo.
 
 Al salir, muestra el comando para volver a la misma conversación:
 
@@ -396,6 +403,8 @@ omni-ai-cli/
 ├── smart_ai.py               # comando ai: clasifica, enruta y ejecuta cada herramienta
 ├── platform_utils.py         # diferencias entre macOS, Linux y Windows
 ├── smart-ai.sh / ai.cmd      # lanzadores de compatibilidad (Unix / Windows)
+├── ui.py                     # aspecto del chat: caja de entrada, barra de estado, acciones y respuestas
+├── vendor/                   # prompt_toolkit y wcwidth incluidos (sin pip)
 ├── terminal.py               # chat: sesiones, eventos, Ctrl-C, idiomas
 ├── config_tool.py            # modelos, claves y cuentas Claude (/model, /key, /account)
 ├── skills.py                 # skills y comandos del proyecto y del usuario (/skills, /nombre)
@@ -423,7 +432,7 @@ python3 -m unittest discover -s tests -v
 bash -n install.sh
 ```
 
-**27 pruebas**: persistencia y reanudación de sesión, límite de contexto, permisos de
+**28 pruebas**: persistencia y reanudación de sesión, límite de contexto, permisos de
 los archivos, sesión abierta en dos terminales, lectura de eventos, cancelación del árbol
 de procesos, paralelismo real, sandbox de solo lectura, enmascaramiento de datos
 personales, fallback OpenRouter → Codex, validación de modelos, almacenamiento de las
@@ -484,4 +493,4 @@ SMART_AI_SIM_URL=http://127.0.0.1:4901/openrouter python3 -m unittest discover -
 
 ## Licencia
 
-[MIT](LICENSE).
+[MIT](LICENSE). Incluidas en `vendor/`: prompt_toolkit (BSD-3-Clause) y wcwidth (MIT), cada una con su licencia.

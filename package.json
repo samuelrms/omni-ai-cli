@@ -14,6 +14,8 @@
     "config_tool.py",
     "sync_tool.py",
     "skills.py",
+    "vendor/",
+    "ui.py",
     "platform_utils.py",
     "openrouter_client.py",
     "pii_masker.py",

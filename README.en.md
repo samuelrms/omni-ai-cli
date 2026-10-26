@@ -177,6 +177,13 @@ The first time, it asks for the language. After that, just type and press Enter.
 | ↑ / ↓ | Previous lines |
 | Ctrl-C | During an answer: cancels. At the prompt: saves and exits |
 | Ctrl-D | Saves and exits |
+| Esc+Enter | New line without sending |
+| Tab | Completes commands and skills |
+
+The screen follows Claude Code and Codex: an input box at the bottom with a status bar (tool,
+model, mode and folder), Tab to complete commands and skills, each AI action on one line
+(`● Ran …`, `● Edited …`, `● Called …`) with its output collapsed, markdown answers and a
+"Working…" indicator with elapsed time.
 
 On exit, it shows the command to return to the same conversation:
 
@@ -395,6 +402,8 @@ omni-ai-cli/
 ├── smart_ai.py               # ai command: classifies, routes and runs each tool
 ├── platform_utils.py         # differences between macOS, Linux and Windows
 ├── smart-ai.sh / ai.cmd      # compatibility launchers (Unix / Windows)
+├── ui.py                     # chat look: input box, status bar, actions and answers
+├── vendor/                   # bundled prompt_toolkit and wcwidth (no pip)
 ├── terminal.py               # chat: sessions, events, Ctrl-C, languages
 ├── config_tool.py            # models, keys and Claude accounts (/model, /key, /account)
 ├── skills.py                 # project and user skills and commands (/skills, /name)
@@ -422,7 +431,7 @@ python3 -m unittest discover -s tests -v
 bash -n install.sh
 ```
 
-**27 tests**: session persistence and resume, context limit, file permissions, session
+**28 tests**: session persistence and resume, context limit, file permissions, session
 open in two terminals, event reading, process tree cancellation, real parallelism,
 read-only sandbox, personal data masking, OpenRouter → Codex fallback, model
 validation, key storage and the account lifecycle. All the
@@ -481,4 +490,4 @@ SMART_AI_SIM_URL=http://127.0.0.1:4901/openrouter python3 -m unittest discover -
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE). Bundled in `vendor/`: prompt_toolkit (BSD-3-Clause) and wcwidth (MIT), each with its license.

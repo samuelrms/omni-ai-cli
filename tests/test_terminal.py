@@ -11,6 +11,9 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+import ui  # noqa: E402
+import io
+import contextlib
 from terminal import Runner, Session, execute, parse_parallel
 
 FAKE = '''#!/usr/bin/env python3
@@ -58,8 +61,9 @@ class TerminalTests(unittest.TestCase):
                                 input='/tool codex\nRemember ALPHA\nWhat was it?\n/sent\n/exit\n',
                                 text=True, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('atendendo: codex', result.stdout)
-        self.assertIn('comando started: rg example', result.stdout)
+        self.assertIn('◆ codex', result.stdout)
+        self.assertIn('● Ran rg example', result.stdout)
+        self.assertNotIn('[agente-', result.stdout)
         calls = [json.loads(row) for row in (self.root/'calls').read_text().splitlines()]
         self.assertEqual(len(calls), 2)
         self.assertIn('ALPHA', calls[1]['args'][-1])
@@ -83,7 +87,7 @@ class TerminalTests(unittest.TestCase):
         self.assertEqual(len(session.data['messages']), 3)
 
     def test_cancel_terminates_process_group(self):
-        runner = Runner(str(self.root), emit=lambda _: None)
+        runner = Runner(str(self.root))
         job = {'id':'test', 'engine':'codex', 'sent':'wait', 'status':'running'}
         with patch.dict(os.environ, TEST_DELAY='30'):
             thread = threading.Thread(target=runner.run, args=(job, 'wait'))
@@ -97,15 +101,37 @@ class TerminalTests(unittest.TestCase):
         self.assertEqual(job['status'], 'cancelled')
 
     def test_model_events_and_internal_reasoning_not_exposed(self):
-        lines = []
-        runner = Runner(str(self.root), emit=lines.append)
-        job = {'id':'test', 'events':[], 'answers':[], 'sent':'hello'}
+        runner = Runner(str(self.root))
+        job = {'id':'test', 'events':[], 'answers':[], 'sent':'hello', 'view': ui.View()}
         runner.event(job, json.dumps({'type':'item.completed','item':{'type':'reasoning','text':'hidden'}}))
         runner.event(job, json.dumps({'type':'assistant','message':{'content':[{'type':'thinking','thinking':'hidden'}, {'type':'text','text':'answer'}]}}))
-        self.assertNotIn('hidden', json.dumps(job))
+        self.assertNotIn('hidden', json.dumps({k: v for k, v in job.items() if k != 'view'}))
         self.assertEqual(job['answers'], ['answer'])
         runner.event(job, json.dumps({'type':'result','is_error':True}))
         self.assertTrue(job['protocol_error'])
+
+    def test_compact_tool_lines_and_noise_hidden(self):
+        runner = Runner(str(self.root))
+        job = {'id':'test', 'events':[], 'answers':[], 'sent':'x', 'view': ui.View()}
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            runner.event(job, json.dumps({'type':'system','subtype':'init'}))
+            runner.event(job, '─────────────────────────────────────')
+            runner.event(job, '2026-10-26T21:40:06.865100Z ERROR rmcp::transport::worker: closed')
+            runner.event(job, json.dumps({'type':'assistant','message':{'content':[{'type':'tool_use','name':'Bash',
+                         'input':{'command':'gh pr view 240 --json x','description':'Find board card'}}]}}))
+            runner.event(job, json.dumps({'type':'user','message':{'content':[{'type':'tool_result','content':'a\nb\nc'}]}}))
+            runner.event(job, json.dumps({'type':'assistant','message':{'content':[{'type':'tool_use',
+                         'name':'mcp__obsidian__read_file','input':{'path':'x'}}]}}))
+        text = out.getvalue()
+        self.assertIn('● Ran Find board card', text)
+        self.assertIn('└ a', text)
+        self.assertIn('+ 2 linhas', text)
+        self.assertIn('● Called obsidian · read_file', text)
+        self.assertNotIn('system', text)
+        self.assertNotIn('rmcp', text)
+        self.assertNotIn('───', text)
+        self.assertEqual(len(job['events']), 6)
 
     def test_parallel_rejects_unsupported_provider_and_invalid_shape(self):
         with self.assertRaises(ValueError):

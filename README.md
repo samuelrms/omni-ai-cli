@@ -177,6 +177,13 @@ Na primeira vez ele pergunta o idioma. Depois é só escrever e teclar Enter.
 | ↑ / ↓ | Linhas anteriores |
 | Ctrl-C | Durante a resposta: cancela. No prompt: salva e sai |
 | Ctrl-D | Salva e sai |
+| Esc+Enter | Nova linha sem enviar |
+| Tab | Completa comandos e skills |
+
+A tela segue o estilo do Claude Code e do Codex: caixa de entrada no rodapé com a barra de status
+(ferramenta, modelo, modo e pasta), Tab para completar comandos e skills, cada ação da IA numa linha
+(`● Ran …`, `● Edited …`, `● Called …`) com a saída recolhida, respostas em markdown e um indicador
+"Trabalhando…" com o tempo.
 
 Ao sair, ele mostra o comando para voltar à mesma conversa:
 
@@ -396,6 +403,8 @@ omni-ai-cli/
 ├── smart_ai.py               # comando ai: classifica, roteia e executa cada ferramenta
 ├── platform_utils.py         # diferenças entre macOS, Linux e Windows
 ├── smart-ai.sh / ai.cmd      # atalhos de compatibilidade (Unix / Windows)
+├── ui.py                     # visual do chat: caixa de entrada, barra de status, ações e respostas
+├── vendor/                   # prompt_toolkit e wcwidth embutidos (sem pip)
 ├── terminal.py               # chat: sessões, eventos, Ctrl-C, idiomas
 ├── config_tool.py            # modelos, chaves e contas Claude (/model, /key, /account)
 ├── skills.py                 # skills e comandos do projeto e do usuário (/skills, /nome)
@@ -423,7 +432,7 @@ python3 -m unittest discover -s tests -v
 bash -n install.sh
 ```
 
-**27 testes**: persistência e retomada de sessão, limite de contexto, permissão dos
+**28 testes**: persistência e retomada de sessão, limite de contexto, permissão dos
 arquivos, sessão aberta em dois terminais, leitura de eventos, cancelamento da árvore de
 processos, paralelismo real, sandbox somente leitura, mascaramento de dados pessoais,
 fallback OpenRouter → Codex, validação de modelos, armazenamento das chaves e o ciclo de vida das contas. Todos os
@@ -482,4 +491,4 @@ SMART_AI_SIM_URL=http://127.0.0.1:4901/openrouter python3 -m unittest discover -
 
 ## Licença
 
-[MIT](LICENSE).
+[MIT](LICENSE). Bibliotecas embutidas em `vendor/`: prompt_toolkit (BSD-3-Clause) e wcwidth (MIT), com as licenças em cada pasta.

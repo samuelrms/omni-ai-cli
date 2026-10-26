@@ -178,6 +178,13 @@ La première fois, il demande la langue. Ensuite, il suffit d'écrire et d'appuy
 | ↑ / ↓ | Lignes précédentes |
 | Ctrl-C | Pendant la réponse : annule. Au prompt : sauvegarde et quitte |
 | Ctrl-D | Sauvegarde et quitte |
+| Échap+Entrée | Nouvelle ligne sans envoyer |
+| Tab | Complète commandes et skills |
+
+L'écran suit le style de Claude Code et Codex : zone de saisie en bas avec barre d'état (outil,
+modèle, mode et dossier), Tab pour compléter commandes et skills, chaque action de l'IA sur une
+ligne (`● Ran …`, `● Edited …`, `● Called …`) avec la sortie repliée, réponses en markdown et un
+indicateur « Au travail… » avec la durée.
 
 À la sortie, il affiche la commande pour revenir à la même conversation :
 
@@ -401,6 +408,8 @@ omni-ai-cli/
 ├── smart_ai.py               # commande ai : classe, route et exécute chaque outil
 ├── platform_utils.py         # différences entre macOS, Linux et Windows
 ├── smart-ai.sh / ai.cmd      # lanceurs de compatibilité (Unix / Windows)
+├── ui.py                     # rendu du chat : saisie, barre d'état, actions et réponses
+├── vendor/                   # prompt_toolkit et wcwidth intégrés (sans pip)
 ├── terminal.py               # chat : sessions, événements, Ctrl-C, langues
 ├── config_tool.py            # modèles, clés et comptes Claude (/model, /key, /account)
 ├── skills.py                 # skills et commandes du projet et de l'utilisateur (/skills, /nom)
@@ -428,7 +437,7 @@ python3 -m unittest discover -s tests -v
 bash -n install.sh
 ```
 
-**27 tests** : persistance et reprise de session, limite de contexte, permissions des
+**28 tests** : persistance et reprise de session, limite de contexte, permissions des
 fichiers, session ouverte dans deux terminaux, lecture des événements, annulation de
 l'arbre de processus, parallélisme réel, sandbox en lecture seule, masquage des données
 personnelles, fallback OpenRouter → Codex, validation des modèles, stockage des clés et
@@ -492,4 +501,4 @@ SMART_AI_SIM_URL=http://127.0.0.1:4901/openrouter python3 -m unittest discover -
 
 ## Licence
 
-[MIT](LICENSE).
+[MIT](LICENSE). Intégrées dans `vendor/` : prompt_toolkit (BSD-3-Clause) et wcwidth (MIT), chacune avec sa licence.

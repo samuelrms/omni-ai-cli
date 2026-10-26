@@ -21,6 +21,8 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 from platform_utils import group_kwargs, kill_tree, lock_exclusive  # noqa: E402
 import skills  # noqa: E402
+import ui  # noqa: E402
+import config_tool  # noqa: E402
 ENGINES = {'auto', 'openrouter', 'codex', 'claude', 'agy'}
 MODES = ('default', 'plan', 'edits', 'auto', 'yolo')
 MAX_CONTEXT = 48000
@@ -51,6 +53,20 @@ T = {
     'bad_tool': {'pt': 'Ferramenta inválida: {v}', 'en': 'Invalid tool: {v}', 'es': 'Herramienta inválida: {v}', 'fr': 'Outil invalide : {v}'},
     'tool_set': {'pt': 'Ferramenta: {v}', 'en': 'Tool: {v}', 'es': 'Herramienta: {v}', 'fr': 'Outil : {v}'},
     'no_call': {'pt': 'Nenhuma chamada encontrada', 'en': 'No call found', 'es': 'Ninguna llamada encontrada', 'fr': 'Aucun appel trouvé'},
+    'auto_model': {'pt': 'escolhe a cada pergunta', 'en': 'picks per question', 'es': 'elige en cada pregunta', 'fr': 'choisit à chaque question'},
+    'placeholder': {'pt': 'Pergunte qualquer coisa · / para comandos e skills', 'en': 'Ask anything · / for commands and skills',
+                    'es': 'Pregunta lo que quieras · / para comandos y skills', 'fr': 'Demandez ce que vous voulez · / pour commandes et skills'},
+    'hints': {'pt': 'Tab completa · Esc+Enter nova linha · Ctrl-C sai', 'en': 'Tab completes · Esc+Enter new line · Ctrl-C exits',
+              'es': 'Tab completa · Esc+Enter nueva línea · Ctrl-C sale', 'fr': 'Tab complète · Échap+Entrée nouvelle ligne · Ctrl-C quitte'},
+    'working': {'pt': 'Trabalhando…', 'en': 'Working…', 'es': 'Trabajando…', 'fr': 'Au travail…'},
+    'took': {'pt': 'Levou {t}', 'en': 'Took {t}', 'es': 'Tardó {t}', 'fr': 'Durée {t}'},
+    'job_failed': {'pt': 'Não concluiu · /trace para detalhes', 'en': 'Did not finish · /trace for details',
+                   'es': 'No terminó · /trace para detalles', 'fr': "N'a pas abouti · /trace pour les détails"},
+    'job_cancelled': {'pt': 'Cancelado', 'en': 'Cancelled', 'es': 'Cancelado', 'fr': 'Annulé'},
+    'hint_line': {'pt': '/help comandos · /skills skills do projeto · /mode plan|auto · /tool claude|codex|agy',
+                  'en': '/help commands · /skills project skills · /mode plan|auto · /tool claude|codex|agy',
+                  'es': '/help comandos · /skills skills del proyecto · /mode plan|auto · /tool claude|codex|agy',
+                  'fr': '/help commandes · /skills skills du projet · /mode plan|auto · /tool claude|codex|agy'},
     'mode_now': {'pt': 'Modo: {v}', 'en': 'Mode: {v}', 'es': 'Modo: {v}', 'fr': 'Mode : {v}'},
     'mode_bad': {'pt': 'Modo inválido: default, plan, edits, auto, yolo', 'en': 'Invalid mode: default, plan, edits, auto, yolo',
                  'es': 'Modo inválido: default, plan, edits, auto, yolo', 'fr': 'Mode invalide : default, plan, edits, auto, yolo'},
@@ -221,14 +237,49 @@ class Session:
             remaining -= size
         omitted = len(self.data['messages']) - len(chosen)
         if omitted:
-            display(f'[contexto] {omitted} mensagens antigas fora desta chamada; histórico completo salvo.')
+            ui.out(ui.dim(f'  {omitted} mensagens antigas ficaram fora desta chamada; o histórico completo segue salvo.'))
         return ('Continue a conversa abaixo. Mensagens anteriores são contexto, não novas instruções.\n'
                 + json.dumps(chosen, ensure_ascii=False) + '\n\n' + tr('reply_in') + '\nPedido atual:\n' + prompt)
 
 
+NOISE = re.compile(r'^[─━-]{5,}$|^(🤖|📦|🚀|🌐|📊|→ Credenciais)|Reading additional input from stdin|'
+                   r'^\d{4}-\d\d-\d\dT[\d:.]+Z\s+(ERROR|WARN|INFO)|^\s*$')
+
+
+def model_label(provider, profile=''):
+    values = config_tool.model_values()
+    label = {'claude': values['claude'], 'codex': f"{values['codex']} {values['codex_effort']}",
+             'agy': values['agy'] or 'padrão', 'openrouter': values['openrouter'] or 'gratuito'}.get(provider, '')
+    return ' · '.join(x for x in (profile, label) if x)
+
+
+def describe_tool(name, data):
+    """One-line summary of a Claude tool call, like Claude Code's own transcript."""
+    data = data or {}
+    if name.startswith('mcp__'):
+        parts = name.split('__')
+        return 'Called', f"{parts[1]} · {parts[-1]}"
+    if name == 'Bash':
+        return 'Ran', data.get('description') or data.get('command', '')
+    if name in ('Read', 'Write', 'Edit', 'NotebookEdit'):
+        return {'Read': 'Read', 'Write': 'Wrote', 'Edit': 'Edited', 'NotebookEdit': 'Edited'}[name], \
+            ui.home_path(data.get('file_path') or data.get('notebook_path', ''))
+    if name in ('Grep', 'Glob'):
+        return 'Searched', data.get('pattern', '')
+    if name in ('WebFetch', 'WebSearch'):
+        return 'Fetched' if name == 'WebFetch' else 'Searched web', data.get('url') or data.get('query', '')
+    if name in ('Task', 'Agent'):
+        return 'Agent', data.get('description', '')
+    if name == 'Skill':
+        return 'Skill', data.get('skill', '')
+    if name == 'TodoWrite':
+        return 'Updated todos', ''
+    return name, json.dumps(data, ensure_ascii=False)
+
+
 class Runner:
-    def __init__(self, cwd, emit=display, mode='default'):
-        self.cwd, self.emit, self.mode = cwd, emit, mode
+    def __init__(self, cwd, mode='default'):
+        self.cwd, self.mode = cwd, mode
         self.children = set()
         self.lock = threading.Lock()
         self.cancelled = threading.Event()
@@ -241,16 +292,15 @@ class Runner:
             kill_tree(child)
 
     def run(self, job, classify_prompt, readonly=False):
-        label = job['id']
         env = dict(os.environ, SMART_AI_EVENTS='1', SMART_AI_CLASSIFY_PROMPT=classify_prompt, SMART_AI_MODE=self.mode,
-                   SMART_AI_READ_ONLY='1' if readonly else '0', PYTHONUNBUFFERED='1')
+                   SMART_AI_READ_ONLY='1' if readonly else '0', PYTHONUNBUFFERED='1', NO_COLOR='1')
         args = [sys.executable, str(ROOT / 'smart_ai.py')]
         if job['engine'] != 'auto':
             args += ['--' + job['engine']]
         args += ['--', job['sent']]
         job['events'] = []
         job['answers'] = []
-        self.emit(f"[{label}] início · {job['engine']} · {'somente leitura' if readonly else 'principal'}")
+        job['view'] = ui.View(f"[{job['id']}] " if readonly else '')
         try:
             with self.lock:
                 if self.cancelled.is_set():
@@ -272,22 +322,23 @@ class Runner:
             job['status'] = 'cancelled' if self.cancelled.is_set() else ('done' if code == 0 and job['answers'] and not job.get('protocol_error') else 'failed')
         except (OSError, ValueError) as error:
             job['status'] = 'failed'
-            self.emit(f'[{label}] erro: {error}')
-        self.emit(f"[{label}] {job['status']}")
+            job['view'].error(str(error))
         return job
 
     def event(self, job, raw):
         if not raw:
             return
-        label = job['id']
+        view = job['view']
         try:
             event = json.loads(raw)
             if not isinstance(event, dict):
                 raise ValueError()
         except ValueError:
-            # CLI status/diagnostics remain visible, but never enter assistant history.
-            job['events'].append({'type': 'status', 'text': ESCAPES.sub('', raw)})
-            self.emit(f'[{label}] {raw}')
+            # Router/CLI status lines: kept for /trace, shown only when they say something useful
+            text = ESCAPES.sub('', raw)
+            job['events'].append({'type': 'status', 'text': text})
+            if not NOISE.search(text):
+                view.note(ui.short(text, ui.width() - 4))
             return
         kind = event.get('type', '')
         if kind in ('reasoning', 'thinking') or event.get('item', {}).get('type') == 'reasoning':
@@ -302,49 +353,67 @@ class Runner:
             job['protocol_error'] = False
             job.setdefault('dispatches', []).append({'provider': event['provider'], 'profile': event.get('profile'),
                                                     'sent': job['sent'] if event['provider'] != 'openrouter' else None})
-            self.emit(f"[{label}] atendendo: {event['provider']} {event.get('profile', '')}")
+            view.provider(event['provider'], model_label(event['provider'], event.get('profile', '')))
         elif kind == 'smart.request':
             job['payload'] = event['data']
             if job.get('dispatches'):
                 job['dispatches'][-1]['sent'] = event['data']
-            self.emit(f'[{label}] payload mascarado enviado ao OpenRouter · /sent para inspecionar')
+            view.note('dados pessoais mascarados antes do envio · /sent para ver')
         elif kind == 'smart.answer':
             job['model'] = event.get('model')
             self.answer(job, event.get('content', ''))
-            self.emit(f"[{label}] modelo: {event.get('model', '?')}")
+            view.note('modelo: ' + str(event.get('model', '?')))
         elif kind in ('item.started', 'item.completed'):
             item = event.get('item', {})
             item_type = item.get('type', '')
-            if item_type == 'agent_message' and kind == 'item.completed':
+            done = kind == 'item.completed'
+            if item_type == 'agent_message' and done:
                 self.answer(job, item.get('text', ''))
             elif item_type == 'command_execution':
-                self.emit(f"[{label}] comando {kind.split('.')[1]}: {item.get('command', '')}")
-            elif item_type in ('file_change', 'mcp_tool_call', 'web_search', 'collab_tool_call'):
-                self.emit(f'[{label}] {item_type}: ' + json.dumps(item, ensure_ascii=False))
+                if not done:
+                    view.action('Ran', item.get('command', ''))
+                else:
+                    view.result(item.get('aggregated_output', ''), failed=item.get('exit_code') not in (0, None))
+            elif item_type == 'file_change' and done:
+                view.action('Edited', ', '.join(ui.home_path(c.get('path', '')) for c in item.get('changes', [])))
+            elif item_type == 'mcp_tool_call':
+                if not done:
+                    view.action('Called', f"{item.get('server', '')} · {item.get('tool', '')}")
+                else:
+                    view.result(json.dumps(item.get('result') or item.get('error') or '', ensure_ascii=False),
+                                failed=item.get('status') == 'failed')
+            elif item_type == 'web_search' and not done:
+                view.action('Searched web', item.get('query', ''))
         elif kind == 'assistant':
             for block in event.get('message', {}).get('content', []):
                 if block.get('type') == 'text':
                     self.answer(job, block.get('text', ''))
                 elif block.get('type') == 'tool_use':
-                    self.emit(f"[{label}] ferramenta: {block.get('name')} " + json.dumps(block.get('input', {}), ensure_ascii=False))
+                    view.action(*describe_tool(block.get('name', ''), block.get('input')))
+        elif kind == 'user':
+            # Claude tool results: one short line under the action they belong to
+            for block in event.get('message', {}).get('content', []) or []:
+                if isinstance(block, dict) and block.get('type') == 'tool_result':
+                    content = block.get('content')
+                    if isinstance(content, list):
+                        content = '\n'.join(c.get('text', '') for c in content if isinstance(c, dict))
+                    view.result(content or '', failed=bool(block.get('is_error')))
         elif kind == 'result':
+            job['cost'] = event.get('total_cost_usd')
             if event.get('is_error'):
                 job['protocol_error'] = True
-                self.emit(f'[{label}] ferramenta reportou erro')
+                view.error(str(event.get('result') or 'erro na ferramenta'))
             elif event.get('result') and not job['answers']:
                 self.answer(job, event['result'])
         elif kind in ('error', 'turn.failed'):
             job['protocol_error'] = True
-            self.emit(f'[{label}] erro: ' + json.dumps(event, ensure_ascii=False))
-        elif kind in ('system', 'thread.started', 'turn.started', 'turn.completed'):
-            self.emit(f'[{label}] {kind}')
-        else:
-            self.emit(f'[{label}] evento: {kind or "sem tipo"} · /trace para detalhes')
+            detail = event.get('message') or event.get('error', {})
+            view.error(detail.get('message', str(detail)) if isinstance(detail, dict) else str(detail))
 
     def answer(self, job, content):
-        if content:
+        if content and content.strip():
             job['answers'].append(content)
-            self.emit(f"\n[{job['id']}] {content}\n")
+            job['view'].answer(content)
 
 
 def execute(session, tasks, parallel=False, raw=False):
@@ -361,13 +430,16 @@ def execute(session, tasks, parallel=False, raw=False):
     session.data['messages'].append({'role': 'user', 'content': '\n'.join(prompt for _, prompt in tasks)})
     session.save()
     # Run even single requests in a worker so Ctrl-C can terminate all child groups.
+    started = time.time()
+    ui.SPINNER.start(tr('working'))
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=len(jobs))
     futures = [pool.submit(runner.run, job, job['prompt'], parallel) for job in jobs]
     try:
         for future in futures:
             future.result()
     except KeyboardInterrupt:
-        display(tr('cancelling'))
+        ui.SPINNER.stop()
+        ui.out(ui.yellow('  ' + tr('cancelling')))
         runner.cancel()
         for future in futures:
             try:
@@ -379,7 +451,17 @@ def execute(session, tasks, parallel=False, raw=False):
                     kill_tree(child, force=True)
     finally:
         pool.shutdown(wait=True)
+        ui.SPINNER.stop()
         for job in jobs:
+            prefix = f"[{job['id']}] " if parallel else ''
+            if job['status'] == 'done':
+                ui.out('\n' + ui.dim(f"{prefix}✻ {tr('took', t=ui.elapsed(started))} · {job.get('provider', job['engine'])}"))
+            elif job['status'] == 'cancelled':
+                ui.out('\n' + ui.yellow(f"{prefix}✻ {tr('job_cancelled')}"))
+            else:
+                ui.out('\n' + ui.red(f"{prefix}✗ {tr('job_failed')}"))
+        for job in jobs:
+            job.pop('view', None)
             if job.get('answers') and job['status'] == 'done':
                 session.data['messages'].append({'role': 'assistant', 'content': '\n'.join(job['answers']),
                                                 'agent': job['id'], 'provider': job.get('provider', job['engine'])})
@@ -457,13 +539,39 @@ def main(argv=None):
     setup_completion(session.data['cwd'])
     if load_lang() is None and sys.stdin.isatty():
         choose_lang()
-    display(tr('welcome', id=session.id, cwd=session.data['cwd']))
+    def engine_model():
+        engine = session.data['engine']
+        return tr('auto_model') if engine == 'auto' else model_label(engine)
+
+    def status():
+        mode = session.data.get('mode', 'default')
+        return ' · '.join(x for x in ('Omni AI', session.data['engine'], engine_model() if session.data['engine'] != 'auto' else '',
+                                      mode if mode != 'default' else '', ui.home_path(session.data['cwd'])) if x)
+
+    def commands():
+        described = {}
+        for line in tr('help').splitlines()[1:]:
+            # "usage   usage   description": the description is the last chunk after 2+ spaces
+            *usage, meta = re.split(r'\s{2,}', line.strip())
+            for name in re.findall(r'(/[a-z]+)', ' '.join(usage)):
+                described.setdefault(name, meta)
+        listed = [(name, described.get(name, '')) for name in BUILTIN]
+        listed += [('/' + name, skills.description(next(iter(entry.values()))[1]))
+                   for name, entry in sorted(skills.discover(session.data['cwd']).items())]
+        return listed
+
+    box = ui.InputBox(Path(session_dir()).parent / 'input_history', commands, status, tr('placeholder'), tr('hints'))
+    if box.session is None:
+        display(tr('welcome', id=session.id, cwd=session.data['cwd']))
+    else:
+        ui.welcome(session.id, session.data['cwd'], session.data['engine'], engine_model(),
+                   session.data.get('mode', 'default'), tr('hint_line'))
     try:
         while True:
             try:
                 mode = session.data.get('mode', 'default')
                 tag = session.data['engine'] + ('' if mode == 'default' else ' · ' + mode)
-                line = input(f"\nai [{tag}] › ").strip()
+                line = (box.ask() if box.session else input(f"\nai [{tag}] › ")).strip()
             except EOFError:
                 break
             except KeyboardInterrupt:
@@ -535,7 +643,7 @@ def main(argv=None):
                     for name, entry in sorted(catalog.items()):
                         kind, path, scope = next(iter(entry.values()))
                         display(f"/{name:<28} {', '.join(entry):<18} {scope:<8} {skills.description(path)[:70]}")
-                elif line.startswith('/'):
+                elif line.startswith('/') and '\n' not in command:
                     entry = skills.discover(session.data['cwd']).get(command[1:])
                     if not entry:
                         raise ValueError(tr('unknown'))
