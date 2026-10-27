@@ -179,7 +179,8 @@ class OpenRouterClient:
         groups = [candidates[i:i + MAX_MODELS] for i in range(0, len(candidates), MAX_MODELS)]
         resp, last_error = None, None
         for group in groups:
-            data = {"models": group, "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
+            data = {"models": group, "messages": messages, "temperature": temperature, "max_tokens": max_tokens,
+                    "usage": {"include": True}}  # the reply then carries what it cost
             # Paid models only when explicitly authorized; otherwise the price cap blocks them
             if not self.allow_paid:
                 data["provider"] = {"max_price": {"prompt": 0, "completion": 0}}
