@@ -140,8 +140,10 @@ def run_claude(profile, prompt):
     env.pop('CLAUDE_CONFIG_DIR', None)
     main_creds = Path('~/.claude/.credentials.json').expanduser()
     backup = None
-    if profile == 'api-key':
-        env['ANTHROPIC_API_KEY'] = config_tool.stored_key('claude')[0]
+    if profile == 'api-key' or profile.startswith('api-key:'):
+        wanted = profile.partition(':')[2]
+        env['ANTHROPIC_API_KEY'] = next((v for n, v, _ in config_tool.stored_keys('claude') if not wanted or n == wanted),
+                                        config_tool.stored_key('claude')[0])
     else:
         conf = profile_conf(profile)
         config_dir = conf.get('config_dir')
@@ -281,6 +283,12 @@ def over_ceiling(key, fetch, label):
     return False
 
 
+def key_account(tool, name):
+    """Limit/cooldown id of an API key: '<tool>:api-key' for the main one, '<tool>:api-key:<name>' for extras."""
+    base = f'{tool}:api-key' if tool else 'api-key'
+    return base if name in ('principal', 'env') else f'{base}:{name}'
+
+
 def run_with_key_retry(tool, argv, env_var, label):
     """Main login first, then each extra account of the tool (/account add TOOL NAME), then the saved API key."""
     accounts = [('primary', {})] + [(name, config_tool.tool_env(tool, conf)) for name, conf in config_tool.tool_accounts(tool, True)]
@@ -300,11 +308,15 @@ def run_with_key_retry(tool, argv, env_var, label):
             break
         if LIMIT_TEXT.search(output[-3000:]):
             mark_rate_limited(account)
-    key = config_tool.stored_key(tool)[0]
-    if code != 0 and not os.environ.get(env_var) and key:
-        say(f'{YELLOW}🔑 {label}: tentando com chave de API{NC}')
+    for name, key, origin in config_tool.stored_keys(tool):
+        account = key_account(tool, name)
+        if code == 0 or origin == 'env' or cooldown_left(account):
+            continue
+        say(f'{YELLOW}🔑 {label}: tentando com a chave {name}{NC}')
         code, output = run(argv, dict(os.environ, **{env_var: key}))
-        remember_limit(f'{tool}:api-key', output if code != 0 else '')
+        remember_limit(account, output if code != 0 else '')
+        if code != 0 and LIMIT_TEXT.search(output[-3000:]):
+            mark_rate_limited(account)
     log_usage(tool, 'N/A', 'success' if code == 0 else 'error')
     return code
 
@@ -338,8 +350,8 @@ def run_agy(prompt):
 
 def run_openrouter(prompt):
     emit_provider('openrouter')
-    key = config_tool.stored_key('openrouter')[0]
-    if not key:
+    keys = config_tool.stored_keys('openrouter')
+    if not keys:
         say(f'{RED}✗ OPENROUTER_API_KEY não configurada.{NC}')
         say(f'{DIM}  Execute: ai --key openrouter (ou /key openrouter no chat){NC}')
         log_usage('openrouter', 'N/A', 'no_api_key')
@@ -350,8 +362,14 @@ def run_openrouter(prompt):
     argv = module_cmd('openrouter')
     if values['openrouter']:
         argv += ['--model', values['openrouter']]
-    env = module_env(dict(os.environ, OPENROUTER_API_KEY=key, SMART_AI_OPENROUTER_PAID=values['openrouter_paid']))
-    code, _ = run(argv, env, stdin=prompt)
+    code = 1
+    for i, (name, key, _) in enumerate(keys):
+        if i:
+            say(f'{YELLOW}🔑 OpenRouter: tentando com a chave {name}{NC}')
+        env = module_env(dict(os.environ, OPENROUTER_API_KEY=key, SMART_AI_OPENROUTER_PAID=values['openrouter_paid']))
+        code, _ = run(argv, env, stdin=prompt)
+        if code == 0:
+            break
     log_usage('openrouter', 'N/A', 'success' if code == 0 else 'error')
     return code
 
@@ -372,8 +390,8 @@ def run_grok(prompt):
                  'auto': ['--permission-mode', 'auto'], 'yolo': ['--permission-mode', 'bypassPermissions']}.get(mode(), [])
         return run_with_key_retry('grok', argv + ['-p', prompt], 'XAI_API_KEY', 'Grok')
     # No CLI: plain chat over the API, paid per use
-    key = config_tool.stored_key('grok')[0]
-    if not key:
+    keys = config_tool.stored_keys('grok')
+    if not keys:
         say(f'{RED}✗ Grok Build não instalado e sem chave da xAI.{NC}')
         say(f'{DIM}  Instale: curl -fsSL https://x.ai/cli/install.sh | bash  e rode: grok login{NC}')
         say(f'{DIM}  Ou use uma chave: ai --key grok (ou /key grok no chat){NC}')
@@ -381,7 +399,13 @@ def run_grok(prompt):
         return 1
     header(f'{BLUE}✦ Grok{NC}', 'API da xAI, pago por uso + PII masking')
     argv = module_cmd('grok') + (['--model', model] if model else [])
-    code, _ = run(argv, module_env(dict(os.environ, XAI_API_KEY=key)), stdin=prompt)
+    code = 1
+    for i, (name, key, _) in enumerate(keys):
+        if i:
+            say(f'{YELLOW}🔑 Grok: tentando com a chave {name}{NC}')
+        code, _ = run(argv, module_env(dict(os.environ, XAI_API_KEY=key)), stdin=prompt)
+        if code == 0:
+            break
     log_usage('grok', 'N/A', 'success' if code == 0 else 'error')
     return code
 
@@ -432,11 +456,11 @@ def classify_llm(prompt):
         ('grok', 'https://api.x.ai/v1/chat/completions', {'model': models()['grok'] or GROK_CLASSIFIER_MODEL}),
     ]
     for provider, url, extra in backends:
-        key = config_tool.stored_key(provider)[0]
-        # Room for a short reasoning pass on models that can't switch it off
-        label = key and ask_classifier(url, key, dict(extra, messages=messages, temperature=0, max_tokens=300))
-        if label:
-            return label
+        for _, key, _ in config_tool.stored_keys(provider):
+            # Room for a short reasoning pass on models that can't switch it off
+            label = ask_classifier(url, key, dict(extra, messages=messages, temperature=0, max_tokens=300))
+            if label:
+                return label
     return None
 
 
@@ -482,9 +506,12 @@ def claude_with_fallback(prompt):
         if result not in (RATE_LIMITED, NOT_READY):
             return result
         say(f'{YELLOW}🔄 Tentando próximo perfil...{NC}')
-    if config_tool.stored_key('claude')[0] and not cooldown_left('api-key'):
-        say(f'{YELLOW}🔑 Claude: tentando com chave de API{NC}')
-        result = run_claude('api-key', prompt)
+    for name, _, _ in config_tool.stored_keys('claude'):
+        account = key_account('', name)
+        if cooldown_left(account):
+            continue
+        say(f'{YELLOW}🔑 Claude: tentando com a chave {name}{NC}')
+        result = run_claude(account, prompt)
         if result == 0:
             return 0
         if result != RATE_LIMITED:
@@ -617,6 +644,14 @@ def render_usage():
             filled = usage.bar(used, 24).count('█')
             say(f"{' ' * pad}{DIM}{name:<7}{NC} {color}{'█' * filled}{NC}{DIM}{'░' * (24 - filled)}{NC} {BOLD}{color}{used:>3.0f}%{NC}{reset}")
 
+    def keys_of(tool, prefix):
+        for name, value, origin in config_tool.stored_keys(tool):
+            account = key_account(prefix, name)
+            text = limit_line(account if prefix else f'claude:{account}')
+            left = cooldown_left(account)
+            status = (text or f'{YELLOW}limitada{NC}') + f' {DIM}· volta em {left // 60}m{NC}' if left else text or f'{GREEN}configurada{NC}'
+            say(f"  {'chave ' + name:<12} {status} {DIM}· {value[:7]}…{value[-4:]}{' · variável de ambiente' if origin == 'env' else ''}{NC}")
+
     def state_of(live, fallback_key, cooldown=0):
         if live and live.get('windows'):
             top = usage.peak(live['windows'])
@@ -633,11 +668,11 @@ def render_usage():
     profiles = [(n, c) for n, c in config_tool.ordered(config_tool.profiles()) if c.get('enabled', True)]
     codex = [('primary', None)] + [(n, config_tool.tool_env('codex', c)) for n, c in config_tool.tool_accounts('codex', True)] \
         if installed('codex') else []
-    key = config_tool.stored_key('openrouter')[0]
+    or_keys = config_tool.stored_keys('openrouter')
     if sys.stdout.isatty():
         sys.stdout.write(f'{DIM}consultando contas…{NC}\r')
         sys.stdout.flush()
-    data = usage.snapshot(profiles, codex, key)
+    data = usage.snapshot(profiles, codex, or_keys)
     if sys.stdout.isatty():
         sys.stdout.write('\033[K')
     say(f'{BOLD}Uso e limites{NC}  {DIM}% usado de cada janela · teto do roteador {skip:.0f}% · alerta em {alert:.0f}%{NC}\n')
@@ -654,36 +689,37 @@ def render_usage():
         live = data.get(('claude', name))
         say(f'  {name:<12} {state_of(live, f"claude:{name}", cooldown_left(name))}{who(info)}')
         windows((live or {}).get('windows', []))
-    if config_tool.stored_key('claude')[0]:
-        say(f"  {'chave API':<12} " + (limit_line('claude:api-key') or f'{GREEN}configurada{NC}'))
+    keys_of('claude', '')
+    say(f'  {DIM}+ nova conta: /account add NOME · outra chave: /key add claude [NOME]{NC}')
     for tool, label in (('codex', 'Codex'), ('agy', 'Antigravity'), ('grok', 'Grok Build')):
         say(f'\n{BOLD}{label}{NC}  {DIM}{calls(tool)} chamadas hoje{NC}')
         if not installed(tool):
             say(f'  {RED}não instalado{NC}')
-            say(f'  {DIM}+ usar com chave de API: /key {tool}{NC}')
+            keys_of(tool, tool)
+            say(f"  {DIM}+ usar com chave de API: /key {'add ' if config_tool.stored_keys(tool) else ''}{tool}{NC}")
             continue
         for name, conf in [('primary', None)] + config_tool.tool_accounts(tool, True):
             account = tool if conf is None else f'{tool}:{name}'
             live = data.get(('codex', name)) if tool == 'codex' else None
             say(f"  {'assinatura' if conf is None else name:<12} {state_of(live, account, cooldown_left(account))}{who(live)}")
             windows((live or {}).get('windows', []))
-        if config_tool.stored_key(tool)[0]:
-            say('  chave API    ' + (limit_line(f'{tool}:api-key') or f'{GREEN}configurada{NC}'))
-        key_hint = f'trocar a chave: /key {tool}' if config_tool.stored_key(tool)[0] else f'chave de reserva: /key {tool}'
+        keys_of(tool, tool)
+        key_hint = f'outra chave: /key add {tool} [NOME]' if config_tool.stored_keys(tool) else f'chave de reserva: /key {tool}'
         say(f'  {DIM}+ nova conta: /account add {tool} NOME · {key_hint}{NC}')
     say(f'\n{BOLD}OpenRouter{NC}  {DIM}{calls("openrouter")} chamadas hoje{NC}')
-    credits = data.get(('openrouter', ''))
-    if not key:
+    if not or_keys:
         say(f'  {DIM}sem chave · /key openrouter{NC}')
-    elif credits and credits['limit']:
-        say(f"  {GREEN}chave configurada{NC} {DIM}· US$ {credits['used']:.2f} de US$ {float(credits['limit']):.2f}{NC}")
-        windows([{'minutes': 0, 'used': credits['used'] / float(credits['limit']) * 100}], pad=2)
-    elif credits:
-        say(f"  {GREEN}chave configurada{NC} {DIM}· US$ {credits['used']:.2f} usados · chave sem teto{NC}")
-    else:
-        say(f'  {GREEN}chave configurada{NC}')
-    if key:
-        say(f'  {DIM}+ trocar a chave: /key openrouter{NC}')
+    for name, value, _ in or_keys:
+        credits = data.get(('openrouter', name))
+        label = f"chave {name}"
+        if credits and credits['limit']:
+            say(f"  {label:<12} {GREEN}configurada{NC} {DIM}· US$ {credits['used']:.2f} de US$ {float(credits['limit']):.2f}{NC}")
+            windows([{'minutes': 0, 'used': credits['used'] / float(credits['limit']) * 100}])
+        elif credits:
+            say(f"  {label:<12} {GREEN}configurada{NC} {DIM}· US$ {credits['used']:.2f} usados · sem teto{NC}")
+        else:
+            say(f"  {label:<12} {GREEN}configurada{NC}")
+    say(f"  {DIM}+ outra chave: /key add openrouter [NOME]{NC}")
     say(f'\n{DIM}Teto e alerta: routing.usage_skip_percent e routing.usage_alert_percent no profiles.json · /usage watch{NC}')
     return 0
 

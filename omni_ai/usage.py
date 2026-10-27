@@ -260,7 +260,7 @@ def codex_reading(env=None):
     return None if status is None else status
 
 
-def snapshot(claude_profiles, codex_accounts, openrouter_key):
+def snapshot(claude_profiles, codex_accounts, openrouter_keys):
     """Everything /usage shows, fetched at once: one thread per account."""
     from concurrent.futures import ThreadPoolExecutor
     jobs = {}
@@ -270,8 +270,8 @@ def snapshot(claude_profiles, codex_accounts, openrouter_key):
             jobs[('claude', name)] = pool.submit(claude_reading, conf)
         for name, env in codex_accounts:
             jobs[('codex', name)] = pool.submit(codex_reading, env)
-        if openrouter_key:
-            jobs[('openrouter', '')] = pool.submit(openrouter_credits, openrouter_key)
+        for name, key, _ in openrouter_keys or []:
+            jobs[('openrouter', name)] = pool.submit(openrouter_credits, key)
         results = {k: f.result() for k, f in jobs.items()}
     for (tool, name), value in results.items():
         if tool in ('claude', 'codex') and value is not None:

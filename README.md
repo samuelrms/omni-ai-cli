@@ -213,7 +213,8 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 | `/account disable\|enable\|remove NOME` | Desativa, reativa ou remove |
 | `/key` | Lista as chaves de API configuradas (mascaradas) |
 | `/key claude\|codex\|agy\|openrouter` | Adiciona uma chave, sem mostrar o que você digita |
-| `/key remove NOME` | Remove a chave |
+| `/key add FERRAMENTA [NOME]` | Mais uma chave para a mesma ferramenta (vale para todas, inclusive Claude); as chaves são tentadas em ordem quando uma falha ou bate no limite |
+| `/key remove FERRAMENTA [NOME]` | Remove a chave (sem nome, a principal) |
 | `/status` · `/reset` | Status das contas · zera cooldowns |
 | `/lang pt\|en\|es\|fr` | Muda o idioma |
 | `/mode default\|plan\|edits\|auto\|yolo` | Modo de permissão, igual nas três ferramentas |

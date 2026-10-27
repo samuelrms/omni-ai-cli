@@ -214,7 +214,8 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 | `/account disable\|enable\|remove NOME` | Désactive, réactive ou supprime |
 | `/key` | Liste les clés d'API configurées (masquées) |
 | `/key claude\|codex\|agy\|openrouter` | Ajoute une clé, sans afficher ce que vous tapez |
-| `/key remove NOME` | Supprime la clé |
+| `/key add OUTIL [NOM]` | Une clé de plus pour le même outil (tous, Claude compris) ; les clés sont essayées dans l'ordre quand l'une échoue ou atteint sa limite |
+| `/key remove OUTIL [NOM]` | Supprime la clé (sans nom : la principale) |
 | `/status` · `/reset` | Statut des comptes · remet les cooldowns à zéro |
 | `/lang pt\|en\|es\|fr` | Change la langue |
 | `/mode default\|plan\|edits\|auto\|yolo` | Mode de permissions, identique sur les trois outils |

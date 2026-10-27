@@ -99,7 +99,7 @@ T = {
 /claude:usage  /codex:status  /agy:usage  Comandos nativos de cada ferramenta (Tab lista todos)
 /model [chave valor]                     Ver/alterar modelos (claude, codex, codex_effort, agy, openrouter, grok)
 /account [list|add|login|remove] [codex|agy|grok] NOME  Contas (Claude por padrão; quantas quiser)
-/key [claude|codex|agy|openrouter|grok|groq|remove X] Chaves de API (reserva da assinatura)
+/key [add|remove] [claude|codex|agy|openrouter|grok|groq] [NOME] Chaves de API (várias por ferramenta, usadas em ordem)
 /status   /reset                         Status das contas / zerar cooldowns
 /sync [--dry-run]                        Compartilhar MCPs e skills entre Claude, Codex e agy
 /mode default|plan|edits|auto|yolo      Modo de permissão (vale para Claude, Codex e agy)
@@ -120,7 +120,7 @@ T = {
 /claude:usage  /codex:status  /agy:usage  Native commands of each tool (Tab lists them all)
 /model [key value]                       Show/change models (claude, codex, codex_effort, agy, openrouter, grok)
 /account [list|add|login|remove] [codex|agy|grok] NAME  Accounts (Claude by default; as many as you want)
-/key [claude|codex|agy|openrouter|grok|groq|remove X] API keys (subscription fallback)
+/key [add|remove] [claude|codex|agy|openrouter|grok|groq] [NAME] API keys (several per tool, tried in order)
 /status   /reset                         Account status / clear cooldowns
 /sync [--dry-run]                        Share MCPs and skills across Claude, Codex and agy
 /mode default|plan|edits|auto|yolo      Permission mode (applies to Claude, Codex and agy)
@@ -141,7 +141,7 @@ T = {
 /claude:usage  /codex:status  /agy:usage  Comandos nativos de cada herramienta (Tab los lista)
 /model [clave valor]                     Ver/cambiar modelos (claude, codex, codex_effort, agy, openrouter, grok)
 /account [list|add|login|remove] [codex|agy|grok] NOMBRE  Cuentas (Claude por defecto; las que quieras)
-/key [claude|codex|agy|openrouter|grok|groq|remove X] Claves de API (respaldo de la suscripción)
+/key [add|remove] [claude|codex|agy|openrouter|grok|groq] [NOMBRE] Claves de API (varias por herramienta, en orden)
 /status   /reset                         Estado de cuentas / limpiar cooldowns
 /sync [--dry-run]                        Compartir MCPs y skills entre Claude, Codex y agy
 /mode default|plan|edits|auto|yolo      Modo de permisos (Claude, Codex y agy)
@@ -162,7 +162,7 @@ T = {
 /claude:usage  /codex:status  /agy:usage  Commandes natives de chaque outil (Tab les liste)
 /model [clé valeur]                      Voir/changer les modèles (claude, codex, codex_effort, agy, openrouter, grok)
 /account [list|add|login|remove] [codex|agy|grok] NOM  Comptes (Claude par défaut ; autant que voulu)
-/key [claude|codex|agy|openrouter|grok|groq|remove X] Clés API (secours de l'abonnement)
+/key [add|remove] [claude|codex|agy|openrouter|grok|groq] [NOM] Clés API (plusieurs par outil, essayées dans l'ordre)
 /status   /reset                         État des comptes / réinitialiser les cooldowns
 /sync [--dry-run]                        Partager MCP et skills entre Claude, Codex et agy
 /mode default|plan|edits|auto|yolo      Mode de permissions (Claude, Codex et agy)
@@ -732,8 +732,12 @@ def main(argv=None):
         if command == '/key':
             if not done:
                 return [(p, 'configurada' if config_tool.stored_key(p)[0] else 'adicionar') for p in config_tool.KEYS] + \
-                       [('remove', 'apagar uma chave')]
-            return [(p, '') for p in config_tool.KEYS] if done == ['remove'] else []
+                       [('add', 'mais uma chave (usadas em ordem)'), ('remove', 'apagar uma chave')]
+            if done in (['remove'], ['add']):
+                return [(p, f"{len(config_tool.stored_keys(p))} salva(s)") for p in config_tool.KEYS]
+            if len(done) == 2 and done[0] == 'remove':
+                return [(n, '') for n, _, o in config_tool.stored_keys(done[1]) if o != 'env']
+            return []
         if command == '/account':
             actions = [('list', 'listar'), ('add', 'nova conta'), ('login', 'refazer login'), ('sync', 'compartilhar skills/MCP'),
                        ('enable', 'ativar'), ('disable', 'desativar'), ('remove', 'remover')]
