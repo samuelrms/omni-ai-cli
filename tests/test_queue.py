@@ -186,6 +186,15 @@ class QueueWithRealProcessTests(unittest.TestCase):
         self.assertIn('FAKE ANSWER', calls[1]['prompt'])
         self.assertEqual([r['status'] for r in session.data['requests']], ['done', 'done'])
 
+    def test_session_saves_while_a_job_is_running(self):
+        # the job dict holds its screen view until it finishes; saving then used to crash
+        session = Session()
+        self.addCleanup(session.close)
+        session.data['requests'].append({'id': 'agente-1', 'status': 'running', 'view': object()})
+        session.save()
+        saved = json.loads(session.path.read_text())
+        self.assertIsNone(saved['requests'][0]['view'])
+
     def test_cancel_kills_the_running_tool(self):
         os.environ['TEST_DELAY'] = '30'
         session = Session()

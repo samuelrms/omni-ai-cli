@@ -275,10 +275,19 @@ class Session:
         # the queue worker and the input loop both save
         with SAVE_LOCK:
             self.data['updated'] = time.time()
+            for _ in range(5):
+                try:
+                    # a running job holds its screen view (not saved) and keeps appending events meanwhile
+                    text = json.dumps(self.data, ensure_ascii=False, indent=2, default=lambda value: None)
+                    break
+                except RuntimeError:  # changed while being written out: take it again
+                    continue
+            else:
+                return
             fd, name = tempfile.mkstemp(dir=self.path.parent, prefix='.session-')
             try:
                 with os.fdopen(fd, 'w') as stream:
-                    json.dump(self.data, stream, ensure_ascii=False, indent=2)
+                    stream.write(text)
                 os.replace(name, self.path)
             finally:
                 if os.path.exists(name):
