@@ -310,8 +310,12 @@ class ChatQueueTerminalTests(unittest.TestCase):
         executable.chmod(0o700)
         self.env = dict(os.environ, SMART_AI_SESSIONS=str(self.root / 'sessions'), SMART_AI_STATE=str(self.root / 'state'),
                         SMART_AI_LOG=str(self.root / 'usage'), CODEX_BIN=str(executable), TEST_CALLS=str(self.root / 'calls'),
-                        TEST_DELAY='1.5', TERM='xterm-256color', COLUMNS='100', LINES='40', XDG_CONFIG_HOME=str(self.root / 'config'))
-        (self.root / 'config').mkdir()
+                        TEST_DELAY='1.5', TERM='xterm-256color', COLUMNS='100', LINES='40', HOME=str(self.root / 'home'),
+                        SMART_AI_HOME=str(self.root / 'home/.config/smart-ai'))
+        # a fresh machine (like CI) would stop at the language picker and the first-run guide
+        config = self.root / 'home/.config/smart-ai'
+        config.mkdir(parents=True)
+        (config / 'lang').write_text('pt')
 
     def run_chat(self, lines, wait=6):
         import pty
