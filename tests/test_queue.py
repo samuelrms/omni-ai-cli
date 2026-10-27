@@ -347,11 +347,14 @@ class ChatQueueTerminalTests(unittest.TestCase):
             while time.time() < end and not (done and done(output.decode('utf-8', 'replace'))):
                 pump(0.1)
             os.write(fd, b'\x04')
-            pump(2)
         except OSError:
             pass  # the chat already exited; what it printed is in output
-        # never hang the suite: a chat that did not exit is killed and reported
-        exited = until(lambda: os.waitpid(pid, os.WNOHANG)[0] == pid, timeout=5)
+        # keep reading while it shuts down (it prints the saved queue last); never hang the suite
+        end, exited = time.time() + 15, False
+        while time.time() < end and not exited:
+            pump(0.1)
+            exited = os.waitpid(pid, os.WNOHANG)[0] == pid
+        pump(0.2)
         if not exited:
             os.kill(pid, 9)
             os.waitpid(pid, 0)
