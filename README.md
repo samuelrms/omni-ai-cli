@@ -114,6 +114,9 @@ Três detalhes que o diagrama torna explícitos:
   rodar: se a resposta anterior já o resolve, ele é pulado. Comandos e skills sempre
   rodam. Ctrl-C com a fila ativa cancela tudo sem sair do chat. Se você fechar o chat com
   pedidos na fila, eles ficam salvos na sessão e o `ai --resume ID` pergunta se quer continuar.
+- **Você vê por que a ferramenta foi escolhida.** No modo `auto`, uma linha curta diz se o
+  pedido foi tratado como tarefa de código ou pergunta simples e quem classificou (Groq,
+  Cerebras, OpenRouter, Grok ou as palavras-chave).
 - **Só a resposta entra no histórico.** Linhas de status e diagnóstico aparecem na tela,
   mas não são enviadas como contexto na próxima pergunta. Raciocínio interno dos modelos
   também é descartado.

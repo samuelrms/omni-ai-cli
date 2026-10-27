@@ -115,6 +115,9 @@ Tres detalles que el diagrama deja explícitos:
   ejecutarse: si la respuesta anterior ya lo resuelve, se omite. Los comandos y skills
   siempre se ejecutan. Ctrl-C con la cola activa cancela todo sin salir del chat. Si cierras el chat
   con pedidos en la cola, quedan guardados en la sesión y `ai --resume ID` pregunta si quieres continuar.
+- **Ves por qué se eligió la herramienta.** En modo `auto`, una línea corta dice si el pedido
+  se trató como tarea de código o pregunta simple y quién lo clasificó (Groq, Cerebras,
+  OpenRouter, Grok o las palabras clave).
 - **Solo la respuesta entra al historial.** Las líneas de estado y diagnóstico aparecen
   en pantalla, pero no se envían como contexto en la siguiente pregunta. El razonamiento
   interno de los modelos también se descarta.

@@ -106,6 +106,13 @@ T = {
                        'en': 'What changed · newest first · /versions N opens the technical note',
                        'es': 'Qué cambió · lo más reciente primero · /versions N abre la nota técnica',
                        'fr': 'Ce qui a changé · plus récent en premier · /versions N ouvre la note technique'},
+    'route_complex': {'pt': 'tarefa de código → Claude · classificado por {by}', 'en': 'coding task → Claude · labelled by {by}',
+                      'es': 'tarea de código → Claude · clasificado por {by}', 'fr': 'tâche de code → Claude · classée par {by}'},
+    'route_simple': {'pt': 'pergunta simples → ferramenta mais barata · classificado por {by}',
+                     'en': 'simple question → cheapest tool · labelled by {by}',
+                     'es': 'pregunta simple → herramienta más barata · clasificado por {by}',
+                     'fr': 'question simple → outil le moins cher · classée par {by}'},
+    'by_rules': {'pt': 'palavras-chave', 'en': 'keywords', 'es': 'palabras clave', 'fr': 'mots-clés'},
     'working': {'pt': 'Trabalhando…', 'en': 'Working…', 'es': 'Trabajando…', 'fr': 'Au travail…'},
     'took': {'pt': 'Levou {t}', 'en': 'Took {t}', 'es': 'Tardó {t}', 'fr': 'Durée {t}'},
     'job_failed': {'pt': 'Não concluiu · /trace para detalhes', 'en': 'Did not finish · /trace for details',
@@ -450,7 +457,11 @@ class Runner:
             message = event.get('message', {})
             message['content'] = [block for block in message.get('content', []) if block.get('type') not in ('thinking', 'redacted_thinking')]
         job['events'].append(event)
-        if kind == 'smart.provider':
+        if kind == 'smart.route':
+            job['route'] = {'label': event.get('label'), 'by': event.get('by')}
+            view.note(tr('route_' + ('complex' if event.get('label') == 'complex' else 'simple'),
+                         by=tr('by_rules') if event.get('by') == 'rules' else str(event.get('by'))))
+        elif kind == 'smart.provider':
             job['provider'] = event['provider']
             job['answers'] = []
             job['protocol_error'] = False
