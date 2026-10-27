@@ -222,7 +222,8 @@ class ChatQueueTerminalTests(unittest.TestCase):
         config.mkdir(parents=True)
         (config / 'lang').write_text('pt')
 
-    def run_chat(self, lines, wait=6):
+    def run_chat(self, lines, wait=6, done=None):
+        """Type lines once the input shows up; stop after `wait` seconds, or as soon as done(output) is true."""
         import pty
         pid, fd = pty.fork()
         if pid == 0:
@@ -239,11 +240,16 @@ class ChatQueueTerminalTests(unittest.TestCase):
                         output += os.read(fd, 65536)
                     except OSError:
                         return
-        pump(3)
+        # slow machines (CI on macOS) take a while to draw the input the first time
+        end = time.time() + 20
+        while '❯'.encode() not in output and time.time() < end:
+            pump(0.1)
         for line in lines:
             os.write(fd, line.encode() + b'\r')
             pump(0.3)
-        pump(wait)
+        end = time.time() + (30 if done else wait)
+        while time.time() < end and not (done and done(output.decode('utf-8', 'replace'))):
+            pump(0.1)
         os.write(fd, b'\x04')
         pump(2)
         # never hang the suite: a chat that did not exit is killed and reported
@@ -256,7 +262,8 @@ class ChatQueueTerminalTests(unittest.TestCase):
         return re.sub(r'\x1b\[[0-9;?>]*[a-zA-Z]|\x1b\][^\x07]*\x07', '', output.decode('utf-8', 'replace'))
 
     def test_messages_typed_while_busy_are_queued_and_run(self):
-        text = self.run_chat(['/tool codex', 'first', 'second', '/clear'])
+        # done once both answers finished ("Levou Ns · codex" twice)
+        text = self.run_chat(['/tool codex', 'first', 'second', '/clear'], done=lambda out: out.count('Levou') >= 2)
         calls = [json.loads(row) for row in (self.root / 'calls').read_text().splitlines()]
         self.assertEqual(len(calls), 2)
         self.assertGreaterEqual(calls[1]['start'] - calls[0]['start'], 1.4)  # second waited for the first
