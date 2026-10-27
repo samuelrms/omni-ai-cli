@@ -2,6 +2,7 @@
 """Persistent interactive front end for the existing Omni AI router."""
 import argparse
 import concurrent.futures
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -19,10 +20,12 @@ except ImportError:
 
 from . import config as config_tool, onboarding, skills, ui
 from .osutils import group_kwargs, kill_tree, lock_exclusive, module_cmd, module_env, resolve_bin
-ENGINES = {'auto', 'openrouter', 'codex', 'claude', 'agy', 'grok'}
+ENGINES = {'auto', 'openrouter', 'codex', 'claude', 'agy', 'grok', 'deepseek', 'cursor'}
 MODES = ('default', 'plan', 'edits', 'auto', 'yolo')
 MAX_CONTEXT = 48000
 PRINT_LOCK = threading.Lock()
+SAVE_LOCK = threading.Lock()
+ACTIVE = set()  # runners working right now, so Ctrl-C at the input can stop them
 ESCAPES = re.compile(r'\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]|[\x00-\x08\x0b-\x1f\x7f]')
 
 
@@ -66,6 +69,21 @@ T = {
                   'es': 'Conversación compactada: {n} mensajes en un resumen.', 'fr': 'Conversation compactée : {n} messages en un résumé.'},
     'compact_failed': {'pt': 'Não deu para resumir agora; a conversa ficou como estava.', 'en': 'Could not summarize now; the conversation is unchanged.',
                        'es': 'No se pudo resumir; la conversación sigue igual.', 'fr': "Impossible de résumer ; la conversation n'a pas changé."},
+    'queued': {'pt': 'na fila ({n})', 'en': 'queued ({n})', 'es': 'en cola ({n})', 'fr': "en file d'attente ({n})"},
+    'next_up': {'pt': '▶ da fila: {v}', 'en': '▶ from the queue: {v}', 'es': '▶ de la cola: {v}', 'fr': '▶ de la file : {v}'},
+    'queue_cancel': {'pt': 'Ctrl-C cancela tudo', 'en': 'Ctrl-C cancels all', 'es': 'Ctrl-C cancela todo', 'fr': 'Ctrl-C annule tout'},
+    'queue_dropped': {'pt': 'Cancelado; {n} pedido(s) da fila descartado(s).', 'en': 'Cancelled; {n} queued request(s) dropped.',
+                      'es': 'Cancelado; {n} pedido(s) de la cola descartado(s).', 'fr': 'Annulé ; {n} demande(s) en attente supprimée(s).'},
+    'busy': {'pt': 'Espere a fila terminar (ou Ctrl-C cancela) para usar {c}.', 'en': 'Wait for the queue to finish (or Ctrl-C cancels) to use {c}.',
+             'es': 'Espera a que termine la cola (o Ctrl-C cancela) para usar {c}.', 'fr': 'Attendez la fin de la file (ou Ctrl-C annule) pour utiliser {c}.'},
+    'skipped': {'pt': '↷ pulado: a resposta anterior já cobre "{v}"', 'en': '↷ skipped: the previous answer already covers "{v}"',
+                'es': '↷ omitido: la respuesta anterior ya cubre "{v}"', 'fr': '↷ ignoré : la réponse précédente couvre déjà « {v} »'},
+    'no_versions': {'pt': 'Não deu para buscar as versões agora.', 'en': 'Could not fetch the releases now.',
+                    'es': 'No se pudieron obtener las versiones.', 'fr': 'Impossible de récupérer les versions.'},
+    'versions_title': {'pt': 'O que mudou · mais recente primeiro · /versions N abre a nota técnica',
+                       'en': 'What changed · newest first · /versions N opens the technical note',
+                       'es': 'Qué cambió · lo más reciente primero · /versions N abre la nota técnica',
+                       'fr': 'Ce qui a changé · plus récent en premier · /versions N ouvre la note technique'},
     'working': {'pt': 'Trabalhando…', 'en': 'Working…', 'es': 'Trabajando…', 'fr': 'Au travail…'},
     'took': {'pt': 'Levou {t}', 'en': 'Took {t}', 'es': 'Tardó {t}', 'fr': 'Durée {t}'},
     'job_failed': {'pt': 'Não concluiu · /trace para detalhes', 'en': 'Did not finish · /trace for details',
@@ -92,14 +110,15 @@ T = {
     'reply_in': {'pt': 'Responda em português do Brasil.', 'en': 'Reply in English.', 'es': 'Responde en español.', 'fr': 'Réponds en français.'},
     'help': {
         'pt': """Escreva normalmente e tecle Enter. Setas: histórico de linhas. Ctrl-C: cancela resposta / sai. Ctrl-D: sai.
-/tool auto|claude|codex|agy|openrouter|grok Escolher ferramenta (auto = decide sozinho)
+/tool auto|claude|codex|cursor|agy|openrouter|grok|deepseek Escolher ferramenta (auto = decide sozinho)
 /usage [watch]   /limits                Uso real de cada conta em barras (watch atualiza a cada 30s)
 /clear                                   Limpar a conversa e começar do zero
 /compact                                 Resumir a conversa para economizar contexto
+/versions [N]                            O que mudou em cada versão (N abre a nota técnica)
 /claude:usage  /codex:status  /agy:usage  Comandos nativos de cada ferramenta (Tab lista todos)
-/model [chave valor]                     Ver/alterar modelos (claude, codex, codex_effort, agy, openrouter, grok)
+/model [chave valor]                     Ver/alterar modelos (claude, codex, codex_effort, agy, openrouter, grok, deepseek, cursor)
 /account [list|add|login|remove] [codex|agy|grok] NOME  Contas (Claude por padrão; quantas quiser)
-/key [add|remove] [claude|codex|agy|openrouter|grok|groq] [NOME] Chaves de API (várias por ferramenta, usadas em ordem)
+/key [add|remove] [claude|codex|cursor|agy|openrouter|grok|deepseek|groq|cerebras] [NOME] Chaves de API (várias por ferramenta, usadas em ordem)
 /status   /reset                         Status das contas / zerar cooldowns
 /sync [--dry-run]                        Compartilhar MCPs e skills entre Claude, Codex e agy
 /mode default|plan|edits|auto|yolo      Modo de permissão (vale para Claude, Codex e agy)
@@ -113,14 +132,15 @@ T = {
 /parallel codex: tarefa | codex: tarefa  2–4 análises em paralelo
 /exit                                    Sair""",
         'en': """Type normally and press Enter. Arrows: line history. Ctrl-C: cancel answer / exit. Ctrl-D: exit.
-/tool auto|claude|codex|agy|openrouter|grok Pick tool (auto = decides for you)
+/tool auto|claude|codex|cursor|agy|openrouter|grok|deepseek Pick tool (auto = decides for you)
 /usage [watch]   /limits                Real usage of each account as bars (watch refreshes every 30s)
 /clear                                   Clear the conversation and start over
 /compact                                 Summarize the conversation to save context
+/versions [N]                            What changed in each release (N opens the technical note)
 /claude:usage  /codex:status  /agy:usage  Native commands of each tool (Tab lists them all)
-/model [key value]                       Show/change models (claude, codex, codex_effort, agy, openrouter, grok)
+/model [key value]                       Show/change models (claude, codex, codex_effort, agy, openrouter, grok, deepseek, cursor)
 /account [list|add|login|remove] [codex|agy|grok] NAME  Accounts (Claude by default; as many as you want)
-/key [add|remove] [claude|codex|agy|openrouter|grok|groq] [NAME] API keys (several per tool, tried in order)
+/key [add|remove] [claude|codex|cursor|agy|openrouter|grok|deepseek|groq|cerebras] [NAME] API keys (several per tool, tried in order)
 /status   /reset                         Account status / clear cooldowns
 /sync [--dry-run]                        Share MCPs and skills across Claude, Codex and agy
 /mode default|plan|edits|auto|yolo      Permission mode (applies to Claude, Codex and agy)
@@ -134,14 +154,15 @@ T = {
 /parallel codex: task | codex: task      2–4 analyses in parallel
 /exit                                    Exit""",
         'es': """Escribe normalmente y pulsa Enter. Flechas: historial. Ctrl-C: cancela respuesta / sale. Ctrl-D: sale.
-/tool auto|claude|codex|agy|openrouter|grok Elegir herramienta (auto = decide sola)
+/tool auto|claude|codex|cursor|agy|openrouter|grok|deepseek Elegir herramienta (auto = decide sola)
 /usage [watch]   /limits                Uso real de cada cuenta en barras (watch actualiza cada 30s)
 /clear                                   Limpiar la conversación y empezar de cero
 /compact                                 Resumir la conversación para ahorrar contexto
+/versions [N]                            Qué cambió en cada versión (N abre la nota técnica)
 /claude:usage  /codex:status  /agy:usage  Comandos nativos de cada herramienta (Tab los lista)
-/model [clave valor]                     Ver/cambiar modelos (claude, codex, codex_effort, agy, openrouter, grok)
+/model [clave valor]                     Ver/cambiar modelos (claude, codex, codex_effort, agy, openrouter, grok, deepseek, cursor)
 /account [list|add|login|remove] [codex|agy|grok] NOMBRE  Cuentas (Claude por defecto; las que quieras)
-/key [add|remove] [claude|codex|agy|openrouter|grok|groq] [NOMBRE] Claves de API (varias por herramienta, en orden)
+/key [add|remove] [claude|codex|cursor|agy|openrouter|grok|deepseek|groq|cerebras] [NOMBRE] Claves de API (varias por herramienta, en orden)
 /status   /reset                         Estado de cuentas / limpiar cooldowns
 /sync [--dry-run]                        Compartir MCPs y skills entre Claude, Codex y agy
 /mode default|plan|edits|auto|yolo      Modo de permisos (Claude, Codex y agy)
@@ -155,14 +176,15 @@ T = {
 /parallel codex: tarea | codex: tarea    2–4 análisis en paralelo
 /exit                                    Salir""",
         'fr': """Tapez normalement puis Entrée. Flèches : historique. Ctrl-C : annule la réponse / quitte. Ctrl-D : quitte.
-/tool auto|claude|codex|agy|openrouter|grok Choisir l'outil (auto = choix automatique)
+/tool auto|claude|codex|cursor|agy|openrouter|grok|deepseek Choisir l'outil (auto = choix automatique)
 /usage [watch]   /limits                Usage réel de chaque compte en barres (watch rafraîchit toutes les 30 s)
 /clear                                   Effacer la conversation et repartir de zéro
 /compact                                 Résumer la conversation pour économiser du contexte
+/versions [N]                            Ce qui a changé à chaque version (N ouvre la note technique)
 /claude:usage  /codex:status  /agy:usage  Commandes natives de chaque outil (Tab les liste)
-/model [clé valeur]                      Voir/changer les modèles (claude, codex, codex_effort, agy, openrouter, grok)
+/model [clé valeur]                      Voir/changer les modèles (claude, codex, codex_effort, agy, openrouter, grok, deepseek, cursor)
 /account [list|add|login|remove] [codex|agy|grok] NOM  Comptes (Claude par défaut ; autant que voulu)
-/key [add|remove] [claude|codex|agy|openrouter|grok|groq] [NOM] Clés API (plusieurs par outil, essayées dans l'ordre)
+/key [add|remove] [claude|codex|cursor|agy|openrouter|grok|deepseek|groq|cerebras] [NOM] Clés API (plusieurs par outil, essayées dans l'ordre)
 /status   /reset                         État des comptes / réinitialiser les cooldowns
 /sync [--dry-run]                        Partager MCP et skills entre Claude, Codex et agy
 /mode default|plan|edits|auto|yolo      Mode de permissions (Claude, Codex et agy)
@@ -250,15 +272,17 @@ class Session:
         self.save()
 
     def save(self):
-        self.data['updated'] = time.time()
-        fd, name = tempfile.mkstemp(dir=self.path.parent, prefix='.session-')
-        try:
-            with os.fdopen(fd, 'w') as stream:
-                json.dump(self.data, stream, ensure_ascii=False, indent=2)
-            os.replace(name, self.path)
-        finally:
-            if os.path.exists(name):
-                os.unlink(name)
+        # the queue worker and the input loop both save
+        with SAVE_LOCK:
+            self.data['updated'] = time.time()
+            fd, name = tempfile.mkstemp(dir=self.path.parent, prefix='.session-')
+            try:
+                with os.fdopen(fd, 'w') as stream:
+                    json.dump(self.data, stream, ensure_ascii=False, indent=2)
+                os.replace(name, self.path)
+            finally:
+                if os.path.exists(name):
+                    os.unlink(name)
 
     def close(self):
         self.lock.close()
@@ -287,7 +311,8 @@ def model_label(provider, profile=''):
     values = config_tool.model_values()
     label = {'claude': values['claude'], 'codex': f"{values['codex']} {values['codex_effort']}",
              'agy': values['agy'] or 'padrão', 'openrouter': values['openrouter'] or 'gratuito',
-             'grok': values['grok'] or 'padrão'}.get(provider, '')
+             'grok': values['grok'] or 'padrão', 'deepseek': values['deepseek'] or 'deepseek-chat',
+             'cursor': values['cursor'] or 'padrão'}.get(provider, '')
     return ' · '.join(x for x in (profile, label) if x)
 
 
@@ -456,6 +481,7 @@ class Runner:
 
 def execute(session, tasks, parallel=False, raw=False):
     runner = Runner(session.data['cwd'], mode=session.data.get('mode', 'default'))
+    ACTIVE.add(runner)
     jobs = []
     for engine, prompt in tasks:
         job = {'id': 'agente-' + str(len(session.data['requests']) + 1), 'engine': engine,
@@ -493,6 +519,7 @@ def execute(session, tasks, parallel=False, raw=False):
                     kill_tree(child, force=True)
     finally:
         pool.shutdown(wait=True)
+        ACTIVE.discard(runner)
         ui.SPINNER.stop()
         for job in jobs:
             prefix = f"[{job['id']}] " if parallel else ''
@@ -513,6 +540,155 @@ def execute(session, tasks, parallel=False, raw=False):
             ui.attention(f"{ui.MARK} {tr('took', t=ui.elapsed(started))} · Omni AI · {session.data.get('title') or session.id}")
 
 
+class Queue:
+    """Requests typed while another one runs wait their turn here; the input stays free the whole time."""
+
+    def __init__(self, skip=None):
+        self.items, self.current, self.skip = [], None, skip
+        self.condition = threading.Condition()
+        threading.Thread(target=self._loop, daemon=True).start()
+
+    def put(self, label, work):
+        with self.condition:
+            # only a request that actually waited gets a "from the queue" line when its turn comes
+            self.items.append((label, work, self.current is not None or bool(self.items)))
+            self.condition.notify()
+
+    def busy(self):
+        with self.condition:
+            return self.current is not None or bool(self.items)
+
+    def snapshot(self):
+        with self.condition:
+            return self.current, [label for label, _, _ in self.items]
+
+    def _loop(self):
+        while True:
+            with self.condition:
+                while not self.items:
+                    self.condition.wait()
+                label, work, waited = self.items.pop(0)
+                self.current = label
+            if waited:
+                ui.out('\n' + ui.dim(tr('next_up', v=ui.short(label.split('\n')[0], ui.width() - 20))))
+            try:
+                if waited and self.skip and self.skip(label):
+                    ui.out(ui.dim(tr('skipped', v=ui.short(label.split('\n')[0], ui.width() - 50))))
+                    continue
+                work()
+            except Exception as error:  # a broken request must not take the worker (and the queue) down
+                display(tr('error', e=error))
+            finally:
+                with self.condition:
+                    self.current = None
+                    self.condition.notify_all()
+
+    def cancel(self):
+        """Drop what waits and stop what runs; returns how many waiting requests were dropped."""
+        with self.condition:
+            dropped = len(self.items)
+            self.items.clear()
+        for runner in list(ACTIVE):
+            runner.cancel()
+        return dropped
+
+    def wait(self, timeout=10):
+        with self.condition:
+            self.condition.wait_for(lambda: self.current is None and not self.items, timeout)
+
+
+def activity(queue):
+    """Lines above the input: the request running now and the ones waiting, in order."""
+    current, waiting = queue.snapshot()
+    if current is None:
+        return []
+    room = ui.width() - 30
+    since = ui.elapsed(ui.SPINNER.started) if ui.SPINNER.started else ''
+    lines = [f"<running>{ui.SPINNER.frame()} {ui.escape(ui.SPINNER.label or tr('working'))}</running> "
+             f"<queued>{since} · {ui.escape(ui.short(current.split(chr(10))[0], room))} · {ui.escape(tr('queue_cancel'))}</queued>"]
+    if waiting:
+        lines.append(f"<queued>  {ui.escape(tr('queued', n=len(waiting)))}</queued>")
+        lines += [f"<queued>  {i}. {ui.escape(ui.short(label.split(chr(10))[0], room))}</queued>" for i, label in enumerate(waiting[:5], 1)]
+        if len(waiting) > 5:
+            lines.append(f'<queued>  … +{len(waiting) - 5}</queued>')
+    return lines
+
+
+RELEASES = 'https://api.github.com/repos/samuelrms/omni-ai-cli/releases?per_page=15'
+COMMITS = 'https://api.github.com/repos/samuelrms/omni-ai-cli/commits?sha=main&per_page=40'
+CONVENTIONAL = re.compile(r'^(feat|fix|perf)(\([^)]*\))?!?:\s*(.+)')
+CHANGE = re.compile(r'^\s*[*-]\s+(?:\*\*[^*]+\*\*:?\s*)?(.+?)(?:\s+\(\[[0-9a-f]{7}\].*)?$')
+
+
+def github(url):
+    import urllib.request
+    request = urllib.request.Request(url, headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'omni-ai-cli'})
+    with urllib.request.urlopen(request, timeout=10) as resp:
+        return json.loads(resp.read().decode())
+
+
+def releases():
+    """Published releases; before the first one, each feat/fix merged on main stands in as an entry."""
+    items = [r for r in github(RELEASES) if not r.get('draft')]
+    if items:
+        return items
+    changes = []
+    for item in github(COMMITS):
+        subject, _, body = item['commit']['message'].partition('\n')
+        match = CONVENTIONAL.match(subject)
+        if match:
+            changes.append({'tag_name': item['sha'][:7], 'name': match.group(3), 'commit': True, 'published_at': item['commit']['committer']['date'],
+                            'body': f'* {match.group(3)}\n\n{body.strip()}'})
+    return changes
+
+
+def show_versions(argument):
+    """Timeline like a changelog page: simple view of every release, the technical note only for the one asked."""
+    try:
+        items = releases()
+    except (OSError, ValueError):
+        display(tr('no_versions'))
+        return
+    if argument:
+        chosen = next((r for i, r in enumerate(items, 1) if argument in (str(i), r.get('tag_name'), r.get('tag_name', '').lstrip('v'))), None)
+        if not chosen:
+            raise ValueError(tr('no_versions'))
+        ui.out(ui.bold(chosen.get('name') or chosen['tag_name']) + ui.dim(' · ' + chosen.get('published_at', '')[:10]))
+        ui.out(ui.markdown(chosen.get('body') or ''))
+        return
+    ui.out(ui.dim(tr('versions_title')))
+    for i, item in enumerate(items, 1):
+        # simple view: the change titles without commit links and scopes
+        changes = [item['name']] if item.get('commit') else \
+            [m.group(1) for m in map(CHANGE.match, (item.get('body') or '').splitlines()) if m]
+        ui.out(f"\n{ui.gradient(ui.MARK)} {ui.bold(item.get('tag_name', ''))} {ui.dim(item.get('published_at', '')[:10] + f' · {i}')}")
+        for change in changes[:4]:
+            ui.out('  ' + ui.short(change, ui.width() - 4))
+        if len(changes) > 4:
+            ui.out(ui.dim(f'  … +{len(changes) - 4}'))
+
+
+SKIP_SYSTEM = ('You check a queue of chat requests. Given the previous answer and the next queued request, reply "yes" '
+               'only if the previous answer already fully resolves the next request, so running it would be redundant. '
+               'Reply "no" if it asks anything new, wants an action, or you are unsure. One word: yes or no.')
+
+
+def already_answered(request, answer):
+    """Free classifiers only: a queued request that the answer before it already settled is not sent again."""
+    from . import cli
+    from .pii import PIIMasker
+    masker = PIIMasker()
+    messages = [{'role': 'system', 'content': SKIP_SYSTEM},
+                {'role': 'user', 'content': f'<previous_answer>\n{masker.mask(answer)[0][-6000:]}\n</previous_answer>\n'
+                                            f'<next_request>\n{masker.mask(request)[0][:2000]}\n</next_request>\nyes or no:'}]
+    for provider, url, extra in cli.free_classifiers():
+        for _, key, _ in config_tool.stored_keys(provider):
+            verdict = cli.ask_classifier(url, key, dict(extra, messages=messages, temperature=0, max_tokens=300), ('yes', 'no'))
+            if verdict:
+                return verdict == 'yes'
+    return False
+
+
 def parse_parallel(text):
     parts = text.split(' | ')
     if not 2 <= len(parts) <= 4:
@@ -520,7 +696,7 @@ def parse_parallel(text):
     tasks = []
     for part in parts:
         engine, separator, prompt = part.partition(':')
-        if not separator or engine.strip() not in ('codex', 'openrouter', 'grok') or not prompt.strip():
+        if not separator or engine.strip() not in ('codex', 'openrouter', 'grok', 'deepseek') or not prompt.strip():
             raise ValueError('Formato: /parallel codex: analisar testes | openrouter: explicar conceito')
         tasks.append((engine.strip(), prompt.strip()))
     return tasks
@@ -542,12 +718,14 @@ def compact(session):
     job = {'id': 'compact', 'engine': session.data.get('engine', 'auto'), 'prompt': 'compact',
            'sent': COMPACT_PROMPT.format(reply=tr('reply_in'), conversation=json.dumps(messages, ensure_ascii=False)[-MAX_CONTEXT:])}
     runner = Runner(session.data['cwd'], mode='plan')
+    ACTIVE.add(runner)
     ui.SPINNER.start(tr('compacting'))
     try:
         runner.run(job, 'resumir conversa', readonly=True)
     except KeyboardInterrupt:
         runner.cancel()
     finally:
+        ACTIVE.discard(runner)
         ui.SPINNER.stop()
     summary = '\n'.join(job.get('answers') or []).strip()
     if job.get('status') != 'done' or not summary:
@@ -572,7 +750,7 @@ def run_tool(args):
         pass
 
 
-BUILTIN = ['/usage', '/clear', '/compact', '/setup', '/terminal-setup', '/tool', '/model', '/account', '/key', '/status', '/reset', '/sync', '/update', '/mode', '/lang',
+BUILTIN = ['/usage', '/clear', '/compact', '/versions', '/setup', '/terminal-setup', '/tool', '/model', '/account', '/key', '/status', '/reset', '/sync', '/update', '/mode', '/lang',
            '/skills', '/history', '/sent', '/trace', '/sessions', '/resume', '/new', '/parallel', '/help', '/exit']
 
 
@@ -763,16 +941,35 @@ def main(argv=None):
         if command == '/sync':
             return [('--dry-run', 'só mostra o que faria')] if not done else []
         if command == '/parallel':
-            return [('codex:', 'subtarefa no Codex (somente leitura)'), ('openrouter:', 'subtarefa no OpenRouter'), ('grok:', 'subtarefa no Grok'), ('|', 'separa subtarefas')]
+            return [('codex:', 'subtarefa no Codex (somente leitura)'), ('openrouter:', 'subtarefa no OpenRouter'), ('grok:', 'subtarefa no Grok'), ('deepseek:', 'subtarefa no DeepSeek'), ('|', 'separa subtarefas')]
         entry = skills.discover(session.data['cwd']).get(command[1:])
         if entry:
             tool = skills.pick_tool(entry, session.data['engine'])
             return [(o, skills.argument_hint(entry[tool][1])) for o in skills.hint_options(skills.argument_hint(entry[tool][1]))]
         return []
 
+    def redundant(label):
+        # only plain questions; commands and skills always run
+        last = next((m for m in reversed(session.data['messages']) if m['role'] == 'assistant'), None)
+        return not label.startswith('/') and last is not None and already_answered(label, last['content'])
+
+    queue = Queue(skip=redundant)
     box = ui.InputBox(Path(session_dir()).parent / 'input_history', commands, status,
                       lambda: tr('placeholder'), lambda: tr('hints'),
-                      arguments=arguments, cwd=lambda: session.data['cwd'], mode=lambda: session.data.get('mode', 'default'))
+                      arguments=arguments, cwd=lambda: session.data['cwd'], mode=lambda: session.data.get('mode', 'default'),
+                      activity=lambda: activity(queue))
+
+    def submit(label, work):
+        """With the input box, requests go to the queue and you keep typing; without it they run right away."""
+        if box.session:
+            queue.put(label, work)
+        else:
+            work()
+
+    def idle(command):
+        # these take over the terminal or swap the session under the running request
+        if queue.busy():
+            raise ValueError(tr('busy', c=command))
     if box.session is None:
         display(tr('welcome', id=session.id, cwd=session.data['cwd']))
     else:
@@ -785,7 +982,15 @@ def main(argv=None):
             ui.replay(session.data['messages'])
         if onboarding.first_run():
             display(onboarding.guide(LANG[0]))
+    ui.SPINNER.embedded = box.session is not None
+    if box.session:
+        from prompt_toolkit.patch_stdout import patch_stdout
+        # answers from the queue print above the input instead of over what you're typing
+        printing = patch_stdout(raw=True)
+    else:
+        printing = contextlib.nullcontext()
     try:
+        printing.__enter__()
         while True:
             try:
                 mode = session.data.get('mode', 'default')
@@ -796,6 +1001,9 @@ def main(argv=None):
             except EOFError:
                 break
             except KeyboardInterrupt:
+                if queue.busy():
+                    display(ui.yellow('  ' + tr('queue_dropped', n=queue.cancel())))
+                    continue
                 display('')
                 break
             if not line:
@@ -813,6 +1021,7 @@ def main(argv=None):
                     session.save()
                     display(tr('tool_set', v=argument))
                 elif command in TOOL_COMMANDS:
+                    idle(command)
                     run_tool(TOOL_COMMANDS[command] + argument.split())
                 elif command == '/mode':
                     if not argument:
@@ -848,6 +1057,7 @@ def main(argv=None):
                 elif command == '/sessions':
                     list_sessions()
                 elif command in ('/resume', '/new'):
+                    idle(command)
                     replacement = Session(argument) if command == '/resume' else Session()
                     session.close()
                     session = replacement
@@ -863,16 +1073,20 @@ def main(argv=None):
                     data = job.get('dispatches', job['sent']) if command == '/sent' else job.get('events', [])
                     display(json.dumps(data, ensure_ascii=False, indent=2) if not isinstance(data, str) else data)
                 elif command == '/clear':
+                    idle(command)
                     replacement = Session()
                     session.close()
                     session = replacement
                     ui.clear_screen()
                     ui.set_title('Omni AI')
                     display(tr('cleared', id=session.id))
+                elif command == '/versions':
+                    show_versions(argument.strip())
                 elif command == '/compact':
-                    compact(session)
+                    submit(line, lambda current=session: compact(current))
                 elif command == '/parallel':
-                    execute(session, parse_parallel(argument), parallel=True)
+                    tasks = parse_parallel(argument)
+                    submit(line, lambda current=session: execute(current, tasks, parallel=True))
                 elif command == '/skills':
                     catalog = skills.discover(session.data['cwd'])
                     if not catalog:
@@ -881,6 +1095,7 @@ def main(argv=None):
                         kind, path, scope = next(iter(entry.values()))
                         display(f"/{name:<28} {', '.join(entry):<18} {scope:<8} {skills.description(path)[:70]}")
                 elif skills.native_command(command[1:]):
+                    idle(command)
                     run_native(*skills.native_command(command[1:]), session.data['cwd'])
                 elif line.startswith('/') and '\n' not in command:
                     entry = skills.discover(session.data['cwd']).get(command[1:])
@@ -895,12 +1110,17 @@ def main(argv=None):
                             continue
                     prompt, raw = skills.build_prompt(command[1:], argument, tool, entry)
                     display(tr('skill_run', name=command[1:], tool=tool))
-                    execute(session, [(tool, prompt)], raw=raw)
+                    submit(line, lambda current=session, tool=tool, prompt=prompt, raw=raw: execute(current, [(tool, prompt)], raw=raw))
                 else:
-                    execute(session, [(session.data['engine'], line)])
+                    # the tool is fixed when you send, so a /tool typed later only affects what comes after
+                    submit(line, lambda current=session, engine=session.data['engine'], text=line: execute(current, [(engine, text)]))
             except (ValueError, OSError) as error:
                 display(tr('error', e=error))
     finally:
+        if queue.busy():
+            queue.cancel()
+            queue.wait()
+        printing.__exit__(None, None, None)
         session.save()
         ui.set_title('')
         display(tr('saved', id=session.id))

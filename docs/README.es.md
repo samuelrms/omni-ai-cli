@@ -7,9 +7,12 @@
 
 > [Português](../README.md) · [English](README.en.md) · [Français](README.fr.md)
 
-Una terminal de chat que reúne **Claude Code, Codex, Antigravity y OpenRouter** en un
-solo lugar. Escribes la pregunta, `ai` decide quién responde y, si la herramienta falla o
-agota la cuota, pasa a la siguiente sin que hagas nada.
+Una terminal de chat que reúne **Claude Code, Codex, Cursor, Antigravity, Grok, DeepSeek y
+OpenRouter** en un solo lugar. Escribes la pregunta, `ai` decide quién responde y, si la
+herramienta falla o agota la cuota, pasa a la siguiente sin que hagas nada.
+
+Mientras se genera una respuesta, la caja de entrada sigue libre: puedes seguir enviando
+pedidos, que entran en una cola visible sobre la caja y se ejecutan en orden.
 
 Las preguntas simples van a las herramientas más baratas. Las tareas pesadas van a
 Claude, con cambio automático entre varias cuentas cuando una llega al límite. El historial
@@ -49,26 +52,30 @@ haciendo.
 
 ```mermaid
 flowchart TD
-    A["Escribes y presionas Enter"] --> B{"¿Empieza con / ?"}
-    B -- sí --> C["Comando interno<br/>/model · /account · /key · /lang · /resume"]
+    A["Escribes y presionas Enter<br/>(la caja nunca se bloquea)"] --> B{"¿Empieza con / ?"}
+    B -- sí --> C["Comando interno<br/>/model · /account · /key · /lang · /versions"]
     C --> C1["config.py guarda en<br/>models.json, profiles.json o keys/"]
-    B -- no --> D["Arma el contexto: últimos mensajes<br/>de la sesión hasta 48 mil caracteres + idioma"]
+    B -- no --> FQ["Entra en la cola<br/>con la herramienta del momento del envío"]
 
     subgraph CHAT ["chat.py — chat"]
+        FQ --> FW{"¿Esperó en la cola y la respuesta<br/>anterior ya resuelve el pedido?"}
+        FW -- "sí (clasificador gratis)" --> FS["Omitido, avisa en pantalla"]
+        FW -- no --> D["Arma el contexto: últimos mensajes<br/>de la sesión hasta 48 mil caracteres + idioma"]
         D --> E["Worker en hilo lanza el enrutador<br/>en un grupo de procesos propio"]
         E -. "eventos JSON línea por línea" .-> F["Muestra proveedor, comandos y respuesta"]
-        X["Ctrl-C"] -. "SIGTERM al grupo;<br/>tras 5 s, SIGKILL" .-> E
+        X["Ctrl-C"] -. "vacía la cola; SIGTERM al grupo,<br/>tras 5 s, SIGKILL" .-> E
     end
 
     subgraph ROUTER ["cli.py — enrutador"]
         E --> G["Carga modelos:<br/>env > models.json > predeterminado"]
         G --> H{"¿Herramienta fijada<br/>con /tool?"}
         H -- sí --> H1["Solo la herramienta elegida"]
-        H -- auto --> I{"Clasifica: palabras clave<br/>y tamaño hasta 200 caracteres"}
+        H -- auto --> I{"Clasifica: Groq → Cerebras →<br/>OpenRouter gratis → Grok;<br/>sin respuesta, palabras clave"}
         I -- simple --> J["OpenRouter: gratuitos, o pagos<br/>si se autorizan · datos personales enmascarados"]
         J -- "sin clave o falló" --> K["Codex: suscripción,<br/>luego clave de API"]
         K -- falló --> L["Antigravity: suscripción,<br/>luego clave de API"]
-        L -- falló --> M
+        L -- falló --> LP["De pago solo si están en fallback_order:<br/>Cursor, Grok, DeepSeek"]
+        LP -- falló --> M
         I -- compleja --> M["Claude: siguiente cuenta activa<br/>por prioridad"]
         M --> N{"¿Rate limit?"}
         N -- sí --> O["Cuenta en cooldown de 60 min"]
@@ -85,11 +92,12 @@ flowchart TD
     J -- ok --> R
     K -- ok --> R
     L -- ok --> R
+    LP -- ok --> R
     Q --> R
     H1 --> R
     R --> F
     F --> S[("Sesión guardada en disco<br/>con escritura atómica")]
-    S --> A
+    S --> FQ
 ```
 
 Tres detalles que el diagrama deja explícitos:
@@ -102,6 +110,10 @@ Tres detalles que el diagrama deja explícitos:
 - **Ctrl-C mata todo el árbol de procesos.** El enrutador corre en un grupo de procesos
   propio, así que cancelar también termina el `claude`, el `codex` o el `agy` que esté
   corriendo debajo, en lugar de dejar procesos huérfanos gastando cuota.
+- **La cola no bloquea nada.** Sobre la caja aparecen el pedido en ejecución, el tiempo y
+  los siguientes de la cola. Un pedido que esperó pasa por un clasificador gratis antes de
+  ejecutarse: si la respuesta anterior ya lo resuelve, se omite. Los comandos y skills
+  siempre se ejecutan. Ctrl-C con la cola activa cancela todo sin salir del chat.
 - **Solo la respuesta entra al historial.** Las líneas de estado y diagnóstico aparecen
   en pantalla, pero no se envían como contexto en la siguiente pregunta. El razonamiento
   interno de los modelos también se descarta.
@@ -203,7 +215,7 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 
 | Comando | Qué hace |
 | --- | --- |
-| `/tool auto\|claude\|codex\|agy\|openrouter` | Fija una herramienta (`auto` decide solo) |
+| `/tool auto\|claude\|codex\|cursor\|agy\|openrouter\|grok\|deepseek` | Fija una herramienta (`auto` decide solo) |
 | `/model` | Lista los modelos de cada herramienta |
 | `/model codex gpt-6-astra` | Cambia un modelo |
 | `/model codex default` | Vuelve al predeterminado |
@@ -213,7 +225,7 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 | `/account sync NOMBRE` | Vuelve a compartir skills, plugins y MCPs de la cuenta principal |
 | `/account disable\|enable\|remove NOME` | Desactiva, reactiva o elimina |
 | `/key` | Lista las claves de API configuradas (enmascaradas) |
-| `/key claude\|codex\|agy\|openrouter` | Agrega una clave, sin mostrar lo que escribes |
+| `/key claude\|codex\|cursor\|agy\|openrouter\|grok\|deepseek\|groq\|cerebras` | Agrega una clave, sin mostrar lo que escribes |
 | `/key add HERRAMIENTA [NOMBRE]` | Una clave más para la misma herramienta (todas, incluido Claude); se prueban en orden cuando una falla o llega al límite |
 | `/key remove HERRAMIENTA [NOMBRE]` | Elimina la clave (sin nombre, la principal) |
 | `/status` · `/reset` | Estado de las cuentas · reinicia los cooldowns |
@@ -221,6 +233,7 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 | `/mode default\|plan\|edits\|auto\|yolo` | Modo de permisos, igual en las tres herramientas |
 | `/sync` | Comparte MCPs y skills entre Claude, Codex y Antigravity |
 | `/usage [watch]` · `/limits` | Uso real de cada cuenta en barras (e-mail, plan, % de la ventana de 5 h y semanal, hora de reinicio) para Claude y Codex; gasto de la clave en OpenRouter; en las demás, el aviso de límite que dio la herramienta. `watch` actualiza cada 30 s |
+| `/versions [N]` | Qué cambió en cada versión, la más reciente primero; `N` abre la nota técnica. Antes de la primera release, muestra los `feat`/`fix` de `main` |
 | `/clear` · `/compact` | Limpiar la conversación · resumirla en un bloque para ahorrar contexto |
 | `/claude:usage` · `/codex:status` · `/agy:usage` … | Comandos nativos de cada herramienta: abre su pantalla y vuelve a Omni al salir |
 | `/terminal-setup` | Muestra cómo tener Shift+Enter (u Option+Enter) para nueva línea en tu terminal |
@@ -228,8 +241,11 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 | `/nombre args` | Ejecuta la skill o comando (ej.: `/pr-review 237`). Tab completa |
 | `/history` · `/sent` · `/trace` | Conversación · lo que se envió · eventos de la ejecución |
 | `/sessions` · `/resume ID` · `/new` | Sesiones guardadas |
-| `/parallel codex: tarefa \| codex: tarefa` | De 2 a 4 análisis en paralelo, solo lectura |
+| `/parallel codex: tarefa \| deepseek: tarefa` | De 2 a 4 análisis en paralelo, solo lectura (codex, openrouter, grok, deepseek) |
 | `/help` · `/exit` | Ayuda · salir |
+
+Mientras la cola corre, `/clear`, `/new`, `/resume`, `/key`, `/usage` y los comandos nativos
+esperan: toman la terminal o cambian la sesión. El resto funciona al instante.
 
 Los comandos de configuración también funcionan fuera del chat: `ai --model`,
 `ai --account add pessoal`, `ai --key claude`, `ai --status`, `ai --reset`.
@@ -246,11 +262,15 @@ Los comandos de configuración también funcionan fuera del chat: `ai --model`,
 | `agy` | predeterminado de Antigravity | ID de modelo de Antigravity |
 | `openrouter` | automático (gratuito) | ID del modelo; de pago solo con `openrouter_paid on` |
 | `openrouter_paid` | `off` | `on` autoriza modelos de pago de OpenRouter |
+| `grok` | predeterminado de Grok | ID de modelo de xAI |
+| `deepseek` | `deepseek-chat` | `deepseek-chat`, `deepseek-reasoner` |
+| `cursor` | predeterminado de la cuenta Cursor | ID de modelo de Cursor CLI |
 
 El orden de prioridad es: variable de entorno, luego lo guardado con `/model` (en
 `~/.config/smart-ai/models.json`), luego el predeterminado. Las variables son
 `SMART_AI_CLAUDE_MODEL`, `SMART_AI_CODEX_MODEL`, `SMART_AI_CODEX_EFFORT`,
-`SMART_AI_AGY_MODEL` y `SMART_AI_OPENROUTER_MODEL`. Cuando una de ellas está definida,
+`SMART_AI_AGY_MODEL`, `SMART_AI_OPENROUTER_MODEL`, `SMART_AI_GROK_MODEL`,
+`SMART_AI_DEEPSEEK_MODEL` y `SMART_AI_CURSOR_MODEL`. Cuando una de ellas está definida,
 `/model` avisa que tiene precedencia.
 
 ---
@@ -287,6 +307,16 @@ la clave se cobra por uso. OpenRouter funciona solo con clave.
 | Codex | `/key codex` | `CODEX_API_KEY` | platform.openai.com/api-keys |
 | Antigravity | `/key agy` | `GEMINI_API_KEY` | aistudio.google.com/apikey |
 | OpenRouter | `/key openrouter` | `OPENROUTER_API_KEY` | openrouter.ai/keys |
+| Cursor | `/key cursor` | `CURSOR_API_KEY` | cursor.com/dashboard → Integrations |
+| Grok | `/key grok` | `XAI_API_KEY` | console.x.ai |
+| DeepSeek | `/key deepseek` | `DEEPSEEK_API_KEY` | platform.deepseek.com/api_keys |
+| Groq (clasificador) | `/key groq` | `GROQ_API_KEY` | console.groq.com/keys |
+| Cerebras (clasificador) | `/key cerebras` | `CEREBRAS_API_KEY` | cloud.cerebras.ai |
+
+Cursor usa primero el login de la cuenta (`cursor-agent login`) y solo después las claves.
+DeepSeek, como OpenRouter, funciona solo con clave y enmascara los datos personales antes
+del envío. Groq y Cerebras no responden preguntas: solo clasifican cada pedido (gratis) y
+verifican si un pedido de la cola ya fue resuelto.
 
 ```text
 ai [auto] › /key claude
@@ -383,6 +413,8 @@ ai --claude "refatorar o módulo X"     # fuerza Claude
 ai --codex "explicar REST"             # fuerza Codex
 ai --agy "pesquisar React hooks"       # fuerza Antigravity
 ai --openrouter "explicar Docker"      # fuerza OpenRouter
+ai --cursor "corrigir o teste X"       # fuerza Cursor
+ai --deepseek "explicar CAP theorem"   # fuerza DeepSeek
 ai --classify "prompt"                 # muestra cómo se clasificaría
 ai --log                               # últimas llamadas
 ```
@@ -416,6 +448,8 @@ omni-ai-cli/
 │   ├── config.py             # modelos, claves y cuentas Claude (/model, /key, /account)
 │   ├── sync.py               # /sync: MCPs y skills entre las tres herramientas
 │   ├── openrouter.py         # cliente OpenRouter: gratuitos, de pago solo si se autorizan
+│   ├── grok.py               # cliente xAI, reutilizado por DeepSeek
+│   ├── deepseek.py           # cliente DeepSeek con datos personales enmascarados
 │   ├── pii.py                # enmascara y restaura datos personales
 │   ├── osutils.py            # diferencias entre macOS, Linux y Windows
 │   ├── profiles.json         # plantilla inicial; la tuya queda en ~/.config/smart-ai
@@ -480,6 +514,19 @@ versión sale de los mensajes de commit (Conventional Commits) — nadie edita `
 
 Usa squash merge: el título del PR se vuelve el commit, y el workflow `PR title` bloquea
 títulos fuera del estándar.
+
+### Mensajes de commit
+
+`/versions` muestra el título de cada `feat`/`fix` como la "vista simple" y el cuerpo como
+"nota técnica". Por eso:
+
+- **Título:** qué cambia para quien lo usa, en inglés, en presente, sin nombres de archivo
+  ni de función. `feat: keep the input free and queue new requests while one runs`, no
+  `feat: add Queue class to chat.py`.
+- **Cuerpo:** el porqué y el comportamiento nuevo en frases cortas; detalles técnicos solo
+  al final, si ayudan.
+- Un commit por cambio perceptible. Refactorizaciones y tests van en `refactor:`/`test:`,
+  que no aparecen en `/versions`.
 
 ```mermaid
 flowchart TD

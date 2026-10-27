@@ -45,6 +45,8 @@ MODELS = {
     'agy': ('', 'SMART_AI_AGY_MODEL', 'Antigravity: vazio = padrão do agy'),
     'openrouter': ('', 'SMART_AI_OPENROUTER_MODEL', 'OpenRouter: ID do modelo; pago exige openrouter_paid on'),
     'grok': ('', 'SMART_AI_GROK_MODEL', 'Grok Build/xAI: ID do modelo; vazio = padrão do grok'),
+    'deepseek': ('', 'SMART_AI_DEEPSEEK_MODEL', 'DeepSeek: deepseek-chat ou deepseek-reasoner; vazio = deepseek-chat'),
+    'cursor': ('', 'SMART_AI_CURSOR_MODEL', 'Cursor CLI: ID do modelo; vazio = padrão da conta'),
     'openrouter_paid': ('off', 'SMART_AI_OPENROUTER_PAID', 'OpenRouter: on autoriza modelos pagos (cobrados na sua conta)'),
 }
 # provider: (env var the CLI reads, expected prefix or None, where to create one)
@@ -55,6 +57,9 @@ KEYS = {
     'openrouter': ('OPENROUTER_API_KEY', 'sk-or-', 'openrouter.ai/keys'),
     'grok': ('XAI_API_KEY', 'xai-', 'console.x.ai'),
     'groq': ('GROQ_API_KEY', 'gsk_', 'console.groq.com/keys'),
+    'cerebras': ('CEREBRAS_API_KEY', 'csk-', 'cloud.cerebras.ai'),
+    'deepseek': ('DEEPSEEK_API_KEY', 'sk-', 'platform.deepseek.com/api_keys'),
+    'cursor': ('CURSOR_API_KEY', None, 'cursor.com/dashboard → Integrations → API Keys'),
 }
 KEYS_DIR = CONFIG_DIR / 'keys'
 LEGACY_OPENROUTER = CONFIG_DIR / 'openrouter_key'

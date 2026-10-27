@@ -19,9 +19,9 @@ from .pii import PIIMasker
 XAI_BASE = "https://api.x.ai/v1"
 
 
-def request(endpoint, key, data=None, timeout=60):
-    """HTTP call to xAI; errors carry only the provider's short message, never the prompt."""
-    req = urllib.request.Request(f"{XAI_BASE}{endpoint}", data=json.dumps(data).encode() if data else None,
+def request(endpoint, key, data=None, timeout=60, base=XAI_BASE, name="xAI"):
+    """HTTP call to an OpenAI-compatible API; errors carry only the provider's short message, never the prompt."""
+    req = urllib.request.Request(f"{base}{endpoint}", data=json.dumps(data).encode() if data else None,
                                  method="POST" if data else "GET",
                                  headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}",
                                           "User-Agent": "omni-ai-cli"})
@@ -35,11 +35,11 @@ def request(endpoint, key, data=None, timeout=60):
         except (ValueError, AttributeError, OSError):
             reason = ""
         e.close()
-        raise RuntimeError(f"xAI HTTP {e.code}" + (f": {reason}" if reason else "")) from None
+        raise RuntimeError(f"{name} HTTP {e.code}" + (f": {reason}" if reason else "")) from None
     except (ValueError, TimeoutError):
-        raise RuntimeError("Resposta inválida ou timeout da xAI") from None
+        raise RuntimeError(f"Resposta inválida ou timeout da {name}") from None
     except urllib.error.URLError:
-        raise RuntimeError("Falha de rede ao acessar a xAI") from None
+        raise RuntimeError(f"Falha de rede ao acessar a {name}") from None
 
 
 def pick_model(key):
@@ -52,7 +52,7 @@ def pick_model(key):
     raise RuntimeError("Nenhum modelo Grok disponível nesta conta")
 
 
-def chat(key, prompt, model="", system_prompt=None, mask=True):
+def chat(key, prompt, model="", system_prompt=None, mask=True, base=XAI_BASE, name="xAI"):
     masker = PIIMasker() if mask else None
     pii_map = {}
     if masker:
@@ -63,13 +63,13 @@ def chat(key, prompt, model="", system_prompt=None, mask=True):
     data = {"model": model or pick_model(key), "messages": messages}
     if os.environ.get("SMART_AI_EVENTS") == "1":
         print(json.dumps({"type": "smart.request", "data": data}, ensure_ascii=False), file=sys.stderr, flush=True)
-    resp = request("/chat/completions", key, data)
+    resp = request("/chat/completions", key, data, base=base, name=name)
     try:
         content = resp["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError):
-        raise RuntimeError("xAI não retornou uma resposta válida") from None
+        raise RuntimeError(f"{name} não retornou uma resposta válida") from None
     if not isinstance(content, str) or not content.strip():
-        raise RuntimeError("xAI retornou conteúdo vazio")
+        raise RuntimeError(f"{name} retornou conteúdo vazio")
     if masker and pii_map:
         content = masker.unmask(content, pii_map)
     return {"content": content, "model": resp.get("model", data["model"]), "masked_pii_count": len(pii_map),

@@ -72,8 +72,8 @@ def badge(label, color):
 
 LIMIT_WORDS = re.compile(r'limit|quota|cota|cooldown|rate.?limit|resets?|try again', re.I)
 red, green, yellow, blue, magenta, cyan = _c('31'), _c('32'), _c('33'), _c('34'), _c('35'), _c('36')
-TOOL_COLOR = {'claude': _c('38;5;173'), 'codex': green, 'agy': magenta, 'openrouter': yellow, 'grok': blue}
-TOOL_RGB = {'claude': (217, 119, 87), 'codex': (16, 185, 129), 'agy': (99, 102, 241), 'openrouter': (234, 179, 8), 'grok': (59, 130, 246)}
+TOOL_COLOR = {'claude': _c('38;5;173'), 'codex': green, 'agy': magenta, 'openrouter': yellow, 'grok': blue, 'deepseek': blue, 'cursor': dim}
+TOOL_RGB = {'claude': (217, 119, 87), 'codex': (16, 185, 129), 'agy': (99, 102, 241), 'openrouter': (234, 179, 8), 'grok': (59, 130, 246), 'deepseek': (77, 107, 254), 'cursor': (200, 200, 200)}
 MARK = '✦'  # Omni's mark: the star at the center of the orbit
 LOCK = threading.RLock()
 LANG = ['pt']  # set by the chat; screen texts follow it
@@ -156,10 +156,11 @@ class Spinner:
         self.stop_event = threading.Event()
         self.thread = None
         self.visible = False
+        self.embedded = False  # the input box draws it while requests run in the background
 
     def start(self, label):
         self.label, self.started = label, time.time()
-        if not sys.stdout.isatty():
+        if self.embedded or not sys.stdout.isatty():
             return
         self.stop_event.clear()
         self.thread = threading.Thread(target=self._loop, daemon=True)
@@ -180,10 +181,14 @@ class Spinner:
             sys.stdout.write('\r\033[K')
             self.visible = False
 
+    def frame(self):
+        return self.FRAMES[int(time.time() * 10) % len(self.FRAMES)]
+
     def stop(self):
         self.stop_event.set()
         if self.thread:
             self.thread.join()
+            self.thread = None
         with LOCK:
             self.clear()
 
@@ -321,8 +326,8 @@ def splash(seconds=1.5):
     cols, rows = shutil.get_terminal_size((100, 30))
     big = cols >= len(BIG_TITLE[0]) + 4 and rows >= 16
     title_w = len(BIG_TITLE[0]) if big else len('O M N I   A I')
-    tools = dim(' · ').join(rgb(TOOL_RGB[t], t) for t in ('claude', 'codex', 'agy', 'openrouter', 'grok'))
-    tools_w = len('claude · codex · agy · openrouter · grok')
+    tools = dim(' · ').join(rgb(TOOL_RGB[t], t) for t in ('claude', 'codex', 'cursor', 'agy', 'openrouter', 'grok', 'deepseek'))
+    tools_w = len('claude · codex · cursor · agy · openrouter · grok · deepseek')
     bar_w = min(44, cols - 8)
     height = 3 + 1 + (len(BIG_TITLE) if big else 1) + 1 + 1 + 1 + 1
     top = max(0, (rows - height) // 2)
@@ -361,7 +366,7 @@ def splash(seconds=1.5):
 
 def welcome(session_id, cwd, engine, model, mode, lang_hint, animate=True):
     w = min(width() - 2, 78)
-    tools = dim(' · ').join(rgb(TOOL_RGB[t], t) for t in ('claude', 'codex', 'agy', 'openrouter', 'grok'))
+    tools = dim(' · ').join(rgb(TOOL_RGB[t], t) for t in ('claude', 'codex', 'cursor', 'agy', 'openrouter', 'grok', 'deepseek'))
     where = home_path(cwd) + dim(' · ') + f'{engine} · {model}' + ('' if mode == 'default' else dim(' · ') + rgb((239, 68, 68) if mode == 'yolo' else (59, 130, 246), mode))
     strip = re.compile(r'\033\[[0-9;]*m')
     border = lambda t: rgb((88, 70, 140), t)
@@ -440,8 +445,8 @@ def project_files(cwd, limit=4000):
 class InputBox:
     """Bottom input like Claude Code/Codex: rule above, placeholder, status bar below, Tab completion."""
 
-    def __init__(self, history_file, commands, status, placeholder, hints, arguments=None, cwd=None, mode=None):
-        self.status, self.placeholder, self.hints, self.mode = status, placeholder, hints, mode
+    def __init__(self, history_file, commands, status, placeholder, hints, arguments=None, cwd=None, mode=None, activity=None):
+        self.status, self.placeholder, self.hints, self.mode, self.activity = status, placeholder, hints, mode, activity
         self.session = None
         if not (sys.stdin.isatty() and sys.stdout.isatty()):
             return
@@ -533,7 +538,8 @@ class InputBox:
                                    'arrow': '#e8604c bold', 'placeholder': '#6c6c6c', 'auto-suggestion': '#5f5f5f',
                                    'completion-menu.completion': 'bg:#262626 #d0d0d0',
                                    'completion-menu.completion.current': 'bg:#444444 #ffffff bold',
-                                   'completion-menu.meta.completion': 'bg:#262626 #808080'}))
+                                   'completion-menu.meta.completion': 'bg:#262626 #808080',
+                                   'running': '#e8604c', 'queued': '#8a8a8a'}))
 
     def ask_args(self, command, hint, options):
         """Second prompt for a skill's arguments: Tab offers its options, any text is accepted, Enter alone skips."""
@@ -548,7 +554,13 @@ class InputBox:
         if not self.session:
             return input('\n› ')
         rule = '─' * width()
-        message = self.HTML(f'<rule>{rule}</rule>\n<arrow>❯</arrow> ')
+        activity = self.activity
+
+        def message():
+            # What runs and what waits in line sits right above the input, redrawn while you type
+            lines = activity() if activity else []
+            above = ''.join(f'{line}\n' for line in lines)
+            return self.HTML(f'{above}<rule>{rule}</rule>\n<arrow>❯</arrow> ')
         status = self.status
 
         def toolbar():

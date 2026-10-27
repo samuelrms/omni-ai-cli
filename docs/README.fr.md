@@ -7,9 +7,13 @@
 
 > [Português](../README.md) · [English](README.en.md) · [Español](README.es.md)
 
-Un terminal de chat qui réunit **Claude Code, Codex, Antigravity et OpenRouter** au même
-endroit. Vous écrivez la question, `ai` décide qui répond et, si l'outil échoue ou
-dépasse son quota, il passe au suivant sans que vous ayez rien à faire.
+Un terminal de chat qui réunit **Claude Code, Codex, Cursor, Antigravity, Grok, DeepSeek et
+OpenRouter** au même endroit. Vous écrivez la question, `ai` décide qui répond et, si
+l'outil échoue ou dépasse son quota, il passe au suivant sans que vous ayez rien à faire.
+
+Pendant qu'une réponse est générée, la zone de saisie reste libre : vous continuez à
+envoyer des demandes, qui entrent dans une file visible au-dessus de la zone et
+s'exécutent dans l'ordre.
 
 Les questions simples vont vers les outils les moins chers. Les tâches lourdes vont vers
 Claude, avec bascule automatique entre plusieurs comptes quand l'un atteint sa limite.
@@ -48,26 +52,30 @@ les événements qu'il émet, ligne par ligne, pour afficher qui répond et ce q
 
 ```mermaid
 flowchart TD
-    A["Vous saisissez et appuyez sur Entrée"] --> B{"Commence par / ?"}
-    B -- oui --> C["Commande interne<br/>/model · /account · /key · /lang · /resume"]
+    A["Vous saisissez et appuyez sur Entrée<br/>(la zone ne se bloque jamais)"] --> B{"Commence par / ?"}
+    B -- oui --> C["Commande interne<br/>/model · /account · /key · /lang · /versions"]
     C --> C1["config.py écrit dans<br/>models.json, profiles.json ou keys/"]
-    B -- non --> D["Construit le contexte : derniers messages<br/>de la session jusqu'à 48 mille caractères + langue"]
+    B -- non --> FQ["Entre dans la file<br/>avec l'outil choisi au moment de l'envoi"]
 
     subgraph CHAT ["chat.py — chat"]
+        FQ --> FW{"A attendu dans la file et la réponse<br/>précédente règle déjà la demande ?"}
+        FW -- "oui (classifieur gratuit)" --> FS["Ignorée, signalé à l'écran"]
+        FW -- non --> D["Construit le contexte : derniers messages<br/>de la session jusqu'à 48 mille caractères + langue"]
         D --> E["Worker en thread lance le routeur<br/>dans son propre groupe de processus"]
         E -. "événements JSON ligne par ligne" .-> F["Affiche le fournisseur, les commandes et la réponse"]
-        X["Ctrl-C"] -. "SIGTERM sur le groupe ;<br/>après 5 s, SIGKILL" .-> E
+        X["Ctrl-C"] -. "vide la file ; SIGTERM sur le groupe,<br/>après 5 s, SIGKILL" .-> E
     end
 
     subgraph ROUTER ["cli.py — routeur"]
         E --> G["Charge les modèles :<br/>env > models.json > défaut"]
         G --> H{"Outil fixé<br/>avec /tool ?"}
         H -- oui --> H1["Seulement l'outil choisi"]
-        H -- auto --> I{"Classe : mots-clés<br/>et taille jusqu'à 200 caractères"}
+        H -- auto --> I{"Classe : Groq → Cerebras →<br/>OpenRouter gratuit → Grok ;<br/>sans réponse, mots-clés"}
         I -- simple --> J["OpenRouter : gratuits, ou payants<br/>si autorisés · données personnelles masquées"]
         J -- "sans clé ou échec" --> K["Codex : abonnement,<br/>puis clé d'API"]
         K -- échec --> L["Antigravity : abonnement,<br/>puis clé d'API"]
-        L -- échec --> M
+        L -- échec --> LP["Payants seulement si listés dans fallback_order :<br/>Cursor, Grok, DeepSeek"]
+        LP -- échec --> M
         I -- complexe --> M["Claude : prochain compte actif<br/>par priorité"]
         M --> N{"Rate limit ?"}
         N -- oui --> O["Compte en cooldown de 60 min"]
@@ -84,11 +92,12 @@ flowchart TD
     J -- ok --> R
     K -- ok --> R
     L -- ok --> R
+    LP -- ok --> R
     Q --> R
     H1 --> R
     R --> F
     F --> S[("Session sauvegardée sur disque<br/>avec écriture atomique")]
-    S --> A
+    S --> FQ
 ```
 
 Trois détails que le diagramme rend explicites :
@@ -102,6 +111,11 @@ Trois détails que le diagramme rend explicites :
 - **Ctrl-C tue tout l'arbre de processus.** Le routeur s'exécute dans son propre groupe de
   processus ; annuler arrête donc aussi le `claude`, le `codex` ou le `agy` qui tourne en
   dessous, au lieu de laisser des processus orphelins consommer du quota.
+- **La file ne bloque rien.** Au-dessus de la zone s'affichent la demande en cours, le
+  temps écoulé et les suivantes. Une demande qui a attendu passe par un classifieur gratuit
+  avant de s'exécuter : si la réponse précédente la règle déjà, elle est ignorée. Les
+  commandes et skills s'exécutent toujours. Ctrl-C avec la file active annule tout sans
+  quitter le chat.
 - **Seule la réponse entre dans l'historique.** Les lignes de statut et de diagnostic
   s'affichent à l'écran, mais ne sont pas envoyées comme contexte à la question suivante.
   Le raisonnement interne des modèles est aussi écarté.
@@ -203,7 +217,7 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 
 | Commande | Ce qu'elle fait |
 | --- | --- |
-| `/tool auto\|claude\|codex\|agy\|openrouter` | Fixe un outil (`auto` décide tout seul) |
+| `/tool auto\|claude\|codex\|cursor\|agy\|openrouter\|grok\|deepseek` | Fixe un outil (`auto` décide tout seul) |
 | `/model` | Liste les modèles de chaque outil |
 | `/model codex gpt-6-astra` | Change un modèle |
 | `/model codex default` | Revient au défaut |
@@ -213,7 +227,7 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 | `/account sync NOM` | Repartage les skills, plugins et MCP du compte principal |
 | `/account disable\|enable\|remove NOME` | Désactive, réactive ou supprime |
 | `/key` | Liste les clés d'API configurées (masquées) |
-| `/key claude\|codex\|agy\|openrouter` | Ajoute une clé, sans afficher ce que vous tapez |
+| `/key claude\|codex\|cursor\|agy\|openrouter\|grok\|deepseek\|groq\|cerebras` | Ajoute une clé, sans afficher ce que vous tapez |
 | `/key add OUTIL [NOM]` | Une clé de plus pour le même outil (tous, Claude compris) ; les clés sont essayées dans l'ordre quand l'une échoue ou atteint sa limite |
 | `/key remove OUTIL [NOM]` | Supprime la clé (sans nom : la principale) |
 | `/status` · `/reset` | Statut des comptes · remet les cooldowns à zéro |
@@ -221,6 +235,7 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 | `/mode default\|plan\|edits\|auto\|yolo` | Mode de permissions, identique sur les trois outils |
 | `/sync` | Partage MCP et skills entre Claude, Codex et Antigravity |
 | `/usage [watch]` · `/limits` | Usage réel de chaque compte en barres (e-mail, offre, % des fenêtres de 5 h et hebdomadaire, heure de remise à zéro) pour Claude et Codex ; dépense de la clé sur OpenRouter ; pour les autres, le message de limite de l'outil. `watch` rafraîchit toutes les 30 s |
+| `/versions [N]` | Ce qui a changé dans chaque version, la plus récente d'abord ; `N` ouvre la note technique. Avant la première release, affiche les `feat`/`fix` de `main` |
 | `/clear` · `/compact` | Effacer la conversation · la résumer en un bloc pour économiser du contexte |
 | `/claude:usage` · `/codex:status` · `/agy:usage` … | Commandes natives de chaque outil : ouvre son écran et revient à Omni en sortant |
 | `/terminal-setup` | Montre comment avoir Maj+Entrée (ou Option+Entrée) pour une nouvelle ligne dans votre terminal |
@@ -228,8 +243,12 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 | `/nom args` | Lance la skill ou la commande (ex. `/pr-review 237`). Tab complète |
 | `/history` · `/sent` · `/trace` | Conversation · ce qui a été envoyé · événements de l'exécution |
 | `/sessions` · `/resume ID` · `/new` | Sessions sauvegardées |
-| `/parallel codex: tarefa \| codex: tarefa` | 2 à 4 analyses en parallèle, en lecture seule |
+| `/parallel codex: tarefa \| deepseek: tarefa` | 2 à 4 analyses en parallèle, en lecture seule (codex, openrouter, grok, deepseek) |
 | `/help` · `/exit` | Aide · quitter |
+
+Pendant que la file tourne, `/clear`, `/new`, `/resume`, `/key`, `/usage` et les commandes
+natives attendent : elles prennent le terminal ou changent de session. Le reste fonctionne
+tout de suite.
 
 Les commandes de configuration fonctionnent aussi hors du chat : `ai --model`,
 `ai --account add pessoal`, `ai --key claude`, `ai --status`, `ai --reset`.
@@ -246,11 +265,15 @@ Les commandes de configuration fonctionnent aussi hors du chat : `ai --model`,
 | `agy` | défaut d'Antigravity | ID de modèle Antigravity |
 | `openrouter` | automatique (gratuit) | ID du modèle ; payant seulement avec `openrouter_paid on` |
 | `openrouter_paid` | `off` | `on` autorise les modèles payants d'OpenRouter |
+| `grok` | défaut de Grok | ID de modèle xAI |
+| `deepseek` | `deepseek-chat` | `deepseek-chat`, `deepseek-reasoner` |
+| `cursor` | défaut du compte Cursor | ID de modèle du Cursor CLI |
 
 L'ordre de priorité est : variable d'environnement, puis ce qui a été sauvegardé avec
 `/model` (dans `~/.config/smart-ai/models.json`), puis le défaut. Les variables sont
 `SMART_AI_CLAUDE_MODEL`, `SMART_AI_CODEX_MODEL`, `SMART_AI_CODEX_EFFORT`,
-`SMART_AI_AGY_MODEL` et `SMART_AI_OPENROUTER_MODEL`. Quand l'une d'elles est définie,
+`SMART_AI_AGY_MODEL`, `SMART_AI_OPENROUTER_MODEL`, `SMART_AI_GROK_MODEL`,
+`SMART_AI_DEEPSEEK_MODEL` et `SMART_AI_CURSOR_MODEL`. Quand l'une d'elles est définie,
 `/model` signale qu'elle est prioritaire.
 
 ---
@@ -288,6 +311,17 @@ car une clé est facturée à l'usage. OpenRouter fonctionne uniquement avec une
 | Codex | `/key codex` | `CODEX_API_KEY` | platform.openai.com/api-keys |
 | Antigravity | `/key agy` | `GEMINI_API_KEY` | aistudio.google.com/apikey |
 | OpenRouter | `/key openrouter` | `OPENROUTER_API_KEY` | openrouter.ai/keys |
+| Cursor | `/key cursor` | `CURSOR_API_KEY` | cursor.com/dashboard → Integrations |
+| Grok | `/key grok` | `XAI_API_KEY` | console.x.ai |
+| DeepSeek | `/key deepseek` | `DEEPSEEK_API_KEY` | platform.deepseek.com/api_keys |
+| Groq (classifieur) | `/key groq` | `GROQ_API_KEY` | console.groq.com/keys |
+| Cerebras (classifieur) | `/key cerebras` | `CEREBRAS_API_KEY` | cloud.cerebras.ai |
+
+Cursor utilise d'abord la connexion du compte (`cursor-agent login`), puis seulement les
+clés. DeepSeek, comme OpenRouter, ne fonctionne qu'avec une clé et masque les données
+personnelles avant l'envoi. Groq et Cerebras ne répondent pas aux questions : ils classent
+seulement chaque demande (gratuitement) et vérifient si une demande de la file a déjà été
+traitée.
 
 ```text
 ai [auto] › /key claude
@@ -388,6 +422,8 @@ ai --claude "refatorar o módulo X"     # force Claude
 ai --codex "explicar REST"             # force Codex
 ai --agy "pesquisar React hooks"       # force Antigravity
 ai --openrouter "explicar Docker"      # force OpenRouter
+ai --cursor "corrigir o teste X"       # force Cursor
+ai --deepseek "explicar CAP theorem"   # force DeepSeek
 ai --classify "prompt"                 # montre la classification
 ai --log                               # derniers appels
 ```
@@ -421,6 +457,8 @@ omni-ai-cli/
 │   ├── config.py             # modèles, clés et comptes Claude (/model, /key, /account)
 │   ├── sync.py               # /sync : MCP et skills entre les trois outils
 │   ├── openrouter.py         # client OpenRouter : gratuits, payants seulement si autorisés
+│   ├── grok.py               # client xAI, réutilisé par DeepSeek
+│   ├── deepseek.py           # client DeepSeek avec données personnelles masquées
 │   ├── pii.py                # masque et restaure les données personnelles
 │   ├── osutils.py            # différences entre macOS, Linux et Windows
 │   ├── profiles.json         # modèle initial ; le vôtre est dans ~/.config/smart-ai
@@ -485,6 +523,19 @@ La version découle des messages de commit (Conventional Commits) — personne n
 
 Utilisez le squash merge : le titre de la PR devient le commit, et le workflow `PR title`
 bloque les titres hors convention.
+
+### Messages de commit
+
+`/versions` affiche le titre de chaque `feat`/`fix` comme « vue simple » et le corps comme
+« note technique ». Donc :
+
+- **Titre :** ce qui change pour l'utilisateur, en anglais, au présent, sans nom de
+  fichier ni de fonction. `feat: keep the input free and queue new requests while one runs`,
+  pas `feat: add Queue class to chat.py`.
+- **Corps :** le pourquoi et le nouveau comportement en phrases courtes ; les détails
+  techniques seulement à la fin, s'ils aident.
+- Un commit par changement perceptible. Refactorisations et tests vont dans
+  `refactor:`/`test:`, qui n'apparaissent pas dans `/versions`.
 
 ```mermaid
 flowchart TD
