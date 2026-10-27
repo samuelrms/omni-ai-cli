@@ -156,10 +156,11 @@ class Spinner:
         self.stop_event = threading.Event()
         self.thread = None
         self.visible = False
+        self.embedded = False  # the input box draws it while requests run in the background
 
     def start(self, label):
         self.label, self.started = label, time.time()
-        if not sys.stdout.isatty():
+        if self.embedded or not sys.stdout.isatty():
             return
         self.stop_event.clear()
         self.thread = threading.Thread(target=self._loop, daemon=True)
@@ -180,10 +181,14 @@ class Spinner:
             sys.stdout.write('\r\033[K')
             self.visible = False
 
+    def frame(self):
+        return self.FRAMES[int(time.time() * 10) % len(self.FRAMES)]
+
     def stop(self):
         self.stop_event.set()
         if self.thread:
             self.thread.join()
+            self.thread = None
         with LOCK:
             self.clear()
 
@@ -440,8 +445,8 @@ def project_files(cwd, limit=4000):
 class InputBox:
     """Bottom input like Claude Code/Codex: rule above, placeholder, status bar below, Tab completion."""
 
-    def __init__(self, history_file, commands, status, placeholder, hints, arguments=None, cwd=None, mode=None):
-        self.status, self.placeholder, self.hints, self.mode = status, placeholder, hints, mode
+    def __init__(self, history_file, commands, status, placeholder, hints, arguments=None, cwd=None, mode=None, activity=None):
+        self.status, self.placeholder, self.hints, self.mode, self.activity = status, placeholder, hints, mode, activity
         self.session = None
         if not (sys.stdin.isatty() and sys.stdout.isatty()):
             return
@@ -533,7 +538,8 @@ class InputBox:
                                    'arrow': '#e8604c bold', 'placeholder': '#6c6c6c', 'auto-suggestion': '#5f5f5f',
                                    'completion-menu.completion': 'bg:#262626 #d0d0d0',
                                    'completion-menu.completion.current': 'bg:#444444 #ffffff bold',
-                                   'completion-menu.meta.completion': 'bg:#262626 #808080'}))
+                                   'completion-menu.meta.completion': 'bg:#262626 #808080',
+                                   'running': '#e8604c', 'queued': '#8a8a8a'}))
 
     def ask_args(self, command, hint, options):
         """Second prompt for a skill's arguments: Tab offers its options, any text is accepted, Enter alone skips."""
@@ -548,7 +554,13 @@ class InputBox:
         if not self.session:
             return input('\n› ')
         rule = '─' * width()
-        message = self.HTML(f'<rule>{rule}</rule>\n<arrow>❯</arrow> ')
+        activity = self.activity
+
+        def message():
+            # What runs and what waits in line sits right above the input, redrawn while you type
+            lines = activity() if activity else []
+            above = ''.join(f'{line}\n' for line in lines)
+            return self.HTML(f'{above}<rule>{rule}</rule>\n<arrow>❯</arrow> ')
         status = self.status
 
         def toolbar():

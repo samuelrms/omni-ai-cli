@@ -2,6 +2,7 @@
 """Persistent interactive front end for the existing Omni AI router."""
 import argparse
 import concurrent.futures
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -23,6 +24,8 @@ ENGINES = {'auto', 'openrouter', 'codex', 'claude', 'agy', 'grok', 'deepseek', '
 MODES = ('default', 'plan', 'edits', 'auto', 'yolo')
 MAX_CONTEXT = 48000
 PRINT_LOCK = threading.Lock()
+SAVE_LOCK = threading.Lock()
+ACTIVE = set()  # runners working right now, so Ctrl-C at the input can stop them
 ESCAPES = re.compile(r'\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]|[\x00-\x08\x0b-\x1f\x7f]')
 
 
@@ -66,6 +69,15 @@ T = {
                   'es': 'Conversación compactada: {n} mensajes en un resumen.', 'fr': 'Conversation compactée : {n} messages en un résumé.'},
     'compact_failed': {'pt': 'Não deu para resumir agora; a conversa ficou como estava.', 'en': 'Could not summarize now; the conversation is unchanged.',
                        'es': 'No se pudo resumir; la conversación sigue igual.', 'fr': "Impossible de résumer ; la conversation n'a pas changé."},
+    'queued': {'pt': 'na fila ({n})', 'en': 'queued ({n})', 'es': 'en cola ({n})', 'fr': "en file d'attente ({n})"},
+    'next_up': {'pt': '▶ da fila: {v}', 'en': '▶ from the queue: {v}', 'es': '▶ de la cola: {v}', 'fr': '▶ de la file : {v}'},
+    'queue_cancel': {'pt': 'Ctrl-C cancela tudo', 'en': 'Ctrl-C cancels all', 'es': 'Ctrl-C cancela todo', 'fr': 'Ctrl-C annule tout'},
+    'queue_dropped': {'pt': 'Cancelado; {n} pedido(s) da fila descartado(s).', 'en': 'Cancelled; {n} queued request(s) dropped.',
+                      'es': 'Cancelado; {n} pedido(s) de la cola descartado(s).', 'fr': 'Annulé ; {n} demande(s) en attente supprimée(s).'},
+    'busy': {'pt': 'Espere a fila terminar (ou Ctrl-C cancela) para usar {c}.', 'en': 'Wait for the queue to finish (or Ctrl-C cancels) to use {c}.',
+             'es': 'Espera a que termine la cola (o Ctrl-C cancela) para usar {c}.', 'fr': 'Attendez la fin de la file (ou Ctrl-C annule) pour utiliser {c}.'},
+    'skipped': {'pt': '↷ pulado: a resposta anterior já cobre "{v}"', 'en': '↷ skipped: the previous answer already covers "{v}"',
+                'es': '↷ omitido: la respuesta anterior ya cubre "{v}"', 'fr': '↷ ignoré : la réponse précédente couvre déjà « {v} »'},
     'working': {'pt': 'Trabalhando…', 'en': 'Working…', 'es': 'Trabajando…', 'fr': 'Au travail…'},
     'took': {'pt': 'Levou {t}', 'en': 'Took {t}', 'es': 'Tardó {t}', 'fr': 'Durée {t}'},
     'job_failed': {'pt': 'Não concluiu · /trace para detalhes', 'en': 'Did not finish · /trace for details',
@@ -250,15 +262,17 @@ class Session:
         self.save()
 
     def save(self):
-        self.data['updated'] = time.time()
-        fd, name = tempfile.mkstemp(dir=self.path.parent, prefix='.session-')
-        try:
-            with os.fdopen(fd, 'w') as stream:
-                json.dump(self.data, stream, ensure_ascii=False, indent=2)
-            os.replace(name, self.path)
-        finally:
-            if os.path.exists(name):
-                os.unlink(name)
+        # the queue worker and the input loop both save
+        with SAVE_LOCK:
+            self.data['updated'] = time.time()
+            fd, name = tempfile.mkstemp(dir=self.path.parent, prefix='.session-')
+            try:
+                with os.fdopen(fd, 'w') as stream:
+                    json.dump(self.data, stream, ensure_ascii=False, indent=2)
+                os.replace(name, self.path)
+            finally:
+                if os.path.exists(name):
+                    os.unlink(name)
 
     def close(self):
         self.lock.close()
@@ -457,6 +471,7 @@ class Runner:
 
 def execute(session, tasks, parallel=False, raw=False):
     runner = Runner(session.data['cwd'], mode=session.data.get('mode', 'default'))
+    ACTIVE.add(runner)
     jobs = []
     for engine, prompt in tasks:
         job = {'id': 'agente-' + str(len(session.data['requests']) + 1), 'engine': engine,
@@ -494,6 +509,7 @@ def execute(session, tasks, parallel=False, raw=False):
                     kill_tree(child, force=True)
     finally:
         pool.shutdown(wait=True)
+        ACTIVE.discard(runner)
         ui.SPINNER.stop()
         for job in jobs:
             prefix = f"[{job['id']}] " if parallel else ''
@@ -512,6 +528,101 @@ def execute(session, tasks, parallel=False, raw=False):
         if time.time() - started > 20:
             # Long run finished: ring the bell and mark the tab, so it's noticed from another window
             ui.attention(f"{ui.MARK} {tr('took', t=ui.elapsed(started))} · Omni AI · {session.data.get('title') or session.id}")
+
+
+class Queue:
+    """Requests typed while another one runs wait their turn here; the input stays free the whole time."""
+
+    def __init__(self, skip=None):
+        self.items, self.current, self.skip = [], None, skip
+        self.condition = threading.Condition()
+        threading.Thread(target=self._loop, daemon=True).start()
+
+    def put(self, label, work):
+        with self.condition:
+            # only a request that actually waited gets a "from the queue" line when its turn comes
+            self.items.append((label, work, self.current is not None or bool(self.items)))
+            self.condition.notify()
+
+    def busy(self):
+        with self.condition:
+            return self.current is not None or bool(self.items)
+
+    def snapshot(self):
+        with self.condition:
+            return self.current, [label for label, _, _ in self.items]
+
+    def _loop(self):
+        while True:
+            with self.condition:
+                while not self.items:
+                    self.condition.wait()
+                label, work, waited = self.items.pop(0)
+                self.current = label
+            if waited:
+                ui.out('\n' + ui.dim(tr('next_up', v=ui.short(label.split('\n')[0], ui.width() - 20))))
+            try:
+                if waited and self.skip and self.skip(label):
+                    ui.out(ui.dim(tr('skipped', v=ui.short(label.split('\n')[0], ui.width() - 50))))
+                    continue
+                work()
+            except Exception as error:  # a broken request must not take the worker (and the queue) down
+                display(tr('error', e=error))
+            finally:
+                with self.condition:
+                    self.current = None
+                    self.condition.notify_all()
+
+    def cancel(self):
+        """Drop what waits and stop what runs; returns how many waiting requests were dropped."""
+        with self.condition:
+            dropped = len(self.items)
+            self.items.clear()
+        for runner in list(ACTIVE):
+            runner.cancel()
+        return dropped
+
+    def wait(self, timeout=10):
+        with self.condition:
+            self.condition.wait_for(lambda: self.current is None and not self.items, timeout)
+
+
+def activity(queue):
+    """Lines above the input: the request running now and the ones waiting, in order."""
+    current, waiting = queue.snapshot()
+    if current is None:
+        return []
+    room = ui.width() - 30
+    since = ui.elapsed(ui.SPINNER.started) if ui.SPINNER.started else ''
+    lines = [f"<running>{ui.SPINNER.frame()} {ui.escape(ui.SPINNER.label or tr('working'))}</running> "
+             f"<queued>{since} · {ui.escape(ui.short(current.split(chr(10))[0], room))} · {ui.escape(tr('queue_cancel'))}</queued>"]
+    if waiting:
+        lines.append(f"<queued>  {ui.escape(tr('queued', n=len(waiting)))}</queued>")
+        lines += [f"<queued>  {i}. {ui.escape(ui.short(label.split(chr(10))[0], room))}</queued>" for i, label in enumerate(waiting[:5], 1)]
+        if len(waiting) > 5:
+            lines.append(f'<queued>  … +{len(waiting) - 5}</queued>')
+    return lines
+
+
+SKIP_SYSTEM = ('You check a queue of chat requests. Given the previous answer and the next queued request, reply "yes" '
+               'only if the previous answer already fully resolves the next request, so running it would be redundant. '
+               'Reply "no" if it asks anything new, wants an action, or you are unsure. One word: yes or no.')
+
+
+def already_answered(request, answer):
+    """Free classifiers only: a queued request that the answer before it already settled is not sent again."""
+    from . import cli
+    from .pii import PIIMasker
+    masker = PIIMasker()
+    messages = [{'role': 'system', 'content': SKIP_SYSTEM},
+                {'role': 'user', 'content': f'<previous_answer>\n{masker.mask(answer)[0][-6000:]}\n</previous_answer>\n'
+                                            f'<next_request>\n{masker.mask(request)[0][:2000]}\n</next_request>\nyes or no:'}]
+    for provider, url, extra in cli.free_classifiers():
+        for _, key, _ in config_tool.stored_keys(provider):
+            verdict = cli.ask_classifier(url, key, dict(extra, messages=messages, temperature=0, max_tokens=300), ('yes', 'no'))
+            if verdict:
+                return verdict == 'yes'
+    return False
 
 
 def parse_parallel(text):
@@ -543,12 +654,14 @@ def compact(session):
     job = {'id': 'compact', 'engine': session.data.get('engine', 'auto'), 'prompt': 'compact',
            'sent': COMPACT_PROMPT.format(reply=tr('reply_in'), conversation=json.dumps(messages, ensure_ascii=False)[-MAX_CONTEXT:])}
     runner = Runner(session.data['cwd'], mode='plan')
+    ACTIVE.add(runner)
     ui.SPINNER.start(tr('compacting'))
     try:
         runner.run(job, 'resumir conversa', readonly=True)
     except KeyboardInterrupt:
         runner.cancel()
     finally:
+        ACTIVE.discard(runner)
         ui.SPINNER.stop()
     summary = '\n'.join(job.get('answers') or []).strip()
     if job.get('status') != 'done' or not summary:
@@ -771,9 +884,28 @@ def main(argv=None):
             return [(o, skills.argument_hint(entry[tool][1])) for o in skills.hint_options(skills.argument_hint(entry[tool][1]))]
         return []
 
+    def redundant(label):
+        # only plain questions; commands and skills always run
+        last = next((m for m in reversed(session.data['messages']) if m['role'] == 'assistant'), None)
+        return not label.startswith('/') and last is not None and already_answered(label, last['content'])
+
+    queue = Queue(skip=redundant)
     box = ui.InputBox(Path(session_dir()).parent / 'input_history', commands, status,
                       lambda: tr('placeholder'), lambda: tr('hints'),
-                      arguments=arguments, cwd=lambda: session.data['cwd'], mode=lambda: session.data.get('mode', 'default'))
+                      arguments=arguments, cwd=lambda: session.data['cwd'], mode=lambda: session.data.get('mode', 'default'),
+                      activity=lambda: activity(queue))
+
+    def submit(label, work):
+        """With the input box, requests go to the queue and you keep typing; without it they run right away."""
+        if box.session:
+            queue.put(label, work)
+        else:
+            work()
+
+    def idle(command):
+        # these take over the terminal or swap the session under the running request
+        if queue.busy():
+            raise ValueError(tr('busy', c=command))
     if box.session is None:
         display(tr('welcome', id=session.id, cwd=session.data['cwd']))
     else:
@@ -786,7 +918,15 @@ def main(argv=None):
             ui.replay(session.data['messages'])
         if onboarding.first_run():
             display(onboarding.guide(LANG[0]))
+    ui.SPINNER.embedded = box.session is not None
+    if box.session:
+        from prompt_toolkit.patch_stdout import patch_stdout
+        # answers from the queue print above the input instead of over what you're typing
+        printing = patch_stdout(raw=True)
+    else:
+        printing = contextlib.nullcontext()
     try:
+        printing.__enter__()
         while True:
             try:
                 mode = session.data.get('mode', 'default')
@@ -797,6 +937,9 @@ def main(argv=None):
             except EOFError:
                 break
             except KeyboardInterrupt:
+                if queue.busy():
+                    display(ui.yellow('  ' + tr('queue_dropped', n=queue.cancel())))
+                    continue
                 display('')
                 break
             if not line:
@@ -814,6 +957,7 @@ def main(argv=None):
                     session.save()
                     display(tr('tool_set', v=argument))
                 elif command in TOOL_COMMANDS:
+                    idle(command)
                     run_tool(TOOL_COMMANDS[command] + argument.split())
                 elif command == '/mode':
                     if not argument:
@@ -849,6 +993,7 @@ def main(argv=None):
                 elif command == '/sessions':
                     list_sessions()
                 elif command in ('/resume', '/new'):
+                    idle(command)
                     replacement = Session(argument) if command == '/resume' else Session()
                     session.close()
                     session = replacement
@@ -864,6 +1009,7 @@ def main(argv=None):
                     data = job.get('dispatches', job['sent']) if command == '/sent' else job.get('events', [])
                     display(json.dumps(data, ensure_ascii=False, indent=2) if not isinstance(data, str) else data)
                 elif command == '/clear':
+                    idle(command)
                     replacement = Session()
                     session.close()
                     session = replacement
@@ -871,9 +1017,10 @@ def main(argv=None):
                     ui.set_title('Omni AI')
                     display(tr('cleared', id=session.id))
                 elif command == '/compact':
-                    compact(session)
+                    submit(line, lambda current=session: compact(current))
                 elif command == '/parallel':
-                    execute(session, parse_parallel(argument), parallel=True)
+                    tasks = parse_parallel(argument)
+                    submit(line, lambda current=session: execute(current, tasks, parallel=True))
                 elif command == '/skills':
                     catalog = skills.discover(session.data['cwd'])
                     if not catalog:
@@ -882,6 +1029,7 @@ def main(argv=None):
                         kind, path, scope = next(iter(entry.values()))
                         display(f"/{name:<28} {', '.join(entry):<18} {scope:<8} {skills.description(path)[:70]}")
                 elif skills.native_command(command[1:]):
+                    idle(command)
                     run_native(*skills.native_command(command[1:]), session.data['cwd'])
                 elif line.startswith('/') and '\n' not in command:
                     entry = skills.discover(session.data['cwd']).get(command[1:])
@@ -896,12 +1044,17 @@ def main(argv=None):
                             continue
                     prompt, raw = skills.build_prompt(command[1:], argument, tool, entry)
                     display(tr('skill_run', name=command[1:], tool=tool))
-                    execute(session, [(tool, prompt)], raw=raw)
+                    submit(line, lambda current=session, tool=tool, prompt=prompt, raw=raw: execute(current, [(tool, prompt)], raw=raw))
                 else:
-                    execute(session, [(session.data['engine'], line)])
+                    # the tool is fixed when you send, so a /tool typed later only affects what comes after
+                    submit(line, lambda current=session, engine=session.data['engine'], text=line: execute(current, [(engine, text)]))
             except (ValueError, OSError) as error:
                 display(tr('error', e=error))
     finally:
+        if queue.busy():
+            queue.cancel()
+            queue.wait()
+        printing.__exit__(None, None, None)
         session.save()
         ui.set_title('')
         display(tr('saved', id=session.id))
