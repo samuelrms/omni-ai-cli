@@ -117,6 +117,9 @@ Trois détails que le diagramme rend explicites :
   commandes et skills s'exécutent toujours. Ctrl-C avec la file active annule tout sans
   quitter le chat. Si vous fermez le chat avec des demandes en attente, elles restent
   enregistrées dans la session et `ai --resume ID` propose de les relancer.
+- **Vous voyez pourquoi l'outil a été choisi.** En mode `auto`, une ligne courte indique si la
+  demande a été traitée comme une tâche de code ou une question simple, et qui l'a classée
+  (Groq, Cerebras, OpenRouter, Grok ou les mots-clés).
 - **Seule la réponse entre dans l'historique.** Les lignes de statut et de diagnostic
   s'affichent à l'écran, mais ne sont pas envoyées comme contexte à la question suivante.
   Le raisonnement interne des modèles est aussi écarté.

@@ -513,12 +513,17 @@ def classify_llm(prompt):
             # Room for a short reasoning pass on models that can't switch it off
             label = ask_classifier(url, key, dict(extra, messages=messages, temperature=0, max_tokens=300))
             if label:
+                CLASSIFIED_BY[0] = provider
                 return label
     return None
 
 
+CLASSIFIED_BY = ['rules']  # who labelled the last prompt: a classifier service, or the keyword rules
+
+
 def classify(prompt):
     prompt = os.environ.get('SMART_AI_CLASSIFY_PROMPT') or prompt
+    CLASSIFIED_BY[0] = 'rules'
     return classify_llm(prompt) or classify_rules(prompt)
 
 
@@ -590,7 +595,10 @@ def route(prompt, tool='auto'):
     forced = runners()
     if tool in forced:
         return forced[tool](prompt)
-    if classify(prompt) == 'complex':
+    label = classify(prompt)
+    # the chat shows this as one short line: why this tool was picked
+    emit({'type': 'smart.route', 'label': label, 'by': CLASSIFIED_BY[0]})
+    if label == 'complex':
         say(f'{DIM}📊 Classificado como: {CYAN}query complexa{NC}{DIM} → usando Claude{NC}\n')
         return claude_with_fallback(prompt)
     say(f'{DIM}📊 Classificado como: {YELLOW}query simples{NC}{DIM} → roteando para alternativa{NC}\n')

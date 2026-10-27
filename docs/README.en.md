@@ -114,6 +114,9 @@ Three details the diagram makes explicit:
   before running: if the previous answer already covers it, it is skipped. Commands and
   skills always run. Ctrl-C with the queue active cancels everything without leaving the chat. If you
   close the chat with requests in line, they stay saved in the session and `ai --resume ID` offers to run them.
+- **You see why a tool was picked.** In `auto` mode, one short line says whether the request
+  was treated as a coding task or a simple question and who labelled it (Groq, Cerebras,
+  OpenRouter, Grok or the keywords).
 - **Only the answer goes into the history.** Status and diagnostic lines appear on
   screen, but are not sent as context with the next question. The models' internal
   reasoning is also discarded.
