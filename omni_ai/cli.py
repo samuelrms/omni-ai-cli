@@ -657,10 +657,14 @@ def render_usage():
             top = usage.peak(live['windows'])
             if live.get('blocked') or top >= 100:
                 return f'{RED}no limite{NC}'
+            note = f" {DIM}(última leitura há {ago(time.time() - live['at'])}; a Anthropic pediu uma pausa nas consultas){NC}" \
+                if live.get('stale') else ''
             if top >= skip:
-                return f'{YELLOW}acima do teto de {skip:.0f}% · o Omni pula{NC}'
-            return f'{GREEN}disponível{NC}'
+                return f'{YELLOW}acima do teto de {skip:.0f}% · o Omni pula{NC}' + note
+            return f'{GREEN}disponível{NC}' + note
         text = limit_line(fallback_key)
+        if not text and not cooldown and fallback_key.startswith('claude:') and usage.load_cache().get('backoff', {}).get(fallback_key, 0) > time.time():
+            text = f"{GREEN}disponível{NC} {DIM}· uso indisponível agora: a Anthropic pediu uma pausa nas consultas{NC}"
         if cooldown:
             return (text or f'{YELLOW}limitado{NC}') + f' {DIM}· o Omni tenta de novo em {cooldown // 60}m{NC}'
         return text or f'{GREEN}sem limite registrado{NC}'

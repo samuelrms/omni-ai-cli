@@ -71,3 +71,14 @@ class CheckTests(unittest.TestCase):
         with patch.object(usage, 'thresholds', return_value=(100.0, 80.0)):
             self.assertEqual(len(usage.alerts('claude:primary', reading, 'Claude primary')), 1)
             self.assertEqual(usage.alerts('claude:primary', reading, 'Claude primary'), [])
+
+    def test_refused_check_returns_last_reading_and_waits(self):
+        calls = []
+        ok = {'windows': [{'minutes': 300, 'used': 11.0, 'resets': None}]}
+        usage.read('claude:primary', lambda: ok)
+        refuse = lambda: calls.append(1) or {'error': 'rate', 'retry': 90}
+        first = usage.read('claude:primary', refuse, max_age=0)
+        self.assertTrue(first['stale'])
+        self.assertEqual(first['windows'], ok['windows'])
+        usage.read('claude:primary', refuse, max_age=0)  # still inside the wait: no new check
+        self.assertEqual(len(calls), 1)
