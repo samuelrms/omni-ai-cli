@@ -17,7 +17,7 @@ try:
 except ImportError:
     pass
 
-from . import config as config_tool, skills, ui
+from . import config as config_tool, onboarding, skills, ui
 from .osutils import group_kwargs, kill_tree, lock_exclusive, module_cmd, module_env, resolve_bin
 ENGINES = {'auto', 'openrouter', 'codex', 'claude', 'agy', 'grok'}
 MODES = ('default', 'plan', 'edits', 'auto', 'yolo')
