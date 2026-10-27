@@ -59,10 +59,12 @@ AGENTS = [
     ('codex', 'Codex CLI', 'npm install -g @openai/codex', 'codex login'),
     ('agy', 'Antigravity', 'https://antigravity.google  (CLI: agy)', 'agy   (Google sign-in on first run)'),
     ('grok', 'Grok Build', 'curl -fsSL https://x.ai/cli/install.sh | bash', 'grok login'),
+    ('cursor', 'Cursor CLI', 'curl https://cursor.com/install -fsS | bash', 'cursor-agent login'),
 ]
 WINDOWS_INSTALL = {'claude': 'irm https://claude.ai/install.ps1 | iex', 'grok': 'irm https://x.ai/cli/install.ps1 | iex'}
-KEYS = [('groq', 'free', 'groq_use'), ('openrouter', 'free', 'or_use'), ('grok', 'paid', 'fallback'),
-        ('claude', 'paid', 'fallback'), ('codex', 'paid', 'fallback'), ('agy', 'free', 'fallback')]
+KEYS = [('groq', 'free', 'groq_use'), ('cerebras', 'free', 'groq_use'), ('openrouter', 'free', 'or_use'), ('grok', 'paid', 'fallback'),
+        ('claude', 'paid', 'fallback'), ('codex', 'paid', 'fallback'), ('agy', 'free', 'fallback'),
+        ('deepseek', 'paid', 'fallback'), ('cursor', 'paid', 'fallback')]
 
 
 def logged_in(tool):
@@ -72,6 +74,8 @@ def logged_in(tool):
             return bool(json.loads(out).get('loggedIn'))
         if tool == 'codex':
             return subprocess.run([resolve_bin('codex'), 'login', 'status'], capture_output=True, timeout=15).returncode == 0
+        if tool == 'cursor':
+            return subprocess.run([resolve_bin('cursor-agent'), 'status'], capture_output=True, timeout=15).returncode == 0
     except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
         return False
     files = {'agy': '~/.gemini/jetski-standalone-oauth-token', 'grok': '~/.grok/auth.json'}
@@ -84,7 +88,7 @@ def guide(lang='pt'):
     lines = ['', ui.gradient(ui.MARK) + ' ' + ui.bold(t('title')), ui.dim(t('intro')), '', ui.bold(t('agents'))]
     any_ready = False
     for tool, label, install, login in AGENTS:
-        if resolve_bin(tool) is None:
+        if resolve_bin('cursor-agent' if tool == 'cursor' else tool) is None:
             lines += [f'  {off} {label:<12} {ui.dim(t("missing"))}',
                       f'      {t("install")}: ' + ui.rgb(ui.TOOL_RGB[tool], WINDOWS_INSTALL.get(tool, install) if os.name == 'nt' else install),
                       f'      {t("login")}:   ' + ui.rgb(ui.TOOL_RGB[tool], login)]

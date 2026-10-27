@@ -19,7 +19,7 @@ except ImportError:
 
 from . import config as config_tool, onboarding, skills, ui
 from .osutils import group_kwargs, kill_tree, lock_exclusive, module_cmd, module_env, resolve_bin
-ENGINES = {'auto', 'openrouter', 'codex', 'claude', 'agy', 'grok'}
+ENGINES = {'auto', 'openrouter', 'codex', 'claude', 'agy', 'grok', 'deepseek', 'cursor'}
 MODES = ('default', 'plan', 'edits', 'auto', 'yolo')
 MAX_CONTEXT = 48000
 PRINT_LOCK = threading.Lock()
@@ -92,14 +92,14 @@ T = {
     'reply_in': {'pt': 'Responda em português do Brasil.', 'en': 'Reply in English.', 'es': 'Responde en español.', 'fr': 'Réponds en français.'},
     'help': {
         'pt': """Escreva normalmente e tecle Enter. Setas: histórico de linhas. Ctrl-C: cancela resposta / sai. Ctrl-D: sai.
-/tool auto|claude|codex|agy|openrouter|grok Escolher ferramenta (auto = decide sozinho)
+/tool auto|claude|codex|cursor|agy|openrouter|grok|deepseek Escolher ferramenta (auto = decide sozinho)
 /usage [watch]   /limits                Uso real de cada conta em barras (watch atualiza a cada 30s)
 /clear                                   Limpar a conversa e começar do zero
 /compact                                 Resumir a conversa para economizar contexto
 /claude:usage  /codex:status  /agy:usage  Comandos nativos de cada ferramenta (Tab lista todos)
-/model [chave valor]                     Ver/alterar modelos (claude, codex, codex_effort, agy, openrouter, grok)
+/model [chave valor]                     Ver/alterar modelos (claude, codex, codex_effort, agy, openrouter, grok, deepseek, cursor)
 /account [list|add|login|remove] [codex|agy|grok] NOME  Contas (Claude por padrão; quantas quiser)
-/key [add|remove] [claude|codex|agy|openrouter|grok|groq] [NOME] Chaves de API (várias por ferramenta, usadas em ordem)
+/key [add|remove] [claude|codex|cursor|agy|openrouter|grok|deepseek|groq|cerebras] [NOME] Chaves de API (várias por ferramenta, usadas em ordem)
 /status   /reset                         Status das contas / zerar cooldowns
 /sync [--dry-run]                        Compartilhar MCPs e skills entre Claude, Codex e agy
 /mode default|plan|edits|auto|yolo      Modo de permissão (vale para Claude, Codex e agy)
@@ -113,14 +113,14 @@ T = {
 /parallel codex: tarefa | codex: tarefa  2–4 análises em paralelo
 /exit                                    Sair""",
         'en': """Type normally and press Enter. Arrows: line history. Ctrl-C: cancel answer / exit. Ctrl-D: exit.
-/tool auto|claude|codex|agy|openrouter|grok Pick tool (auto = decides for you)
+/tool auto|claude|codex|cursor|agy|openrouter|grok|deepseek Pick tool (auto = decides for you)
 /usage [watch]   /limits                Real usage of each account as bars (watch refreshes every 30s)
 /clear                                   Clear the conversation and start over
 /compact                                 Summarize the conversation to save context
 /claude:usage  /codex:status  /agy:usage  Native commands of each tool (Tab lists them all)
-/model [key value]                       Show/change models (claude, codex, codex_effort, agy, openrouter, grok)
+/model [key value]                       Show/change models (claude, codex, codex_effort, agy, openrouter, grok, deepseek, cursor)
 /account [list|add|login|remove] [codex|agy|grok] NAME  Accounts (Claude by default; as many as you want)
-/key [add|remove] [claude|codex|agy|openrouter|grok|groq] [NAME] API keys (several per tool, tried in order)
+/key [add|remove] [claude|codex|cursor|agy|openrouter|grok|deepseek|groq|cerebras] [NAME] API keys (several per tool, tried in order)
 /status   /reset                         Account status / clear cooldowns
 /sync [--dry-run]                        Share MCPs and skills across Claude, Codex and agy
 /mode default|plan|edits|auto|yolo      Permission mode (applies to Claude, Codex and agy)
@@ -134,14 +134,14 @@ T = {
 /parallel codex: task | codex: task      2–4 analyses in parallel
 /exit                                    Exit""",
         'es': """Escribe normalmente y pulsa Enter. Flechas: historial. Ctrl-C: cancela respuesta / sale. Ctrl-D: sale.
-/tool auto|claude|codex|agy|openrouter|grok Elegir herramienta (auto = decide sola)
+/tool auto|claude|codex|cursor|agy|openrouter|grok|deepseek Elegir herramienta (auto = decide sola)
 /usage [watch]   /limits                Uso real de cada cuenta en barras (watch actualiza cada 30s)
 /clear                                   Limpiar la conversación y empezar de cero
 /compact                                 Resumir la conversación para ahorrar contexto
 /claude:usage  /codex:status  /agy:usage  Comandos nativos de cada herramienta (Tab los lista)
-/model [clave valor]                     Ver/cambiar modelos (claude, codex, codex_effort, agy, openrouter, grok)
+/model [clave valor]                     Ver/cambiar modelos (claude, codex, codex_effort, agy, openrouter, grok, deepseek, cursor)
 /account [list|add|login|remove] [codex|agy|grok] NOMBRE  Cuentas (Claude por defecto; las que quieras)
-/key [add|remove] [claude|codex|agy|openrouter|grok|groq] [NOMBRE] Claves de API (varias por herramienta, en orden)
+/key [add|remove] [claude|codex|cursor|agy|openrouter|grok|deepseek|groq|cerebras] [NOMBRE] Claves de API (varias por herramienta, en orden)
 /status   /reset                         Estado de cuentas / limpiar cooldowns
 /sync [--dry-run]                        Compartir MCPs y skills entre Claude, Codex y agy
 /mode default|plan|edits|auto|yolo      Modo de permisos (Claude, Codex y agy)
@@ -155,14 +155,14 @@ T = {
 /parallel codex: tarea | codex: tarea    2–4 análisis en paralelo
 /exit                                    Salir""",
         'fr': """Tapez normalement puis Entrée. Flèches : historique. Ctrl-C : annule la réponse / quitte. Ctrl-D : quitte.
-/tool auto|claude|codex|agy|openrouter|grok Choisir l'outil (auto = choix automatique)
+/tool auto|claude|codex|cursor|agy|openrouter|grok|deepseek Choisir l'outil (auto = choix automatique)
 /usage [watch]   /limits                Usage réel de chaque compte en barres (watch rafraîchit toutes les 30 s)
 /clear                                   Effacer la conversation et repartir de zéro
 /compact                                 Résumer la conversation pour économiser du contexte
 /claude:usage  /codex:status  /agy:usage  Commandes natives de chaque outil (Tab les liste)
-/model [clé valeur]                      Voir/changer les modèles (claude, codex, codex_effort, agy, openrouter, grok)
+/model [clé valeur]                      Voir/changer les modèles (claude, codex, codex_effort, agy, openrouter, grok, deepseek, cursor)
 /account [list|add|login|remove] [codex|agy|grok] NOM  Comptes (Claude par défaut ; autant que voulu)
-/key [add|remove] [claude|codex|agy|openrouter|grok|groq] [NOM] Clés API (plusieurs par outil, essayées dans l'ordre)
+/key [add|remove] [claude|codex|cursor|agy|openrouter|grok|deepseek|groq|cerebras] [NOM] Clés API (plusieurs par outil, essayées dans l'ordre)
 /status   /reset                         État des comptes / réinitialiser les cooldowns
 /sync [--dry-run]                        Partager MCP et skills entre Claude, Codex et agy
 /mode default|plan|edits|auto|yolo      Mode de permissions (Claude, Codex et agy)
@@ -287,7 +287,8 @@ def model_label(provider, profile=''):
     values = config_tool.model_values()
     label = {'claude': values['claude'], 'codex': f"{values['codex']} {values['codex_effort']}",
              'agy': values['agy'] or 'padrão', 'openrouter': values['openrouter'] or 'gratuito',
-             'grok': values['grok'] or 'padrão'}.get(provider, '')
+             'grok': values['grok'] or 'padrão', 'deepseek': values['deepseek'] or 'deepseek-chat',
+             'cursor': values['cursor'] or 'padrão'}.get(provider, '')
     return ' · '.join(x for x in (profile, label) if x)
 
 
@@ -520,7 +521,7 @@ def parse_parallel(text):
     tasks = []
     for part in parts:
         engine, separator, prompt = part.partition(':')
-        if not separator or engine.strip() not in ('codex', 'openrouter', 'grok') or not prompt.strip():
+        if not separator or engine.strip() not in ('codex', 'openrouter', 'grok', 'deepseek') or not prompt.strip():
             raise ValueError('Formato: /parallel codex: analisar testes | openrouter: explicar conceito')
         tasks.append((engine.strip(), prompt.strip()))
     return tasks
@@ -763,7 +764,7 @@ def main(argv=None):
         if command == '/sync':
             return [('--dry-run', 'só mostra o que faria')] if not done else []
         if command == '/parallel':
-            return [('codex:', 'subtarefa no Codex (somente leitura)'), ('openrouter:', 'subtarefa no OpenRouter'), ('grok:', 'subtarefa no Grok'), ('|', 'separa subtarefas')]
+            return [('codex:', 'subtarefa no Codex (somente leitura)'), ('openrouter:', 'subtarefa no OpenRouter'), ('grok:', 'subtarefa no Grok'), ('deepseek:', 'subtarefa no DeepSeek'), ('|', 'separa subtarefas')]
         entry = skills.discover(session.data['cwd']).get(command[1:])
         if entry:
             tool = skills.pick_tool(entry, session.data['engine'])
