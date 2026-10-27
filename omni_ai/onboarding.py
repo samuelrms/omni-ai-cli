@@ -52,6 +52,20 @@ T = {
                   'en': 'No tool is ready yet: log in to at least one above. Then run /setup to check.',
                   'es': 'Aún no hay herramientas listas: inicia sesión en al menos una. Luego usa /setup para comprobar.',
                   'fr': "Aucun outil prêt : connectez-vous à au moins un ci-dessus. Puis lancez /setup pour vérifier."},
+    'to_install': {'pt': 'Faltam ferramentas: {v}.', 'en': 'Missing tools: {v}.', 'es': 'Faltan herramientas: {v}.', 'fr': 'Outils manquants : {v}.'},
+    'install_ask': {'pt': 'Instalar agora com os instaladores oficiais? [S/n] ', 'en': 'Install them now with the official installers? [Y/n] ',
+                    'es': '¿Instalarlas ahora con los instaladores oficiales? [S/n] ', 'fr': 'Les installer maintenant avec les installeurs officiels ? [O/n] '},
+    'installing': {'pt': '→ Instalando {v}: {c}', 'en': '→ Installing {v}: {c}', 'es': '→ Instalando {v}: {c}', 'fr': '→ Installation de {v} : {c}'},
+    'install_ok': {'pt': '✓ {v} instalado. Login: {c}', 'en': '✓ {v} installed. Log in: {c}', 'es': '✓ {v} instalado. Login: {c}',
+                   'fr': '✓ {v} installé. Connexion : {c}'},
+    'install_failed': {'pt': '✗ {v} não foi instalado. Tente à mão: {c}', 'en': '✗ {v} was not installed. Try by hand: {c}',
+                       'es': '✗ {v} no se instaló. Prueba a mano: {c}', 'fr': "✗ {v} n'a pas été installé. Essayez à la main : {c}"},
+    'install_manual': {'pt': '{v}: instale pela página {c}', 'en': '{v}: install from {c}', 'es': '{v}: instala desde {c}',
+                       'fr': '{v} : installez depuis {c}'},
+    'need_npm': {'pt': '{v} precisa do npm (Node.js). Instale o Node.js e rode: {c}', 'en': '{v} needs npm (Node.js). Install Node.js and run: {c}',
+                 'es': '{v} necesita npm (Node.js). Instala Node.js y ejecuta: {c}', 'fr': '{v} a besoin de npm (Node.js). Installez Node.js puis : {c}'},
+    'all_installed': {'pt': 'Todas as ferramentas já estão instaladas.', 'en': 'Every tool is already installed.',
+                      'es': 'Todas las herramientas ya están instaladas.', 'fr': 'Tous les outils sont déjà installés.'},
 }
 
 # name, label, install command, login command
@@ -107,6 +121,56 @@ def guide(lang='pt'):
     return '\n'.join(lines)
 
 
+def missing():
+    """Tools that run as a program on this machine and are not installed yet."""
+    return [name for name, tool in TOOLS.items() if tool.bin and resolve_bin(tool.bin) is None]
+
+
+def install(lang='pt', ask=True, names=None):
+    """Install the missing tools with each vendor's official installer, after one question; returns what got installed."""
+    t = lambda key, **values: T[key].get(lang, T[key]['pt']).format(**values)
+    names = missing() if names is None else names
+    if not names:
+        print(t('all_installed'))
+        return []
+    windows = os.name == 'nt'
+    runnable = [n for n in names if TOOLS[n].install_command(windows)]
+    for name in names:
+        if name not in runnable:
+            print(ui.dim(t('install_manual', v=TOOLS[name].label, c=TOOLS[name].install or '?')))
+    if not runnable:
+        return []
+    print(t('to_install', v=', '.join(TOOLS[n].label for n in runnable)))
+    if ask:
+        try:
+            answer = input(t('install_ask')).strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return []
+        if answer not in ('', 's', 'sim', 'y', 'yes', 'si', 'sí', 'o', 'oui'):
+            return []
+    installed = []
+    for name in runnable:
+        tool = TOOLS[name]
+        command = tool.install_command(windows)
+        if command.startswith('npm ') and resolve_bin('npm') is None:
+            print(ui.yellow(t('need_npm', v=tool.label, c=command)))
+            continue
+        print(ui.bold(t('installing', v=tool.label, c=command)))
+        try:
+            # attached to this terminal: some installers ask questions or show progress
+            argv = ['powershell', '-NoProfile', '-Command', command] if windows else ['bash', '-c', command]
+            subprocess.call(argv)
+        except (OSError, KeyboardInterrupt):
+            pass
+        if resolve_bin(tool.bin):
+            installed.append(name)
+            print(ui.rgb((34, 197, 94), t('install_ok', v=tool.label, c=tool.login)))
+        else:
+            print(ui.red(t('install_failed', v=tool.label, c=command)))
+    return installed
+
+
 def first_run():
     """True only the first time; later launches skip the guide."""
     if MARKER.exists():
@@ -116,13 +180,16 @@ def first_run():
     return True
 
 
-def main():
+def main(install_missing=False):
     lang = (os.environ.get('LANG', 'pt')[:2])
     try:
         lang = Path('~/.config/smart-ai/lang').expanduser().read_text().strip() or lang
     except OSError:
         pass
-    print(guide(lang if lang in T['title'] else 'pt'))
+    lang = lang if lang in T['title'] else 'pt'
+    if install_missing:
+        install(lang)
+    print(guide(lang))
 
 
 if __name__ == '__main__':

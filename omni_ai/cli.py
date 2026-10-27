@@ -837,6 +837,7 @@ USAGE = f'''{BOLD}Uso:{NC}
   ai --sync [--dry-run]              MCPs e skills entre Claude, Codex e agy
   ai --usage                         Uso e limites de todas as ferramentas e contas
   ai --setup                          Guia de primeiro acesso: logins e chaves
+  ai --install                       Instala as ferramentas que faltam (pergunta antes)
   ai --status | --reset | --log | --classify "prompt"
   ai --update                        Atualizar para a versão mais nova
 '''
@@ -887,9 +888,9 @@ def main(argv):
         elif arg in ('--status', '-s'):
             show_status()
             return 0
-        elif arg == '--setup':
+        elif arg in ('--setup', '--install'):
             from . import onboarding
-            onboarding.main()
+            onboarding.main(install_missing=arg == '--install' or 'install' in argv[i + 1:])
             return 0
         elif arg in ('--usage', '--limits'):
             return show_usage(watch='watch' in argv[i + 1:] or '--watch' in argv[i + 1:])

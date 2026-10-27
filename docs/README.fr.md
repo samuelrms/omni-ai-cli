@@ -185,7 +185,9 @@ Sous Windows, l'installateur crée `ai.cmd` dans `%USERPROFILE%\.local\bin` et a
 ai
 ```
 
-La première fois, il demande la langue. Ensuite, il suffit d'écrire et d'appuyer sur Entrée.
+La première fois, il demande la langue et propose d'installer les outils manquants
+(Claude Code, Codex, Cursor, Grok Build) avec les installeurs officiels. Antigravity
+s'installe depuis sa page. Ensuite, il suffit d'écrire et d'appuyer sur Entrée.
 
 | Touche | Action |
 | --- | --- |
@@ -240,6 +242,7 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 | `/versions [N]` | Ce qui a changé dans chaque version, la plus récente d'abord ; `N` ouvre la note technique. Avant la première release, affiche les `feat`/`fix` de `main` |
 | `/clear` · `/compact` | Effacer la conversation · la résumer en un bloc pour économiser du contexte |
 | `/claude:usage` · `/codex:status` · `/agy:usage` … | Commandes natives de chaque outil : ouvre son écran et revient à Omni en sortant |
+| `/setup [install]` | Guide de démarrage : ce qu'il reste à installer, connecter et configurer ; `install` installe les outils manquants |
 | `/terminal-setup` | Montre comment avoir Maj+Entrée (ou Option+Entrée) pour une nouvelle ligne dans votre terminal |
 | `/skills` | Liste les skills et commandes du projet et de l'utilisateur (Claude, Codex, Antigravity) |
 | `/nom args` | Lance la skill ou la commande (ex. `/pr-review 237`). Tab complète |
@@ -426,6 +429,7 @@ ai --agy "pesquisar React hooks"       # force Antigravity
 ai --openrouter "explicar Docker"      # force OpenRouter
 ai --cursor "corrigir o teste X"       # force Cursor
 ai --deepseek "explicar CAP theorem"   # force DeepSeek
+ai --install                           # installe les outils manquants (demande avant)
 ai --classify "prompt"                 # montre la classification
 ai --log                               # derniers appels
 ```

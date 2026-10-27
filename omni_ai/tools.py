@@ -17,6 +17,13 @@ class Tool:
         self.price = price                  # 'free' or 'paid', as shown in onboarding
         self.in_usage = in_usage            # gets its own block in /usage (Claude has its own layout)
 
+    def install_command(self, windows=False):
+        """The command that installs it here, or None when it has to be done by hand (a download page)."""
+        command = self.install_windows if windows and self.install_windows else self.install
+        if not command or command.startswith('http') or (windows and command.startswith('curl ')):
+            return None
+        return command
+
     @property
     def model_env(self):
         return f'SMART_AI_{self.name.upper()}_MODEL'

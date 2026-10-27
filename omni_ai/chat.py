@@ -145,7 +145,7 @@ T = {
 /status   /reset                         Status das contas / zerar cooldowns
 /sync [--dry-run]                        Compartilhar MCPs e skills entre Claude, Codex e agy
 /mode default|plan|edits|auto|yolo      Modo de permissão (vale para Claude, Codex e agy)
-/setup                                   Guia de primeiro acesso: logins e chaves que faltam
+/setup [install]                         Guia de primeiro acesso; install instala as ferramentas que faltam
 /terminal-setup                          Como quebrar linha (Shift+Enter) no seu terminal
 /lang pt|en|es|fr                        Mudar idioma
 /skills                                  Skills e comandos do projeto e do usuário (/nome args executa; Tab completa)
@@ -168,7 +168,7 @@ T = {
 /status   /reset                         Account status / clear cooldowns
 /sync [--dry-run]                        Share MCPs and skills across Claude, Codex and agy
 /mode default|plan|edits|auto|yolo      Permission mode (applies to Claude, Codex and agy)
-/setup                                   First-run guide: logins and keys still missing
+/setup [install]                         First-run guide; install installs the missing tools
 /terminal-setup                          How to get new lines (Shift+Enter) in your terminal
 /lang pt|en|es|fr                        Change language
 /skills                                  Project and user skills/commands (/name args runs; Tab completes)
@@ -191,7 +191,7 @@ T = {
 /status   /reset                         Estado de cuentas / limpiar cooldowns
 /sync [--dry-run]                        Compartir MCPs y skills entre Claude, Codex y agy
 /mode default|plan|edits|auto|yolo      Modo de permisos (Claude, Codex y agy)
-/setup                                   Guía de primer acceso: logins y claves que faltan
+/setup [install]                         Guía de primer acceso; install instala las herramientas que faltan
 /terminal-setup                          Cómo hacer saltos de línea (Shift+Enter) en tu terminal
 /lang pt|en|es|fr                        Cambiar idioma
 /skills                                  Skills y comandos del proyecto y del usuario (/nombre args ejecuta; Tab completa)
@@ -214,7 +214,7 @@ T = {
 /status   /reset                         État des comptes / réinitialiser les cooldowns
 /sync [--dry-run]                        Partager MCP et skills entre Claude, Codex et agy
 /mode default|plan|edits|auto|yolo      Mode de permissions (Claude, Codex et agy)
-/setup                                   Guide de démarrage : connexions et clés manquantes
+/setup [install]                         Guide de démarrage ; install installe les outils manquants
 /terminal-setup                          Comment faire un saut de ligne (Maj+Entrée) dans votre terminal
 /lang pt|en|es|fr                        Changer de langue
 /skills                                  Skills et commandes du projet et de l'utilisateur (/nom args exécute ; Tab complète)
@@ -1071,6 +1071,8 @@ def main(argv=None):
             if len(done) == 1 and done[0] != 'clear':
                 return [(str(i), label.split('\n')[0]) for i, label in enumerate(queue.snapshot()[1], 1)]
             return []
+        if command == '/setup':
+            return [('install', 'instala as ferramentas que faltam')] if not done else []
         if command == '/sync':
             return [('--dry-run', 'só mostra o que faria')] if not done else []
         if command == '/parallel':
@@ -1139,6 +1141,8 @@ def main(argv=None):
         if session.data['messages']:
             ui.replay(session.data['messages'])
         if onboarding.first_run():
+            # first launch: offer to install every tool that is missing, then show what is still to do
+            onboarding.install(LANG[0])
             display(onboarding.guide(LANG[0]))
     ui.SPINNER.embedded = box.session is not None
     if box.session:
@@ -1201,6 +1205,9 @@ def main(argv=None):
                     session.save()
                     display(tr('mode_now', v=argument))
                 elif command == '/setup':
+                    if argument.strip() == 'install':
+                        idle(command)  # installers take over the terminal
+                        onboarding.install(LANG[0])
                     display(onboarding.guide(LANG[0]))
                 elif command == '/terminal-setup':
                     display(terminal_setup())

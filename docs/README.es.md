@@ -183,7 +183,9 @@ En Windows, el instalador crea `ai.cmd` en `%USERPROFILE%\.local\bin` y agrega e
 ai
 ```
 
-La primera vez pregunta el idioma. Después solo escribe y presiona Enter.
+La primera vez pregunta el idioma y ofrece instalar las herramientas que faltan
+(Claude Code, Codex, Cursor, Grok Build) con los instaladores oficiales. Antigravity se
+instala desde su página. Después solo escribe y presiona Enter.
 
 | Tecla | Acción |
 | --- | --- |
@@ -238,6 +240,7 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 | `/versions [N]` | Qué cambió en cada versión, la más reciente primero; `N` abre la nota técnica. Antes de la primera release, muestra los `feat`/`fix` de `main` |
 | `/clear` · `/compact` | Limpiar la conversación · resumirla en un bloque para ahorrar contexto |
 | `/claude:usage` · `/codex:status` · `/agy:usage` … | Comandos nativos de cada herramienta: abre su pantalla y vuelve a Omni al salir |
+| `/setup [install]` | Guía de primer acceso: lo que falta instalar, iniciar sesión y configurar; `install` instala las herramientas que faltan |
 | `/terminal-setup` | Muestra cómo tener Shift+Enter (u Option+Enter) para nueva línea en tu terminal |
 | `/skills` | Lista skills y comandos del proyecto y del usuario, de Claude, Codex y Antigravity |
 | `/nombre args` | Ejecuta la skill o comando (ej.: `/pr-review 237`). Tab completa |
@@ -417,6 +420,7 @@ ai --agy "pesquisar React hooks"       # fuerza Antigravity
 ai --openrouter "explicar Docker"      # fuerza OpenRouter
 ai --cursor "corrigir o teste X"       # fuerza Cursor
 ai --deepseek "explicar CAP theorem"   # fuerza DeepSeek
+ai --install                           # instala las herramientas que faltan (pregunta antes)
 ai --classify "prompt"                 # muestra cómo se clasificaría
 ai --log                               # últimas llamadas
 ```

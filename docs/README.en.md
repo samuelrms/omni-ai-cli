@@ -182,7 +182,9 @@ On Windows, the installer creates `ai.cmd` in `%USERPROFILE%\.local\bin` and add
 ai
 ```
 
-The first time, it asks for the language. After that, just type and press Enter.
+The first time, it asks for the language and offers to install the missing tools
+(Claude Code, Codex, Cursor, Grok Build) with the official installers. Antigravity is
+installed from its own page. After that, just type and press Enter.
 
 | Key | Action |
 | --- | --- |
@@ -237,6 +239,7 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 | `/versions [N]` | What changed in each version, newest first; `N` opens the technical note. Before the first release, shows the `feat`/`fix` commits on `main` |
 | `/clear` · `/compact` | Clear the conversation · summarize it into one block to save context |
 | `/claude:usage` · `/codex:status` · `/agy:usage` … | Each tool's native commands: opens its screen and returns to Omni on exit |
+| `/setup [install]` | First-run guide: what is left to install, log in and set up; `install` installs the missing tools |
 | `/terminal-setup` | Shows how to get Shift+Enter (or Option+Enter) for new lines in your terminal |
 | `/skills` | Lists project and user skills and commands from Claude, Codex and Antigravity |
 | `/name args` | Runs the skill or command (e.g. `/pr-review 237`). Tab completes |
@@ -416,6 +419,7 @@ ai --agy "pesquisar React hooks"       # forces Antigravity
 ai --openrouter "explicar Docker"      # forces OpenRouter
 ai --cursor "corrigir o teste X"       # forces Cursor
 ai --deepseek "explicar CAP theorem"   # forces DeepSeek
+ai --install                           # installs the missing tools (asks first)
 ai --classify "prompt"                 # shows how it would be classified
 ai --log                               # latest calls
 ```
