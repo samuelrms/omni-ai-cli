@@ -374,14 +374,21 @@ class ChatQueueTerminalTests(unittest.TestCase):
 
 @unittest.skipIf(os.name == 'nt', 'needs a pseudo-terminal')
 class QueueResumeTerminalTests(ChatQueueTerminalTests):
+    def saved_queue(self):
+        # the screen only redraws the characters that change, so the count is read from the saved session
+        try:
+            return len(json.loads(next((self.root / 'sessions').glob('*.json')).read_text()).get('queue', []))
+        except (StopIteration, ValueError, OSError):
+            return 0
+
     def test_queue_left_on_exit_runs_again_on_resume(self):
         self.env['TEST_DELAY'] = '3'
-        text = self.run_chat(['/tool codex', 'first', 'second', 'third'], done=lambda out: 'na fila (2)' in out)
+        text = self.run_chat(['/tool codex', 'first', 'second', 'third'], done=lambda out: self.saved_queue() == 3)
         self.assertRegex(text, r'3 pedido\(s\)|3 queued|3 pedido|3 demande')
         saved = json.loads(next((self.root / 'sessions').glob('*.json')).read_text())
         self.assertEqual([spec['label'] for spec in saved['queue']], ['first', 'second', 'third'])
         self.env['TEST_DELAY'] = '0'
-        (self.root / 'calls').unlink()
+        (self.root / 'calls').unlink(missing_ok=True)
         self.env_args = ['--resume', saved['id']]
         text = self.run_chat(['', '/queue'], done=lambda out: out.count('Levou') >= 3)
         calls = [json.loads(row)['prompt'] for row in (self.root / 'calls').read_text().splitlines()]
@@ -392,9 +399,9 @@ class QueueResumeTerminalTests(ChatQueueTerminalTests):
 
     def test_declining_resume_drops_the_saved_queue(self):
         self.env['TEST_DELAY'] = '3'
-        self.run_chat(['/tool codex', 'first', 'second'], done=lambda out: 'na fila (1)' in out)
+        self.run_chat(['/tool codex', 'first', 'second'], done=lambda out: self.saved_queue() == 2)
         session_id = json.loads(next((self.root / 'sessions').glob('*.json')).read_text())['id']
-        (self.root / 'calls').unlink()
+        (self.root / 'calls').unlink(missing_ok=True)
         self.env_args = ['--resume', session_id]
         self.run_chat(['n'], wait=1)
         self.assertFalse((self.root / 'calls').exists())
