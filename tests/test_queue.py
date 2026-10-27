@@ -263,7 +263,8 @@ class ChatQueueTerminalTests(unittest.TestCase):
 
     def test_messages_typed_while_busy_are_queued_and_run(self):
         # done once both answers finished ("Levou Ns · codex" twice)
-        text = self.run_chat(['/tool codex', 'first', 'second', '/clear'], done=lambda out: out.count('Levou') >= 2)
+        # the extra Enter sends /clear when the completion menu took the first one (slow machines)
+        text = self.run_chat(['/tool codex', 'first', 'second', '/clear', ''], done=lambda out: out.count('Levou') >= 2)
         calls = [json.loads(row) for row in (self.root / 'calls').read_text().splitlines()]
         self.assertEqual(len(calls), 2)
         self.assertGreaterEqual(calls[1]['start'] - calls[0]['start'], 1.4)  # second waited for the first
