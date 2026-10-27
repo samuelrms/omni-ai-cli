@@ -684,6 +684,26 @@ def show_usage(watch=False):
     return 0
 
 
+def spend_today(today):
+    """tool: (US$, tokens, requests) from the chat's per-request log, for one day."""
+    path = LOG_FILE.with_name('costs.jsonl')
+    totals = {}
+    try:
+        rows = path.read_text(errors='replace').splitlines()
+    except OSError:
+        return totals
+    for row in rows:
+        try:
+            item = json.loads(row)
+        except ValueError:
+            continue
+        if not str(item.get('at', '')).startswith(today):
+            continue
+        cost, tokens, count = totals.get(item.get('tool', '?'), (0.0, 0, 0))
+        totals[item.get('tool', '?')] = (cost + float(item.get('cost') or 0), tokens + int(item.get('tokens') or 0), count + 1)
+    return totals
+
+
 def render_usage():
     limits = state().get('limits', {})
     today = time.strftime('%Y-%m-%d')
@@ -794,6 +814,15 @@ def render_usage():
         else:
             say(f"  {label:<12} {GREEN}configurada{NC}")
     say(f"  {DIM}+ outra chave: /key add openrouter [NOME]{NC}")
+    spent = spend_today(today)
+    if spent:
+        say(f'\n{BOLD}Gasto de hoje{NC}  {DIM}pedidos feitos pelo chat; custo só quando a ferramenta informa{NC}')
+        for tool, (cost, tokens, count) in sorted(spent.items(), key=lambda item: -item[1][0]):
+            money = f'US$ {cost:.4f}' if cost else 'sem custo informado'
+            say(f'  {tool:<12} {money:<22} {DIM}{tokens:,} tokens · {count} pedido(s){NC}'.replace(',', '.'))
+        total = sum(cost for cost, _, _ in spent.values())
+        if total:
+            say(f'  {"total":<12} {BOLD}US$ {total:.4f}{NC}')
     say(f'\n{DIM}Teto e alerta: routing.usage_skip_percent e routing.usage_alert_percent no profiles.json · /usage watch{NC}')
     return 0
 

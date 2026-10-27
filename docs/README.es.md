@@ -115,6 +115,9 @@ Tres detalles que el diagrama deja explícitos:
   ejecutarse: si la respuesta anterior ya lo resuelve, se omite. Los comandos y skills
   siempre se ejecutan. Ctrl-C con la cola activa cancela todo sin salir del chat. Si cierras el chat
   con pedidos en la cola, quedan guardados en la sesión y `ai --resume ID` pregunta si quieres continuar.
+- **Cada respuesta muestra cuánto costó.** Al final de cada pedido aparecen los tokens y,
+  cuando la herramienta lo informa (OpenRouter, Grok, Claude con clave de API), el costo en
+  dólares. `/usage` suma el gasto del día por herramienta.
 - **Ves por qué se eligió la herramienta.** En modo `auto`, una línea corta dice si el pedido
   se trató como tarea de código o pregunta simple y quién lo clasificó (Groq, Cerebras,
   OpenRouter, Grok o las palabras clave).
@@ -442,6 +445,7 @@ ai --log                               # últimas llamadas
 | `~/.local/share/smart-ai/sessions/` | Sesiones del chat |
 | `~/.cache/smart-ai/state.json` | Cooldowns activos |
 | `~/.cache/smart-ai/usage.log` | Log de uso, solo metadatos |
+| `~/.cache/smart-ai/costs.jsonl` | Costo y tokens de cada pedido del chat, sin pregunta ni respuesta (total del día en `/usage`) |
 
 ---
 

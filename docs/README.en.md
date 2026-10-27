@@ -114,6 +114,9 @@ Three details the diagram makes explicit:
   before running: if the previous answer already covers it, it is skipped. Commands and
   skills always run. Ctrl-C with the queue active cancels everything without leaving the chat. If you
   close the chat with requests in line, they stay saved in the session and `ai --resume ID` offers to run them.
+- **Each answer shows what it cost.** At the end of each request you see the tokens and,
+  when the tool reports it (OpenRouter, Grok, Claude on an API key), the cost in dollars.
+  `/usage` adds up the day's spend per tool.
 - **You see why a tool was picked.** In `auto` mode, one short line says whether the request
   was treated as a coding task or a simple question and who labelled it (Groq, Cerebras,
   OpenRouter, Grok or the keywords).
@@ -441,6 +444,7 @@ ai --log                               # latest calls
 | `~/.local/share/smart-ai/sessions/` | Chat sessions |
 | `~/.cache/smart-ai/state.json` | Active cooldowns |
 | `~/.cache/smart-ai/usage.log` | Usage log, metadata only |
+| `~/.cache/smart-ai/costs.jsonl` | Cost and tokens of each chat request, no prompt or answer (day total in `/usage`) |
 
 ---
 

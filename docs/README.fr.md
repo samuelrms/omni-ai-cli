@@ -117,6 +117,9 @@ Trois détails que le diagramme rend explicites :
   commandes et skills s'exécutent toujours. Ctrl-C avec la file active annule tout sans
   quitter le chat. Si vous fermez le chat avec des demandes en attente, elles restent
   enregistrées dans la session et `ai --resume ID` propose de les relancer.
+- **Chaque réponse indique son coût.** À la fin de chaque demande s'affichent les tokens et,
+  quand l'outil le fournit (OpenRouter, Grok, Claude avec clé API), le coût en dollars.
+  `/usage` additionne la dépense du jour par outil.
 - **Vous voyez pourquoi l'outil a été choisi.** En mode `auto`, une ligne courte indique si la
   demande a été traitée comme une tâche de code ou une question simple, et qui l'a classée
   (Groq, Cerebras, OpenRouter, Grok ou les mots-clés).
@@ -451,6 +454,7 @@ ai --log                               # derniers appels
 | `~/.local/share/smart-ai/sessions/` | Sessions du chat |
 | `~/.cache/smart-ai/state.json` | Cooldowns actifs |
 | `~/.cache/smart-ai/usage.log` | Journal d'utilisation, métadonnées uniquement |
+| `~/.cache/smart-ai/costs.jsonl` | Coût et tokens de chaque demande du chat, sans question ni réponse (total du jour dans `/usage`) |
 
 ---
 

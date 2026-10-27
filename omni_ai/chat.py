@@ -475,6 +475,7 @@ class Runner:
             view.note('dados pessoais mascarados antes do envio · /sent para ver')
         elif kind == 'smart.answer':
             job['model'] = event.get('model')
+            spend(job, event.get('usage') or {})
             self.answer(job, event.get('content', ''))
             view.note('modelo: ' + str(event.get('model', '?')))
         elif kind in ('item.started', 'item.completed'):
@@ -513,12 +514,17 @@ class Runner:
                         content = '\n'.join(c.get('text', '') for c in content if isinstance(c, dict))
                     view.result(content or '', failed=bool(block.get('is_error')))
         elif kind == 'result':
-            job['cost'] = event.get('total_cost_usd')
+            # Claude reports a cost even on a subscription; it is only billed on an API key
+            if str(job.get('dispatches', [{}])[-1].get('profile') or '').startswith('api-key'):
+                job['cost'] = event.get('total_cost_usd')
+            spend(job, event.get('usage') or {})
             if event.get('is_error'):
                 job['protocol_error'] = True
                 view.error(str(event.get('result') or 'erro na ferramenta'))
             elif event.get('result') and not job['answers']:
                 self.answer(job, event['result'])
+        elif kind == 'turn.completed':
+            spend(job, event.get('usage') or {})
         elif kind in ('error', 'turn.failed'):
             job['protocol_error'] = True
             detail = event.get('message') or event.get('error', {})
@@ -528,6 +534,47 @@ class Runner:
         if content and content.strip():
             job['answers'].append(content)
             job['view'].answer(content)
+
+
+# next to the router's usage log: what each finished call cost
+
+
+def costs_file():
+    return Path(os.environ.get('SMART_AI_LOG', '~/.cache/smart-ai/usage.log')).expanduser().with_name('costs.jsonl')
+
+
+def spend(job, usage):
+    """Tokens and, when the provider says it, the cost in US$ of one call (OpenRouter: cost, xAI: ticks of 1e-10)."""
+    tokens = sum(int(usage.get(k) or 0) for k in ('prompt_tokens', 'completion_tokens', 'input_tokens', 'output_tokens'))
+    if tokens:
+        job['tokens'] = job.get('tokens', 0) + tokens
+    cost = usage.get('cost')
+    if cost is None and usage.get('cost_in_usd_ticks') is not None:
+        cost = usage['cost_in_usd_ticks'] / 1e10
+    if isinstance(cost, (int, float)) and cost > 0:
+        job['cost'] = (job.get('cost') or 0) + cost
+
+
+def spend_label(job):
+    parts = [f"US$ {job['cost']:.4f}"] if job.get('cost') else []
+    if job.get('tokens'):
+        tokens = job['tokens']
+        parts.append(f'{tokens / 1000:.1f}k tokens' if tokens >= 1000 else f'{tokens} tokens')
+    return ''.join(' · ' + part for part in parts)
+
+
+def record_spend(job):
+    """One line per finished call, for the day's total in /usage; never the prompt or the answer."""
+    if not (job.get('cost') or job.get('tokens')):
+        return
+    path = costs_file()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, 'a') as stream:
+            stream.write(json.dumps({'at': time.strftime('%Y-%m-%d %H:%M:%S'), 'tool': job.get('provider', job['engine']),
+                                     'cost': job.get('cost') or 0, 'tokens': job.get('tokens', 0)}) + '\n')
+    except OSError:
+        pass
 
 
 def execute(session, tasks, parallel=False, raw=False):
@@ -575,12 +622,13 @@ def execute(session, tasks, parallel=False, raw=False):
         for job in jobs:
             prefix = f"[{job['id']}] " if parallel else ''
             if job['status'] == 'done':
-                ui.out('\n' + ui.gradient(ui.MARK) + ' ' + ui.dim(f"{prefix}{tr('took', t=ui.elapsed(started))} · {job.get('provider', job['engine'])}"))
+                ui.out('\n' + ui.gradient(ui.MARK) + ' ' + ui.dim(f"{prefix}{tr('took', t=ui.elapsed(started))} · {job.get('provider', job['engine'])}{spend_label(job)}"))
             elif job['status'] == 'cancelled':
                 ui.out('\n' + ui.yellow(f"{prefix}{ui.MARK} {tr('job_cancelled')}"))
             else:
                 ui.out('\n' + ui.red(f"{prefix}✗ {tr('job_failed')}"))
         for job in jobs:
+            record_spend(job)
             job.pop('view', None)
             if job.get('answers') and job['status'] == 'done':
                 session.data['messages'].append({'role': 'assistant', 'content': '\n'.join(job['answers']),
