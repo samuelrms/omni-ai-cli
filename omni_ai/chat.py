@@ -78,6 +78,12 @@ T = {
              'es': 'Espera a que termine la cola (o Ctrl-C cancela) para usar {c}.', 'fr': 'Attendez la fin de la file (ou Ctrl-C annule) pour utiliser {c}.'},
     'skipped': {'pt': '↷ pulado: a resposta anterior já cobre "{v}"', 'en': '↷ skipped: the previous answer already covers "{v}"',
                 'es': '↷ omitido: la respuesta anterior ya cubre "{v}"', 'fr': '↷ ignoré : la réponse précédente couvre déjà « {v} »'},
+    'no_versions': {'pt': 'Não deu para buscar as versões agora.', 'en': 'Could not fetch the releases now.',
+                    'es': 'No se pudieron obtener las versiones.', 'fr': 'Impossible de récupérer les versions.'},
+    'versions_title': {'pt': 'O que mudou · mais recente primeiro · /versions N abre a nota técnica',
+                       'en': 'What changed · newest first · /versions N opens the technical note',
+                       'es': 'Qué cambió · lo más reciente primero · /versions N abre la nota técnica',
+                       'fr': 'Ce qui a changé · plus récent en premier · /versions N ouvre la note technique'},
     'working': {'pt': 'Trabalhando…', 'en': 'Working…', 'es': 'Trabajando…', 'fr': 'Au travail…'},
     'took': {'pt': 'Levou {t}', 'en': 'Took {t}', 'es': 'Tardó {t}', 'fr': 'Durée {t}'},
     'job_failed': {'pt': 'Não concluiu · /trace para detalhes', 'en': 'Did not finish · /trace for details',
@@ -108,6 +114,7 @@ T = {
 /usage [watch]   /limits                Uso real de cada conta em barras (watch atualiza a cada 30s)
 /clear                                   Limpar a conversa e começar do zero
 /compact                                 Resumir a conversa para economizar contexto
+/versions [N]                            O que mudou em cada versão (N abre a nota técnica)
 /claude:usage  /codex:status  /agy:usage  Comandos nativos de cada ferramenta (Tab lista todos)
 /model [chave valor]                     Ver/alterar modelos (claude, codex, codex_effort, agy, openrouter, grok, deepseek, cursor)
 /account [list|add|login|remove] [codex|agy|grok] NOME  Contas (Claude por padrão; quantas quiser)
@@ -129,6 +136,7 @@ T = {
 /usage [watch]   /limits                Real usage of each account as bars (watch refreshes every 30s)
 /clear                                   Clear the conversation and start over
 /compact                                 Summarize the conversation to save context
+/versions [N]                            What changed in each release (N opens the technical note)
 /claude:usage  /codex:status  /agy:usage  Native commands of each tool (Tab lists them all)
 /model [key value]                       Show/change models (claude, codex, codex_effort, agy, openrouter, grok, deepseek, cursor)
 /account [list|add|login|remove] [codex|agy|grok] NAME  Accounts (Claude by default; as many as you want)
@@ -150,6 +158,7 @@ T = {
 /usage [watch]   /limits                Uso real de cada cuenta en barras (watch actualiza cada 30s)
 /clear                                   Limpiar la conversación y empezar de cero
 /compact                                 Resumir la conversación para ahorrar contexto
+/versions [N]                            Qué cambió en cada versión (N abre la nota técnica)
 /claude:usage  /codex:status  /agy:usage  Comandos nativos de cada herramienta (Tab los lista)
 /model [clave valor]                     Ver/cambiar modelos (claude, codex, codex_effort, agy, openrouter, grok, deepseek, cursor)
 /account [list|add|login|remove] [codex|agy|grok] NOMBRE  Cuentas (Claude por defecto; las que quieras)
@@ -171,6 +180,7 @@ T = {
 /usage [watch]   /limits                Usage réel de chaque compte en barres (watch rafraîchit toutes les 30 s)
 /clear                                   Effacer la conversation et repartir de zéro
 /compact                                 Résumer la conversation pour économiser du contexte
+/versions [N]                            Ce qui a changé à chaque version (N ouvre la note technique)
 /claude:usage  /codex:status  /agy:usage  Commandes natives de chaque outil (Tab les liste)
 /model [clé valeur]                      Voir/changer les modèles (claude, codex, codex_effort, agy, openrouter, grok, deepseek, cursor)
 /account [list|add|login|remove] [codex|agy|grok] NOM  Comptes (Claude par défaut ; autant que voulu)
@@ -604,6 +614,60 @@ def activity(queue):
     return lines
 
 
+RELEASES = 'https://api.github.com/repos/samuelrms/omni-ai-cli/releases?per_page=15'
+COMMITS = 'https://api.github.com/repos/samuelrms/omni-ai-cli/commits?sha=main&per_page=40'
+CONVENTIONAL = re.compile(r'^(feat|fix|perf)(\([^)]*\))?!?:\s*(.+)')
+CHANGE = re.compile(r'^\s*[*-]\s+(?:\*\*[^*]+\*\*:?\s*)?(.+?)(?:\s+\(\[[0-9a-f]{7}\].*)?$')
+
+
+def github(url):
+    import urllib.request
+    request = urllib.request.Request(url, headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'omni-ai-cli'})
+    with urllib.request.urlopen(request, timeout=10) as resp:
+        return json.loads(resp.read().decode())
+
+
+def releases():
+    """Published releases; before the first one, each feat/fix merged on main stands in as an entry."""
+    items = [r for r in github(RELEASES) if not r.get('draft')]
+    if items:
+        return items
+    changes = []
+    for item in github(COMMITS):
+        subject, _, body = item['commit']['message'].partition('\n')
+        match = CONVENTIONAL.match(subject)
+        if match:
+            changes.append({'tag_name': item['sha'][:7], 'name': match.group(3), 'commit': True, 'published_at': item['commit']['committer']['date'],
+                            'body': f'* {match.group(3)}\n\n{body.strip()}'})
+    return changes
+
+
+def show_versions(argument):
+    """Timeline like a changelog page: simple view of every release, the technical note only for the one asked."""
+    try:
+        items = releases()
+    except (OSError, ValueError):
+        display(tr('no_versions'))
+        return
+    if argument:
+        chosen = next((r for i, r in enumerate(items, 1) if argument in (str(i), r.get('tag_name'), r.get('tag_name', '').lstrip('v'))), None)
+        if not chosen:
+            raise ValueError(tr('no_versions'))
+        ui.out(ui.bold(chosen.get('name') or chosen['tag_name']) + ui.dim(' · ' + chosen.get('published_at', '')[:10]))
+        ui.out(ui.markdown(chosen.get('body') or ''))
+        return
+    ui.out(ui.dim(tr('versions_title')))
+    for i, item in enumerate(items, 1):
+        # simple view: the change titles without commit links and scopes
+        changes = [item['name']] if item.get('commit') else \
+            [m.group(1) for m in map(CHANGE.match, (item.get('body') or '').splitlines()) if m]
+        ui.out(f"\n{ui.gradient(ui.MARK)} {ui.bold(item.get('tag_name', ''))} {ui.dim(item.get('published_at', '')[:10] + f' · {i}')}")
+        for change in changes[:4]:
+            ui.out('  ' + ui.short(change, ui.width() - 4))
+        if len(changes) > 4:
+            ui.out(ui.dim(f'  … +{len(changes) - 4}'))
+
+
 SKIP_SYSTEM = ('You check a queue of chat requests. Given the previous answer and the next queued request, reply "yes" '
                'only if the previous answer already fully resolves the next request, so running it would be redundant. '
                'Reply "no" if it asks anything new, wants an action, or you are unsure. One word: yes or no.')
@@ -686,7 +750,7 @@ def run_tool(args):
         pass
 
 
-BUILTIN = ['/usage', '/clear', '/compact', '/setup', '/terminal-setup', '/tool', '/model', '/account', '/key', '/status', '/reset', '/sync', '/update', '/mode', '/lang',
+BUILTIN = ['/usage', '/clear', '/compact', '/versions', '/setup', '/terminal-setup', '/tool', '/model', '/account', '/key', '/status', '/reset', '/sync', '/update', '/mode', '/lang',
            '/skills', '/history', '/sent', '/trace', '/sessions', '/resume', '/new', '/parallel', '/help', '/exit']
 
 
@@ -1016,6 +1080,8 @@ def main(argv=None):
                     ui.clear_screen()
                     ui.set_title('Omni AI')
                     display(tr('cleared', id=session.id))
+                elif command == '/versions':
+                    show_versions(argument.strip())
                 elif command == '/compact':
                     submit(line, lambda current=session: compact(current))
                 elif command == '/parallel':
