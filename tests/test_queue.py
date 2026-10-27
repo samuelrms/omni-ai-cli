@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 os.environ['PYTHONPATH'] = str(ROOT)
 sys.path.insert(0, str(ROOT))
 from omni_ai import chat, cli  # noqa: E402
-from omni_ai.chat import Queue, Session, activity, already_answered, execute  # noqa: E402
+from omni_ai.chat import Queue, Session, activity, already_answered, execute, queue_command, run_spec  # noqa: E402
 
 # Fake Codex: logs each call, waits TEST_DELAY seconds, answers
 FAKE = '''#!/usr/bin/env python3
@@ -122,6 +122,92 @@ class QueueTests(unittest.TestCase):
         self.assertFalse(queue.busy())
 
 
+class EditableQueueTests(unittest.TestCase):
+    def setUp(self):
+        self.ran, self.saved = [], []
+        self.release = threading.Event()
+        self.queue = Queue(run=lambda spec: self.ran.append(spec['text']), changed=self.saved.append)
+        self.queue.put('busy', self.release.wait)
+        self.assertTrue(until(lambda: self.queue.snapshot()[0] == 'busy'))
+        for text in ('a', 'b', 'c'):
+            self.queue.put(text, {'kind': 'ask', 'engine': 'codex', 'text': text})
+
+    def tearDown(self):
+        self.release.set()
+        self.queue.wait()
+
+    def finish(self):
+        self.release.set()
+        self.queue.wait()
+        return self.ran
+
+    def test_remove(self):
+        self.assertEqual(self.queue.remove(2), 'b')
+        self.assertEqual(self.finish(), ['a', 'c'])
+
+    def test_move_up_and_down_stay_in_bounds(self):
+        self.assertEqual(self.queue.move(3, -1), 2)
+        self.assertEqual(self.queue.move(1, -1), 1)  # already first
+        self.assertEqual(self.queue.move(1, 1), 2)
+        self.assertEqual(self.queue.snapshot()[1], ['c', 'a', 'b'])
+        self.assertEqual(self.finish(), ['c', 'a', 'b'])
+
+    def test_clear_keeps_the_running_one(self):
+        self.assertEqual(self.queue.clear(), 3)
+        self.assertEqual(self.queue.snapshot()[0], 'busy')
+        self.assertEqual(self.finish(), [])
+
+    def test_bad_numbers_are_refused(self):
+        for number in (0, 4):
+            with self.assertRaises(ValueError):
+                self.queue.remove(number)
+        with self.assertRaises(ValueError):
+            queue_command(self.queue, 'rm x')
+        with self.assertRaises(ValueError):
+            queue_command(self.queue, 'shuffle')
+
+    def test_queue_command_edits(self):
+        queue_command(self.queue, 'down 1')
+        queue_command(self.queue, 'rm 3')
+        self.assertEqual(self.queue.snapshot()[1], ['b', 'a'])
+        queue_command(self.queue, 'clear')
+        self.assertEqual(self.queue.snapshot()[1], [])
+
+    def test_every_change_is_saved_with_labels(self):
+        self.queue.remove(1)
+        self.assertEqual([spec['label'] for spec in self.saved[-1]], ['b', 'c'])
+        self.assertEqual(self.saved[-1][0]['kind'], 'ask')
+        self.finish()
+        self.assertEqual(self.saved[-1], [])  # nothing left once it all ran
+
+    def test_running_spec_is_kept_until_it_finishes(self):
+        release = threading.Event()
+        saved = []
+        queue = Queue(run=lambda spec: release.wait(), changed=saved.append)
+        queue.put('slow', {'kind': 'ask', 'engine': 'codex', 'text': 'slow'})
+        self.assertTrue(until(lambda: queue.snapshot()[0] == 'slow'))
+        self.assertEqual([spec['label'] for spec in queue.pending()], ['slow'])
+        release.set()
+        queue.wait()
+        self.assertEqual(queue.pending(), [])
+
+
+class RunSpecTests(unittest.TestCase):
+    def test_each_kind_reaches_the_right_call(self):
+        session = object()
+        with patch.object(chat, 'execute') as run, patch.object(chat, 'compact') as summarize:
+            run_spec(session, {'kind': 'ask', 'engine': 'codex', 'text': 'hi'})
+            run_spec(session, {'kind': 'skill', 'tool': 'claude', 'prompt': 'p', 'raw': True})
+            run_spec(session, {'kind': 'parallel', 'tasks': [['codex', 'x'], ['grok', 'y']]})
+            run_spec(session, {'kind': 'compact'})
+        self.assertEqual(run.call_args_list[0].args, (session, [('codex', 'hi')]))
+        self.assertEqual(run.call_args_list[1].kwargs, {'raw': True})
+        self.assertEqual(run.call_args_list[2].args[1], [('codex', 'x'), ('grok', 'y')])  # JSON lists back to tuples
+        summarize.assert_called_once_with(session)
+        with self.assertRaises(ValueError):
+            run_spec(session, {'kind': 'nope'})
+
+
 class AlreadyAnsweredTests(unittest.TestCase):
     def setUp(self):
         self.sent = []
@@ -186,6 +272,15 @@ class QueueWithRealProcessTests(unittest.TestCase):
         self.assertIn('FAKE ANSWER', calls[1]['prompt'])
         self.assertEqual([r['status'] for r in session.data['requests']], ['done', 'done'])
 
+    def test_session_saves_while_a_job_is_running(self):
+        # the job dict holds its screen view until it finishes; saving then used to crash
+        session = Session()
+        self.addCleanup(session.close)
+        session.data['requests'].append({'id': 'agente-1', 'status': 'running', 'view': object()})
+        session.save()
+        saved = json.loads(session.path.read_text())
+        self.assertIsNone(saved['requests'][0]['view'])
+
     def test_cancel_kills_the_running_tool(self):
         os.environ['TEST_DELAY'] = '30'
         session = Session()
@@ -227,7 +322,7 @@ class ChatQueueTerminalTests(unittest.TestCase):
         import pty
         pid, fd = pty.fork()
         if pid == 0:
-            os.execvpe(sys.executable, [sys.executable, '-m', 'omni_ai.chat'], self.env)
+            os.execvpe(sys.executable, [sys.executable, '-m', 'omni_ai.chat'] + getattr(self, 'env_args', []), self.env)
         output = b''
 
         def pump(seconds):
@@ -240,18 +335,21 @@ class ChatQueueTerminalTests(unittest.TestCase):
                         output += os.read(fd, 65536)
                     except OSError:
                         return
-        # slow machines (CI on macOS) take a while to draw the input the first time
+        # slow machines (CI on macOS) take a while to draw the input (or the resume question) the first time
         end = time.time() + 20
-        while '❯'.encode() not in output and time.time() < end:
+        while not any(mark.encode() in output for mark in ('❯', '[S/n]')) and time.time() < end:
             pump(0.1)
-        for line in lines:
-            os.write(fd, line.encode() + b'\r')
-            pump(0.3)
-        end = time.time() + (30 if done else wait)
-        while time.time() < end and not (done and done(output.decode('utf-8', 'replace'))):
-            pump(0.1)
-        os.write(fd, b'\x04')
-        pump(2)
+        try:
+            for line in lines:
+                os.write(fd, line.encode() + b'\r')
+                pump(0.3)
+            end = time.time() + (30 if done else wait)
+            while time.time() < end and not (done and done(output.decode('utf-8', 'replace'))):
+                pump(0.1)
+            os.write(fd, b'\x04')
+            pump(2)
+        except OSError:
+            pass  # the chat already exited; what it printed is in output
         # never hang the suite: a chat that did not exit is killed and reported
         exited = until(lambda: os.waitpid(pid, os.WNOHANG)[0] == pid, timeout=5)
         if not exited:
@@ -272,6 +370,36 @@ class ChatQueueTerminalTests(unittest.TestCase):
         self.assertRegex(text, r'na fila|queued|en cola|file')  # queue shown above the input
         self.assertRegex(text, r'Espere a fila|Wait for the queue|Espera a que|Attendez')  # /clear blocked while busy
         self.assertRegex(text, r'da fila: second|from the queue: second|de la cola: second|de la file : second')
+
+
+@unittest.skipIf(os.name == 'nt', 'needs a pseudo-terminal')
+class QueueResumeTerminalTests(ChatQueueTerminalTests):
+    def test_queue_left_on_exit_runs_again_on_resume(self):
+        self.env['TEST_DELAY'] = '3'
+        text = self.run_chat(['/tool codex', 'first', 'second', 'third'], done=lambda out: 'na fila (2)' in out)
+        self.assertRegex(text, r'3 pedido\(s\)|3 queued|3 pedido|3 demande')
+        saved = json.loads(next((self.root / 'sessions').glob('*.json')).read_text())
+        self.assertEqual([spec['label'] for spec in saved['queue']], ['first', 'second', 'third'])
+        self.env['TEST_DELAY'] = '0'
+        (self.root / 'calls').unlink()
+        self.env_args = ['--resume', saved['id']]
+        text = self.run_chat(['', '/queue'], done=lambda out: out.count('Levou') >= 3)
+        calls = [json.loads(row)['prompt'] for row in (self.root / 'calls').read_text().splitlines()]
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(calls[0].endswith('first') and calls[2].endswith('third'))
+        saved = json.loads(next((self.root / 'sessions').glob('*.json')).read_text())
+        self.assertEqual(saved.get('queue', []), [])
+
+    def test_declining_resume_drops_the_saved_queue(self):
+        self.env['TEST_DELAY'] = '3'
+        self.run_chat(['/tool codex', 'first', 'second'], done=lambda out: 'na fila (1)' in out)
+        session_id = json.loads(next((self.root / 'sessions').glob('*.json')).read_text())['id']
+        (self.root / 'calls').unlink()
+        self.env_args = ['--resume', session_id]
+        self.run_chat(['n'], wait=1)
+        self.assertFalse((self.root / 'calls').exists())
+        saved = json.loads(next((self.root / 'sessions').glob('*.json')).read_text())
+        self.assertNotIn('queue', saved)
 
 
 if __name__ == '__main__':
