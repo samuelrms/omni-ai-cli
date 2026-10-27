@@ -88,3 +88,25 @@ class ConfigToolTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class MultipleKeysTests(unittest.TestCase):
+    def test_add_list_and_remove_keys_in_order(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from omni_ai import config as cfg
+        with tempfile.TemporaryDirectory() as d, patch.object(cfg, 'KEYS_DIR', Path(d) / 'keys'), \
+                patch.object(cfg, 'LEGACY_OPENROUTER', Path(d) / 'legacy'), patch.dict('os.environ', {}, clear=False):
+            import os
+            os.environ.pop('OPENROUTER_API_KEY', None)
+            cfg.cmd_key(['add', 'openrouter', 'sk-or-aaaaaaaaaaaaaaaa1'])  # first one becomes the main key
+            cfg.cmd_key(['add', 'openrouter', 'sk-or-bbbbbbbbbbbbbbbb2'])
+            cfg.cmd_key(['add', 'openrouter', 'trabalho', 'sk-or-cccccccccccccccc3'])
+            names = [n for n, _, _ in cfg.stored_keys('openrouter')]
+            self.assertEqual(names, ['principal', 'chave2', 'trabalho'])
+            self.assertEqual(cfg.stored_key('openrouter')[0], 'sk-or-aaaaaaaaaaaaaaaa1')
+            cfg.cmd_key(['remove', 'openrouter', 'chave2'])
+            self.assertEqual([n for n, _, _ in cfg.stored_keys('openrouter')], ['principal', 'trabalho'])
+            with self.assertRaises(SystemExit):
+                cfg.cmd_key(['add', 'openrouter', 'trabalho', 'sk-or-dddddddddddddddd4'])

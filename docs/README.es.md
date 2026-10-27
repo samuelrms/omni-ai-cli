@@ -214,12 +214,14 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 | `/account disable\|enable\|remove NOME` | Desactiva, reactiva o elimina |
 | `/key` | Lista las claves de API configuradas (enmascaradas) |
 | `/key claude\|codex\|agy\|openrouter` | Agrega una clave, sin mostrar lo que escribes |
-| `/key remove NOME` | Elimina la clave |
+| `/key add HERRAMIENTA [NOMBRE]` | Una clave más para la misma herramienta (todas, incluido Claude); se prueban en orden cuando una falla o llega al límite |
+| `/key remove HERRAMIENTA [NOMBRE]` | Elimina la clave (sin nombre, la principal) |
 | `/status` · `/reset` | Estado de las cuentas · reinicia los cooldowns |
 | `/lang pt\|en\|es\|fr` | Cambia el idioma |
 | `/mode default\|plan\|edits\|auto\|yolo` | Modo de permisos, igual en las tres herramientas |
 | `/sync` | Comparte MCPs y skills entre Claude, Codex y Antigravity |
-| `/usage` · `/limits` | Uso y límites de todas las herramientas y cuentas, con la hora de reinicio que cada una informó |
+| `/usage [watch]` · `/limits` | Uso real de cada cuenta en barras (e-mail, plan, % de la ventana de 5 h y semanal, hora de reinicio) para Claude y Codex; gasto de la clave en OpenRouter; en las demás, el aviso de límite que dio la herramienta. `watch` actualiza cada 30 s |
+| `/clear` · `/compact` | Limpiar la conversación · resumirla en un bloque para ahorrar contexto |
 | `/claude:usage` · `/codex:status` · `/agy:usage` … | Comandos nativos de cada herramienta: abre su pantalla y vuelve a Omni al salir |
 | `/terminal-setup` | Muestra cómo tener Shift+Enter (u Option+Enter) para nueva línea en tu terminal |
 | `/skills` | Lista skills y comandos del proyecto y del usuario, de Claude, Codex y Antigravity |

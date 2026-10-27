@@ -213,12 +213,14 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 | `/account disable\|enable\|remove NOME` | Disables, re-enables or removes |
 | `/key` | Lists the configured API keys (masked) |
 | `/key claude\|codex\|agy\|openrouter` | Adds a key, without showing what you type |
-| `/key remove NOME` | Removes the key |
+| `/key add TOOL [NAME]` | One more key for the same tool (any tool, Claude included); keys are tried in order when one fails or hits its limit |
+| `/key remove TOOL [NAME]` | Removes the key (no name: the main one) |
 | `/status` · `/reset` | Account status · clears cooldowns |
 | `/lang pt\|en\|es\|fr` | Changes the language |
 | `/mode default\|plan\|edits\|auto\|yolo` | Permission mode, the same on all three tools |
 | `/sync` | Shares MCPs and skills across Claude, Codex and Antigravity |
-| `/usage` · `/limits` | Usage and limits of every tool and account, with the reset time each one reported |
+| `/usage [watch]` · `/limits` | Real usage of each account as bars (e-mail, plan, % of the 5-hour and weekly windows, reset time) for Claude and Codex; key spend on OpenRouter; for the others, the limit message the tool gave. `watch` refreshes every 30 s |
+| `/clear` · `/compact` | Clear the conversation · summarize it into one block to save context |
 | `/claude:usage` · `/codex:status` · `/agy:usage` … | Each tool's native commands: opens its screen and returns to Omni on exit |
 | `/terminal-setup` | Shows how to get Shift+Enter (or Option+Enter) for new lines in your terminal |
 | `/skills` | Lists project and user skills and commands from Claude, Codex and Antigravity |

@@ -56,6 +56,16 @@ T = {
               'en': '/ commands · @ files · \\⏎ new line · → accept · Ctrl-R search · Ctrl-C exits',
               'es': '/ comandos · @ archivos · \\⏎ nueva línea · → acepta · Ctrl-R busca · Ctrl-C sale',
               'fr': '/ commandes · @ fichiers · \\⏎ nouvelle ligne · → accepter · Ctrl-R recherche · Ctrl-C quitte'},
+    'cleared': {'pt': 'Conversa limpa. Sessão nova: {id}', 'en': 'Conversation cleared. New session: {id}',
+                'es': 'Conversación limpia. Sesión nueva: {id}', 'fr': 'Conversation effacée. Nouvelle session : {id}'},
+    'compact_empty': {'pt': 'Nada para compactar ainda.', 'en': 'Nothing to compact yet.', 'es': 'Nada que compactar todavía.',
+                      'fr': 'Rien à compacter pour le moment.'},
+    'compacting': {'pt': 'Resumindo a conversa…', 'en': 'Summarizing the conversation…', 'es': 'Resumiendo la conversación…',
+                   'fr': 'Résumé de la conversation…'},
+    'compacted': {'pt': 'Conversa compactada: {n} mensagens viraram um resumo.', 'en': 'Conversation compacted: {n} messages became one summary.',
+                  'es': 'Conversación compactada: {n} mensajes en un resumen.', 'fr': 'Conversation compactée : {n} messages en un résumé.'},
+    'compact_failed': {'pt': 'Não deu para resumir agora; a conversa ficou como estava.', 'en': 'Could not summarize now; the conversation is unchanged.',
+                       'es': 'No se pudo resumir; la conversación sigue igual.', 'fr': "Impossible de résumer ; la conversation n'a pas changé."},
     'working': {'pt': 'Trabalhando…', 'en': 'Working…', 'es': 'Trabajando…', 'fr': 'Au travail…'},
     'took': {'pt': 'Levou {t}', 'en': 'Took {t}', 'es': 'Tardó {t}', 'fr': 'Durée {t}'},
     'job_failed': {'pt': 'Não concluiu · /trace para detalhes', 'en': 'Did not finish · /trace for details',
@@ -83,11 +93,13 @@ T = {
     'help': {
         'pt': """Escreva normalmente e tecle Enter. Setas: histórico de linhas. Ctrl-C: cancela resposta / sai. Ctrl-D: sai.
 /tool auto|claude|codex|agy|openrouter|grok Escolher ferramenta (auto = decide sozinho)
-/usage   /limits                        Uso e limites de todas as ferramentas e contas
+/usage [watch]   /limits                Uso real de cada conta em barras (watch atualiza a cada 30s)
+/clear                                   Limpar a conversa e começar do zero
+/compact                                 Resumir a conversa para economizar contexto
 /claude:usage  /codex:status  /agy:usage  Comandos nativos de cada ferramenta (Tab lista todos)
 /model [chave valor]                     Ver/alterar modelos (claude, codex, codex_effort, agy, openrouter, grok)
 /account [list|add|login|remove] [codex|agy|grok] NOME  Contas (Claude por padrão; quantas quiser)
-/key [claude|codex|agy|openrouter|grok|groq|remove X] Chaves de API (reserva da assinatura)
+/key [add|remove] [claude|codex|agy|openrouter|grok|groq] [NOME] Chaves de API (várias por ferramenta, usadas em ordem)
 /status   /reset                         Status das contas / zerar cooldowns
 /sync [--dry-run]                        Compartilhar MCPs e skills entre Claude, Codex e agy
 /mode default|plan|edits|auto|yolo      Modo de permissão (vale para Claude, Codex e agy)
@@ -102,11 +114,13 @@ T = {
 /exit                                    Sair""",
         'en': """Type normally and press Enter. Arrows: line history. Ctrl-C: cancel answer / exit. Ctrl-D: exit.
 /tool auto|claude|codex|agy|openrouter|grok Pick tool (auto = decides for you)
-/usage   /limits                        Usage and limits of every tool and account
+/usage [watch]   /limits                Real usage of each account as bars (watch refreshes every 30s)
+/clear                                   Clear the conversation and start over
+/compact                                 Summarize the conversation to save context
 /claude:usage  /codex:status  /agy:usage  Native commands of each tool (Tab lists them all)
 /model [key value]                       Show/change models (claude, codex, codex_effort, agy, openrouter, grok)
 /account [list|add|login|remove] [codex|agy|grok] NAME  Accounts (Claude by default; as many as you want)
-/key [claude|codex|agy|openrouter|grok|groq|remove X] API keys (subscription fallback)
+/key [add|remove] [claude|codex|agy|openrouter|grok|groq] [NAME] API keys (several per tool, tried in order)
 /status   /reset                         Account status / clear cooldowns
 /sync [--dry-run]                        Share MCPs and skills across Claude, Codex and agy
 /mode default|plan|edits|auto|yolo      Permission mode (applies to Claude, Codex and agy)
@@ -121,11 +135,13 @@ T = {
 /exit                                    Exit""",
         'es': """Escribe normalmente y pulsa Enter. Flechas: historial. Ctrl-C: cancela respuesta / sale. Ctrl-D: sale.
 /tool auto|claude|codex|agy|openrouter|grok Elegir herramienta (auto = decide sola)
-/usage   /limits                        Uso y límites de todas las herramientas y cuentas
+/usage [watch]   /limits                Uso real de cada cuenta en barras (watch actualiza cada 30s)
+/clear                                   Limpiar la conversación y empezar de cero
+/compact                                 Resumir la conversación para ahorrar contexto
 /claude:usage  /codex:status  /agy:usage  Comandos nativos de cada herramienta (Tab los lista)
 /model [clave valor]                     Ver/cambiar modelos (claude, codex, codex_effort, agy, openrouter, grok)
 /account [list|add|login|remove] [codex|agy|grok] NOMBRE  Cuentas (Claude por defecto; las que quieras)
-/key [claude|codex|agy|openrouter|grok|groq|remove X] Claves de API (respaldo de la suscripción)
+/key [add|remove] [claude|codex|agy|openrouter|grok|groq] [NOMBRE] Claves de API (varias por herramienta, en orden)
 /status   /reset                         Estado de cuentas / limpiar cooldowns
 /sync [--dry-run]                        Compartir MCPs y skills entre Claude, Codex y agy
 /mode default|plan|edits|auto|yolo      Modo de permisos (Claude, Codex y agy)
@@ -140,11 +156,13 @@ T = {
 /exit                                    Salir""",
         'fr': """Tapez normalement puis Entrée. Flèches : historique. Ctrl-C : annule la réponse / quitte. Ctrl-D : quitte.
 /tool auto|claude|codex|agy|openrouter|grok Choisir l'outil (auto = choix automatique)
-/usage   /limits                        Usage et limites de tous les outils et comptes
+/usage [watch]   /limits                Usage réel de chaque compte en barres (watch rafraîchit toutes les 30 s)
+/clear                                   Effacer la conversation et repartir de zéro
+/compact                                 Résumer la conversation pour économiser du contexte
 /claude:usage  /codex:status  /agy:usage  Commandes natives de chaque outil (Tab les liste)
 /model [clé valeur]                      Voir/changer les modèles (claude, codex, codex_effort, agy, openrouter, grok)
 /account [list|add|login|remove] [codex|agy|grok] NOM  Comptes (Claude par défaut ; autant que voulu)
-/key [claude|codex|agy|openrouter|grok|groq|remove X] Clés API (secours de l'abonnement)
+/key [add|remove] [claude|codex|agy|openrouter|grok|groq] [NOM] Clés API (plusieurs par outil, essayées dans l'ordre)
 /status   /reset                         État des comptes / réinitialiser les cooldowns
 /sync [--dry-run]                        Partager MCP et skills entre Claude, Codex et agy
 /mode default|plan|edits|auto|yolo      Mode de permissions (Claude, Codex et agy)
@@ -510,6 +528,38 @@ def parse_parallel(text):
 
 
 
+COMPACT_PROMPT = ('Resuma a conversa abaixo para ela continuar em outra janela sem perder nada importante: objetivo, '
+                  'decisões tomadas, arquivos e comandos citados, o que já foi feito, o que falta e pendências. '
+                  'Escreva só o resumo, em tópicos curtos. {reply}\n\n{conversation}')
+
+
+def compact(session):
+    """Replace the history with one summary written by the session's engine (read-only run)."""
+    messages = session.data['messages']
+    if len(messages) < 2:
+        display(tr('compact_empty'))
+        return
+    job = {'id': 'compact', 'engine': session.data.get('engine', 'auto'), 'prompt': 'compact',
+           'sent': COMPACT_PROMPT.format(reply=tr('reply_in'), conversation=json.dumps(messages, ensure_ascii=False)[-MAX_CONTEXT:])}
+    runner = Runner(session.data['cwd'], mode='plan')
+    ui.SPINNER.start(tr('compacting'))
+    try:
+        runner.run(job, 'resumir conversa', readonly=True)
+    except KeyboardInterrupt:
+        runner.cancel()
+    finally:
+        ui.SPINNER.stop()
+    summary = '\n'.join(job.get('answers') or []).strip()
+    if job.get('status') != 'done' or not summary:
+        display(tr('compact_failed'))
+        return
+    session.data.setdefault('compacted', []).append({'at': time.time(), 'messages': messages})
+    session.data['messages'] = [{'role': 'assistant', 'content': 'Resumo da conversa até aqui:\n' + summary,
+                                 'provider': job.get('provider', job['engine']), 'compacted': len(messages)}]
+    session.save()
+    display(tr('compacted', n=len(messages)))
+
+
 TOOL_COMMANDS = {'/usage': ['--usage'], '/limits': ['--usage'], '/model': ['--model'], '/account': ['--account'], '/key': ['--key'],
                  '/status': ['--status'], '/sync': ['--sync'], '/update': ['--update'], '/reset': ['--reset']}
 
@@ -522,7 +572,7 @@ def run_tool(args):
         pass
 
 
-BUILTIN = ['/usage', '/setup', '/terminal-setup', '/tool', '/model', '/account', '/key', '/status', '/reset', '/sync', '/update', '/mode', '/lang',
+BUILTIN = ['/usage', '/clear', '/compact', '/setup', '/terminal-setup', '/tool', '/model', '/account', '/key', '/status', '/reset', '/sync', '/update', '/mode', '/lang',
            '/skills', '/history', '/sent', '/trace', '/sessions', '/resume', '/new', '/parallel', '/help', '/exit']
 
 
@@ -662,6 +712,8 @@ def main(argv=None):
     def arguments(command, done):
         """What can come next after a command and the words already typed: (value, description)."""
         values = config_tool.model_values()
+        if command in ('/usage', '/limits'):
+            return [('watch', 'atualiza a cada 30s · Ctrl-C sai')] if not done else []
         if command == '/tool':
             return [(e, model_label(e) if e != 'auto' else tr('auto_model')) for e in sorted(ENGINES)] if not done else []
         if command == '/mode':
@@ -680,8 +732,12 @@ def main(argv=None):
         if command == '/key':
             if not done:
                 return [(p, 'configurada' if config_tool.stored_key(p)[0] else 'adicionar') for p in config_tool.KEYS] + \
-                       [('remove', 'apagar uma chave')]
-            return [(p, '') for p in config_tool.KEYS] if done == ['remove'] else []
+                       [('add', 'mais uma chave (usadas em ordem)'), ('remove', 'apagar uma chave')]
+            if done in (['remove'], ['add']):
+                return [(p, f"{len(config_tool.stored_keys(p))} salva(s)") for p in config_tool.KEYS]
+            if len(done) == 2 and done[0] == 'remove':
+                return [(n, '') for n, _, o in config_tool.stored_keys(done[1]) if o != 'env']
+            return []
         if command == '/account':
             actions = [('list', 'listar'), ('add', 'nova conta'), ('login', 'refazer login'), ('sync', 'compartilhar skills/MCP'),
                        ('enable', 'ativar'), ('disable', 'desativar'), ('remove', 'remover')]
@@ -806,6 +862,15 @@ def main(argv=None):
                         raise ValueError(tr('no_call'))
                     data = job.get('dispatches', job['sent']) if command == '/sent' else job.get('events', [])
                     display(json.dumps(data, ensure_ascii=False, indent=2) if not isinstance(data, str) else data)
+                elif command == '/clear':
+                    replacement = Session()
+                    session.close()
+                    session = replacement
+                    ui.clear_screen()
+                    ui.set_title('Omni AI')
+                    display(tr('cleared', id=session.id))
+                elif command == '/compact':
+                    compact(session)
                 elif command == '/parallel':
                     execute(session, parse_parallel(argument), parallel=True)
                 elif command == '/skills':

@@ -56,3 +56,38 @@ class RememberLimitTests(unittest.TestCase):
             self.assertIn('9:20 PM', smart_ai.state()['limits']['codex']['text'])
             smart_ai.remember_limit('codex', '')
             self.assertNotIn('codex', smart_ai.state()['limits'])
+
+    def test_json_error_keeps_only_the_message(self):
+        import tempfile
+        from pathlib import Path
+        raw = '{"type":"error","message":"You\'ve hit your usage limit. Upgrade to Pro, or try again at 9:20 PM."}'
+        with tempfile.TemporaryDirectory() as d, patch.object(smart_ai, 'STATE_FILE', Path(d) / 's.json'):
+            smart_ai.remember_limit('codex', raw)
+            text = smart_ai.state()['limits']['codex']['text']
+            self.assertTrue(text.startswith("You've hit your usage limit"))
+            self.assertNotIn('"type"', text)
+
+
+class LimitExpiryTests(unittest.TestCase):
+    def test_relative_reset_time(self):
+        until = smart_ai.limit_until('Individual quota reached. Resets in 18h48m33s.', 1000)
+        self.assertEqual(until, 1000 + 18 * 3600 + 48 * 60 + 33)
+
+    def test_clock_reset_time_is_the_next_occurrence(self):
+        import time
+        seen = int(time.mktime((2026, 10, 26, 22, 0, 0, 0, 0, -1)))
+        until = smart_ai.limit_until('try again at 9:20 PM.', seen)  # 21:20 already passed → next day
+        self.assertEqual(time.localtime(until)[2:5], (27, 21, 20))
+        until = smart_ai.limit_until("You've hit your session limit · resets 11:40pm", seen)
+        self.assertEqual(time.localtime(until)[2:5], (26, 23, 40))
+
+    def test_expired_limits_stop_showing(self):
+        item = {'text': 'quota reached. Resets in 1h', 'at': 0}
+        self.assertIsNotNone(smart_ai.active_limit(item, now=3599))
+        self.assertIsNone(smart_ai.active_limit(item, now=3600))
+
+    def test_limit_without_time_expires_after_a_day(self):
+        item = {'text': 'rate limit exceeded', 'at': 0}
+        self.assertIsNone(smart_ai.limit_until(item['text'], 0))
+        self.assertIsNotNone(smart_ai.active_limit(item, now=smart_ai.LIMIT_FALLBACK - 1))
+        self.assertIsNone(smart_ai.active_limit(item, now=smart_ai.LIMIT_FALLBACK))
