@@ -19,6 +19,7 @@ import sys
 import time
 
 from . import config as config_tool
+from . import usage
 from .osutils import REPO, enable_ansi, module_cmd, module_env, resolve_bin
 
 STATE_FILE = Path(os.environ.get('SMART_AI_STATE', '~/.cache/smart-ai/state.json')).expanduser()
@@ -189,16 +190,57 @@ def run_claude(profile, prompt):
 LIMIT_MESSAGE = re.compile(r"[^\n]*(?:hit your (?:usage|session) limit|quota reached|rate limit|try again at|resets? (?:at|in))[^\n]*", re.I)
 
 
+LIMIT_IN = re.compile(r'(?:resets?|try again)\s+in\s+((?:\d+\s*[dhms]\s*)+)', re.I)
+LIMIT_AT = re.compile(r'(?:resets?(?:\s+at)?|try again at)\s+(\d{1,2})(?::(\d{2}))?\s*([ap]m)?\b', re.I)
+LIMIT_FALLBACK = 24 * 3600  # no reset time in the message: stop showing it after a day
+
+
+def limit_until(text, at):
+    """When the tool said the limit ends, as epoch seconds; None when the message gives no time."""
+    found = LIMIT_IN.search(text)
+    if found:
+        units = {'d': 86400, 'h': 3600, 'm': 60, 's': 1}
+        return at + sum(int(n) * units[u.lower()] for n, u in re.findall(r'(\d+)\s*([dhms])', found.group(1), re.I))
+    found = LIMIT_AT.search(text)
+    if not found:
+        return None
+    hour, minute, half = int(found.group(1)), int(found.group(2) or 0), (found.group(3) or '').lower()
+    if half == 'pm' and hour < 12:
+        hour += 12
+    elif half == 'am' and hour == 12:
+        hour = 0
+    if hour > 23 or minute > 59:
+        return None
+    seen = time.localtime(at)
+    until = time.mktime((seen.tm_year, seen.tm_mon, seen.tm_mday, hour, minute, 0, 0, 0, -1))
+    return int(until if until > at else until + 86400)
+
+
 def remember_limit(key, output):
     """Keep the tool's own words about its limit (e.g. 'resets 7:40pm') for /usage."""
     match = LIMIT_MESSAGE.search(re.sub(r'\\u2019', "'", output))
     data = state()
     limits = data.setdefault('limits', {})
     if match:
-        limits[key] = {'text': ' '.join(match.group(0).split())[:220], 'at': int(time.time())}
+        text = match.group(0)
+        inner = re.search(r'"message"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"', text)  # JSON error: keep only its message
+        if inner:
+            text = inner.group(1)
+        text = ' '.join(text.split())[:220]
+        now = int(time.time())
+        limits[key] = {'text': text, 'at': now, 'until': limit_until(text, now)}
     else:
         limits.pop(key, None)
     config_tool.write_json(STATE_FILE, data)
+
+
+def active_limit(item, now=None):
+    """The stored limit if it still holds; expired ones (reset time passed) count as gone."""
+    if not item:
+        return None
+    now = time.time() if now is None else now
+    until = item.get('until') or limit_until(item['text'], item['at']) or item['at'] + LIMIT_FALLBACK
+    return dict(item, until=until) if now < until else None
 
 
 def hit_limit(output, code):
@@ -225,6 +267,20 @@ def hit_limit(output, code):
     return any(LIMIT_TEXT.search(v) for v in verdicts)
 
 
+def over_ceiling(key, fetch, label):
+    """Real % of an account before using it: warns past the alert line, and True when it is at or above
+    the router's ceiling (routing.usage_skip_percent), so the account is skipped instead of failing."""
+    reading = usage.read(key, fetch)
+    for line in usage.alerts(key, reading, label):
+        say(f'{YELLOW}⚠ {line}{NC}')
+    skip, _ = usage.thresholds()
+    top = usage.peak((reading or {}).get('windows'))
+    if reading and top >= skip:
+        say(f'{DIM}  ⏭ {label}: {top:.0f}% usado, acima do teto de {skip:.0f}%; pulando{NC}')
+        return True
+    return False
+
+
 def run_with_key_retry(tool, argv, env_var, label):
     """Main login first, then each extra account of the tool (/account add TOOL NAME), then the saved API key."""
     accounts = [('primary', {})] + [(name, config_tool.tool_env(tool, conf)) for name, conf in config_tool.tool_accounts(tool, True)]
@@ -233,6 +289,8 @@ def run_with_key_retry(tool, argv, env_var, label):
         account = tool if name == 'primary' else f'{tool}:{name}'
         if cooldown_left(account):
             say(f'{DIM}  ⏳ {label}: conta {name} em cooldown{NC}')
+            continue
+        if tool == 'codex' and over_ceiling(f'codex:{name}', lambda env=env: usage.codex_reading(env or None), f'{label} {name}'):
             continue
         if name != 'primary':
             say(f'{YELLOW}🔄 {label}: tentando a conta {name}{NC}')
@@ -415,6 +473,9 @@ def claude_with_fallback(prompt):
         if left:
             say(f"{DIM}  ⏳ Perfil '{profile}' em cooldown (restam: {left // 60}m{left % 60}s){NC}")
             continue
+        conf = config_tool.profiles()['profiles'].get(profile, {})
+        if over_ceiling(f'claude:{profile}', lambda conf=conf: usage.claude_reading(conf), f'Claude {profile}'):
+            continue
         result = run_claude(profile, prompt)
         if result == 0:
             return 0
@@ -510,48 +571,121 @@ def ago(seconds):
     return f'{seconds // 3600}h{seconds % 3600 // 60:02d}m' if seconds >= 3600 else f'{seconds // 60}m'
 
 
-def show_usage():
-    """One screen for every tool and account: available, limited (with the tool's own reset text), or not set up."""
+def show_usage(watch=False):
+    """One screen for every tool and account: who it is, % used of each window (when the tool says),
+    or the tool's own limit message. With watch, redraws every 30s until Ctrl-C."""
+    if not watch:
+        return render_usage()
+    try:
+        while True:
+            sys.stdout.write('\033[H\033[2J')
+            render_usage()
+            say(f"\n{DIM}atualiza a cada 30s · {time.strftime('%H:%M:%S')} · Ctrl-C sai{NC}")
+            time.sleep(30)
+    except KeyboardInterrupt:
+        say()
+    return 0
+
+
+def render_usage():
     limits = state().get('limits', {})
     today = time.strftime('%Y-%m-%d')
     lines = LOG_FILE.read_text(errors='replace').splitlines() if LOG_FILE.is_file() else []
+    skip, alert = usage.thresholds()
 
     def calls(tool):
         return sum(1 for l in lines if l.startswith('[' + today) and f'tool={tool} ' in l)
 
     def limit_line(key):
-        item = limits.get(key)
-        return f"{YELLOW}limitado{NC} {DIM}· {item['text']} (visto há {ago(time.time() - item['at'])}){NC}" if item else ''
+        item = active_limit(limits.get(key))
+        if not item:
+            return ''
+        back = f" · volta em {ago(item['until'] - time.time())}" if limit_until(item['text'], item['at']) else ''
+        return f"{YELLOW}limitado{NC} {DIM}· {item['text']} (visto há {ago(time.time() - item['at'])}{back}){NC}"
 
-    say(f'{BOLD}Uso e limites{NC}  {DIM}hoje: chamadas por ferramenta · limites como cada ferramenta informou{NC}\n')
+    def who(info):
+        return f" {DIM}· {info['email']}{' · ' + info['plan'] if info.get('plan') else ''}{NC}" if info and info.get('email') else ''
+
+    def windows(items, pad=15):
+        for window in items:
+            used = window['used']
+            color = RED if used >= max(alert + 10, 90) else YELLOW if used >= alert - 10 else GREEN
+            reset = ''
+            if window.get('resets'):
+                reset = f"  {DIM}reseta em {usage.resets_in(window['resets'])} · {usage.clock(window['resets'])}{NC}"
+            name = usage.window_label(window['minutes'], window.get('label'))
+            filled = usage.bar(used, 24).count('█')
+            say(f"{' ' * pad}{DIM}{name:<7}{NC} {color}{'█' * filled}{NC}{DIM}{'░' * (24 - filled)}{NC} {BOLD}{color}{used:>3.0f}%{NC}{reset}")
+
+    def state_of(live, fallback_key, cooldown=0):
+        if live and live.get('windows'):
+            top = usage.peak(live['windows'])
+            if live.get('blocked') or top >= 100:
+                return f'{RED}no limite{NC}'
+            if top >= skip:
+                return f'{YELLOW}acima do teto de {skip:.0f}% · o Omni pula{NC}'
+            return f'{GREEN}disponível{NC}'
+        text = limit_line(fallback_key)
+        if cooldown:
+            return (text or f'{YELLOW}limitado{NC}') + f' {DIM}· o Omni tenta de novo em {cooldown // 60}m{NC}'
+        return text or f'{GREEN}sem limite registrado{NC}'
+
+    profiles = [(n, c) for n, c in config_tool.ordered(config_tool.profiles()) if c.get('enabled', True)]
+    codex = [('primary', None)] + [(n, config_tool.tool_env('codex', c)) for n, c in config_tool.tool_accounts('codex', True)] \
+        if installed('codex') else []
+    key = config_tool.stored_key('openrouter')[0]
+    if sys.stdout.isatty():
+        sys.stdout.write(f'{DIM}consultando contas…{NC}\r')
+        sys.stdout.flush()
+    data = usage.snapshot(profiles, codex, key)
+    if sys.stdout.isatty():
+        sys.stdout.write('\033[K')
+    say(f'{BOLD}Uso e limites{NC}  {DIM}% usado de cada janela · teto do roteador {skip:.0f}% · alerta em {alert:.0f}%{NC}\n')
+
     say(f'{BOLD}Claude{NC}  {DIM}{calls("claude")} chamadas hoje{NC}')
     for name, conf in config_tool.ordered(config_tool.profiles()):
-        left = cooldown_left(name)
         if not conf.get('enabled', True):
-            status = f'{DIM}desativada{NC}'
-        elif config_tool.logged_in(conf) is False:
-            status = f'{RED}sem login{NC} {DIM}· /account login {name}{NC}'
-        elif left:
-            status = limit_line(f'claude:{name}') or f'{YELLOW}limitado{NC}'
-            status += f' {DIM}· o Omni tenta de novo em {left // 60}m{NC}'
-        else:
-            status = f'{GREEN}disponível{NC}'
-        say(f'  {name:<12} {status}')
+            say(f'  {name:<12} {DIM}desativada{NC}')
+            continue
+        info = data.get(('claude-who', name))
+        if not info and config_tool.logged_in(conf) is False:
+            say(f'  {name:<12} {RED}sem login{NC} {DIM}· /account login {name}{NC}')
+            continue
+        live = data.get(('claude', name))
+        say(f'  {name:<12} {state_of(live, f"claude:{name}", cooldown_left(name))}{who(info)}')
+        windows((live or {}).get('windows', []))
     if config_tool.stored_key('claude')[0]:
         say(f"  {'chave API':<12} " + (limit_line('claude:api-key') or f'{GREEN}configurada{NC}'))
     for tool, label in (('codex', 'Codex'), ('agy', 'Antigravity'), ('grok', 'Grok Build')):
         say(f'\n{BOLD}{label}{NC}  {DIM}{calls(tool)} chamadas hoje{NC}')
         if not installed(tool):
             say(f'  {RED}não instalado{NC}')
+            say(f'  {DIM}+ usar com chave de API: /key {tool}{NC}')
             continue
-        say('  assinatura   ' + (limit_line(tool) or f'{GREEN}sem limite registrado{NC}'))
-        for name, _ in config_tool.tool_accounts(tool, True):
-            say(f'  {name:<12} ' + (limit_line(f'{tool}:{name}') or f'{GREEN}sem limite registrado{NC}'))
+        for name, conf in [('primary', None)] + config_tool.tool_accounts(tool, True):
+            account = tool if conf is None else f'{tool}:{name}'
+            live = data.get(('codex', name)) if tool == 'codex' else None
+            say(f"  {'assinatura' if conf is None else name:<12} {state_of(live, account, cooldown_left(account))}{who(live)}")
+            windows((live or {}).get('windows', []))
         if config_tool.stored_key(tool)[0]:
             say('  chave API    ' + (limit_line(f'{tool}:api-key') or f'{GREEN}configurada{NC}'))
+        key_hint = f'trocar a chave: /key {tool}' if config_tool.stored_key(tool)[0] else f'chave de reserva: /key {tool}'
+        say(f'  {DIM}+ nova conta: /account add {tool} NOME · {key_hint}{NC}')
     say(f'\n{BOLD}OpenRouter{NC}  {DIM}{calls("openrouter")} chamadas hoje{NC}')
-    say('  ' + (f'{GREEN}chave configurada{NC}' if config_tool.stored_key('openrouter')[0] else f'{DIM}sem chave · /key openrouter{NC}'))
-    say(f'\n{DIM}Detalhes oficiais de cada plano: /claude:usage · /codex:status · /agy:usage{NC}')
+    credits = data.get(('openrouter', ''))
+    if not key:
+        say(f'  {DIM}sem chave · /key openrouter{NC}')
+    elif credits and credits['limit']:
+        say(f"  {GREEN}chave configurada{NC} {DIM}· US$ {credits['used']:.2f} de US$ {float(credits['limit']):.2f}{NC}")
+        windows([{'minutes': 0, 'used': credits['used'] / float(credits['limit']) * 100}], pad=2)
+    elif credits:
+        say(f"  {GREEN}chave configurada{NC} {DIM}· US$ {credits['used']:.2f} usados · chave sem teto{NC}")
+    else:
+        say(f'  {GREEN}chave configurada{NC}')
+    if key:
+        say(f'  {DIM}+ trocar a chave: /key openrouter{NC}')
+    say(f'\n{DIM}Teto e alerta: routing.usage_skip_percent e routing.usage_alert_percent no profiles.json · /usage watch{NC}')
+    return 0
 
 
 def reset_cooldowns():
@@ -656,8 +790,7 @@ def main(argv):
             onboarding.main()
             return 0
         elif arg in ('--usage', '--limits'):
-            show_usage()
-            return 0
+            return show_usage(watch='watch' in argv[i + 1:] or '--watch' in argv[i + 1:])
         elif arg in ('--reset', '-r'):
             reset_cooldowns()
             return 0
