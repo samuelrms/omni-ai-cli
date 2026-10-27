@@ -17,6 +17,7 @@ import select
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 
 from . import config as config_tool
@@ -170,6 +171,13 @@ def claude_limits(conf, timeout=10):
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             data = json.loads(response.read())
+    except urllib.error.HTTPError as error:
+        if error.code == 429:  # too many usage checks: Anthropic says how long to wait
+            try:
+                return {'error': 'rate', 'retry': int(error.headers.get('retry-after') or 120)}
+            except ValueError:
+                return {'error': 'rate', 'retry': 120}
+        return None
     except (OSError, ValueError):
         return None
     return claude_windows(data)
@@ -222,15 +230,27 @@ def peak(windows):
 
 
 def read(key, fetch, max_age=None):
-    """Reading for an account: from the cache while fresh, otherwise fetched (and cached)."""
+    """Reading for an account: from the cache while fresh, otherwise fetched (and cached). When the tool
+    refuses the check (too many in a row) or fails, the last reading comes back marked stale, and no new
+    check is made until the wait the tool asked for is over."""
     tool = key.split(':')[0]
-    cached = load_cache().get('readings', {}).get(key)
-    if cached and time.time() - cached['at'] < (FRESH.get(tool, 120) if max_age is None else max_age):
+    data = load_cache()
+    cached = data.get('readings', {}).get(key)
+    now = time.time()
+    if cached and now - cached['at'] < (FRESH.get(tool, 120) if max_age is None else max_age):
         return cached
+    stale = dict(cached, stale=True) if cached else None
+    if data.get('backoff', {}).get(key, 0) > now:
+        return stale
     reading = fetch()
-    if reading is not None:
+    if reading and 'error' not in reading:
         store(key, reading)
-    return reading
+        return reading
+    if reading and reading.get('retry'):
+        data = load_cache()
+        data.setdefault('backoff', {})[key] = int(now + reading['retry'])
+        config_tool.write_json(CACHE_FILE, data)
+    return stale
 
 
 def alerts(key, reading, label):
@@ -252,7 +272,9 @@ def alerts(key, reading, label):
 
 def claude_reading(conf):
     windows = claude_limits(conf)
-    return None if windows is None else {'windows': windows}
+    if windows is None or isinstance(windows, dict):
+        return windows
+    return {'windows': windows}
 
 
 def codex_reading(env=None):
@@ -267,16 +289,12 @@ def snapshot(claude_profiles, codex_accounts, openrouter_keys):
     with ThreadPoolExecutor(max_workers=8) as pool:
         for name, conf in claude_profiles:
             jobs[('claude-who', name)] = pool.submit(claude_account, conf)
-            jobs[('claude', name)] = pool.submit(claude_reading, conf)
+            jobs[('claude', name)] = pool.submit(read, f'claude:{name}', lambda conf=conf: claude_reading(conf), 60)
         for name, env in codex_accounts:
-            jobs[('codex', name)] = pool.submit(codex_reading, env)
+            jobs[('codex', name)] = pool.submit(read, f'codex:{name}', lambda env=env: codex_reading(env), 30)
         for name, key, _ in openrouter_keys or []:
             jobs[('openrouter', name)] = pool.submit(openrouter_credits, key)
-        results = {k: f.result() for k, f in jobs.items()}
-    for (tool, name), value in results.items():
-        if tool in ('claude', 'codex') and value is not None:
-            store(f'{tool}:{name}', value)
-    return results
+        return {k: f.result() for k, f in jobs.items()}
 
 
 def clock(epoch):
