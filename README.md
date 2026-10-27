@@ -112,7 +112,8 @@ Três detalhes que o diagrama torna explícitos:
 - **A fila não bloqueia nada.** Acima da caixa aparece o pedido em execução, o tempo e
   os próximos da fila. Um pedido que esperou passa por um classificador grátis antes de
   rodar: se a resposta anterior já o resolve, ele é pulado. Comandos e skills sempre
-  rodam. Ctrl-C com a fila ativa cancela tudo sem sair do chat.
+  rodam. Ctrl-C com a fila ativa cancela tudo sem sair do chat. Se você fechar o chat com
+  pedidos na fila, eles ficam salvos na sessão e o `ai --resume ID` pergunta se quer continuar.
 - **Só a resposta entra no histórico.** Linhas de status e diagnóstico aparecem na tela,
   mas não são enviadas como contexto na próxima pergunta. Raciocínio interno dos modelos
   também é descartado.
@@ -232,6 +233,7 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 | `/mode default\|plan\|edits\|auto\|yolo` | Modo de permissão, igual nas três ferramentas |
 | `/sync` | Compartilha MCPs e skills entre Claude, Codex e Antigravity |
 | `/usage [watch]` · `/limits` | Uso real de cada conta em barras (e-mail, plano, % da janela de 5 h e da semana, horário de reset) para Claude e Codex; gasto da chave no OpenRouter; nas demais, o aviso de limite que a ferramenta deu. `watch` atualiza a cada 30 s |
+| `/queue [rm\|up\|down N\|clear]` | Mostra a fila; tira (`rm`), sobe (`up`), desce (`down`) um pedido ou esvazia (`clear`) o que espera |
 | `/versions [N]` | O que mudou em cada versão, mais recente primeiro; `N` abre a nota técnica. Antes da primeira release, mostra os `feat`/`fix` do `main` |
 | `/clear` · `/compact` | Limpar a conversa · resumir a conversa num único bloco para economizar contexto |
 | `/claude:usage` · `/codex:status` · `/agy:usage` … | Comandos nativos de cada ferramenta: abre a tela dela e volta ao Omni ao sair |

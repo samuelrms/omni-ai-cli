@@ -71,6 +71,27 @@ T = {
                        'es': 'No se pudo resumir; la conversación sigue igual.', 'fr': "Impossible de résumer ; la conversation n'a pas changé."},
     'queued': {'pt': 'na fila ({n})', 'en': 'queued ({n})', 'es': 'en cola ({n})', 'fr': "en file d'attente ({n})"},
     'next_up': {'pt': '▶ da fila: {v}', 'en': '▶ from the queue: {v}', 'es': '▶ de la cola: {v}', 'fr': '▶ de la file : {v}'},
+    'queue_bad': {'pt': 'Número fora da fila (há {n} esperando).', 'en': 'Number not in the queue ({n} waiting).',
+                  'es': 'Número fuera de la cola (hay {n} esperando).', 'fr': "Numéro hors de la file ({n} en attente)."},
+    'queue_usage': {'pt': 'Use: /queue · /queue rm N · /queue up N · /queue down N · /queue clear',
+                    'en': 'Use: /queue · /queue rm N · /queue up N · /queue down N · /queue clear',
+                    'es': 'Usa: /queue · /queue rm N · /queue up N · /queue down N · /queue clear',
+                    'fr': 'Utilisez : /queue · /queue rm N · /queue up N · /queue down N · /queue clear'},
+    'queue_removed': {'pt': 'Tirado da fila: {v}', 'en': 'Removed from the queue: {v}', 'es': 'Quitado de la cola: {v}',
+                      'fr': 'Retiré de la file : {v}'},
+    'queue_moved': {'pt': 'Agora é o {n}º da fila.', 'en': 'Now #{n} in the queue.', 'es': 'Ahora es el {n}º de la cola.',
+                    'fr': 'Maintenant n° {n} dans la file.'},
+    'queue_cleared': {'pt': '{n} pedido(s) tirado(s) da fila.', 'en': '{n} request(s) removed from the queue.',
+                      'es': '{n} pedido(s) quitado(s) de la cola.', 'fr': '{n} demande(s) retirée(s) de la file.'},
+    'queue_empty': {'pt': 'Fila vazia.', 'en': 'Queue is empty.', 'es': 'Cola vacía.', 'fr': 'File vide.'},
+    'queue_saved': {'pt': '{n} pedido(s) da fila ficaram salvos; retome com: ai --resume {id}',
+                    'en': '{n} queued request(s) saved; resume with: ai --resume {id}',
+                    'es': '{n} pedido(s) de la cola guardados; retoma con: ai --resume {id}',
+                    'fr': '{n} demande(s) en attente enregistrée(s) ; reprenez avec : ai --resume {id}'},
+    'queue_restore': {'pt': 'Esta sessão tem {n} pedido(s) na fila de antes:', 'en': 'This session has {n} request(s) left in the queue:',
+                      'es': 'Esta sesión tiene {n} pedido(s) en la cola de antes:', 'fr': 'Cette session a {n} demande(s) restée(s) en file :'},
+    'queue_restore_ask': {'pt': 'Continuar com eles? [S/n] ', 'en': 'Run them now? [Y/n] ', 'es': '¿Continuar con ellos? [S/n] ',
+                          'fr': 'Les relancer ? [O/n] '},
     'queue_cancel': {'pt': 'Ctrl-C cancela tudo', 'en': 'Ctrl-C cancels all', 'es': 'Ctrl-C cancela todo', 'fr': 'Ctrl-C annule tout'},
     'queue_dropped': {'pt': 'Cancelado; {n} pedido(s) da fila descartado(s).', 'en': 'Cancelled; {n} queued request(s) dropped.',
                       'es': 'Cancelado; {n} pedido(s) de la cola descartado(s).', 'fr': 'Annulé ; {n} demande(s) en attente supprimée(s).'},
@@ -114,6 +135,7 @@ T = {
 /usage [watch]   /limits                Uso real de cada conta em barras (watch atualiza a cada 30s)
 /clear                                   Limpar a conversa e começar do zero
 /compact                                 Resumir a conversa para economizar contexto
+/queue [rm|up|down N|clear]              Ver e editar a fila (tirar, subir, descer, esvaziar)
 /versions [N]                            O que mudou em cada versão (N abre a nota técnica)
 /claude:usage  /codex:status  /agy:usage  Comandos nativos de cada ferramenta (Tab lista todos)
 /model [chave valor]                     Ver/alterar modelos (claude, codex, codex_effort, agy, openrouter, grok, deepseek, cursor)
@@ -136,6 +158,7 @@ T = {
 /usage [watch]   /limits                Real usage of each account as bars (watch refreshes every 30s)
 /clear                                   Clear the conversation and start over
 /compact                                 Summarize the conversation to save context
+/queue [rm|up|down N|clear]              See and edit the queue (remove, move up/down, empty)
 /versions [N]                            What changed in each release (N opens the technical note)
 /claude:usage  /codex:status  /agy:usage  Native commands of each tool (Tab lists them all)
 /model [key value]                       Show/change models (claude, codex, codex_effort, agy, openrouter, grok, deepseek, cursor)
@@ -158,6 +181,7 @@ T = {
 /usage [watch]   /limits                Uso real de cada cuenta en barras (watch actualiza cada 30s)
 /clear                                   Limpiar la conversación y empezar de cero
 /compact                                 Resumir la conversación para ahorrar contexto
+/queue [rm|up|down N|clear]              Ver y editar la cola (quitar, subir, bajar, vaciar)
 /versions [N]                            Qué cambió en cada versión (N abre la nota técnica)
 /claude:usage  /codex:status  /agy:usage  Comandos nativos de cada herramienta (Tab los lista)
 /model [clave valor]                     Ver/cambiar modelos (claude, codex, codex_effort, agy, openrouter, grok, deepseek, cursor)
@@ -180,6 +204,7 @@ T = {
 /usage [watch]   /limits                Usage réel de chaque compte en barres (watch rafraîchit toutes les 30 s)
 /clear                                   Effacer la conversation et repartir de zéro
 /compact                                 Résumer la conversation pour économiser du contexte
+/queue [rm|up|down N|clear]              Voir et modifier la file (retirer, monter, descendre, vider)
 /versions [N]                            Ce qui a changé à chaque version (N ouvre la note technique)
 /claude:usage  /codex:status  /agy:usage  Commandes natives de chaque outil (Tab les liste)
 /model [clé valeur]                      Voir/changer les modèles (claude, codex, codex_effort, agy, openrouter, grok, deepseek, cursor)
@@ -550,18 +575,25 @@ def execute(session, tasks, parallel=False, raw=False):
 
 
 class Queue:
-    """Requests typed while another one runs wait their turn here; the input stays free the whole time."""
+    """Requests typed while another one runs wait their turn here; the input stays free the whole time.
 
-    def __init__(self, skip=None):
-        self.items, self.current, self.skip = [], None, skip
+    A request is a callable or a dict spec ({'kind': 'ask' | 'skill' | 'parallel' | 'compact', ...}) that run()
+    executes; specs are what gets saved with the session, so a closed chat can pick the line up again.
+    """
+
+    def __init__(self, skip=None, run=None, changed=None):
+        self.items, self.current, self.current_spec = [], None, None
+        self.skip, self.run, self.changed = skip, run, changed
         self.condition = threading.Condition()
         threading.Thread(target=self._loop, daemon=True).start()
 
-    def put(self, label, work):
+    def put(self, label, work, waited=None):
         with self.condition:
             # only a request that actually waited gets a "from the queue" line when its turn comes
-            self.items.append((label, work, self.current is not None or bool(self.items)))
+            busy = self.current is not None or bool(self.items)
+            self.items.append((label, work, busy if waited is None else waited))
             self.condition.notify()
+        self._changed()
 
     def busy(self):
         with self.condition:
@@ -571,32 +603,72 @@ class Queue:
         with self.condition:
             return self.current, [label for label, _, _ in self.items]
 
+    def pending(self):
+        """Saveable specs, the running one first (it reruns on resume: it never finished)."""
+        with self.condition:
+            specs = ([dict(self.current_spec, label=self.current)] if isinstance(self.current_spec, dict) else []) + \
+                    [dict(work, label=label) for label, work, _ in self.items if isinstance(work, dict)]
+        return specs
+
+    def _changed(self):
+        if self.changed:
+            self.changed(self.pending())
+
     def _loop(self):
         while True:
             with self.condition:
                 while not self.items:
                     self.condition.wait()
                 label, work, waited = self.items.pop(0)
-                self.current = label
+                self.current, self.current_spec = label, work
+            self._changed()
             if waited:
                 ui.out('\n' + ui.dim(tr('next_up', v=ui.short(label.split('\n')[0], ui.width() - 20))))
             try:
                 if waited and self.skip and self.skip(label):
                     ui.out(ui.dim(tr('skipped', v=ui.short(label.split('\n')[0], ui.width() - 50))))
                     continue
-                work()
+                work() if callable(work) else self.run(work)
             except Exception as error:  # a broken request must not take the worker (and the queue) down
                 display(tr('error', e=error))
             finally:
                 with self.condition:
-                    self.current = None
+                    self.current = self.current_spec = None
                     self.condition.notify_all()
+                self._changed()
 
-    def cancel(self):
-        """Drop what waits and stop what runs; returns how many waiting requests were dropped."""
+    def remove(self, number):
+        """Take a waiting request out (1 = next in line); returns its label."""
+        with self.condition:
+            self._check(number)
+            label = self.items.pop(number - 1)[0]
+        self._changed()
+        return label
+
+    def move(self, number, offset):
+        """Move a waiting request up (offset -1) or down (+1); returns its new position."""
+        with self.condition:
+            self._check(number)
+            target = min(max(number - 1 + offset, 0), len(self.items) - 1)
+            self.items.insert(target, self.items.pop(number - 1))
+        self._changed()
+        return target + 1
+
+    def clear(self):
+        """Drop every waiting request, leave the running one alone; returns how many were dropped."""
         with self.condition:
             dropped = len(self.items)
             self.items.clear()
+        self._changed()
+        return dropped
+
+    def _check(self, number):
+        if not 1 <= number <= len(self.items):
+            raise ValueError(tr('queue_bad', n=len(self.items)))
+
+    def cancel(self):
+        """Drop what waits and stop what runs; returns how many waiting requests were dropped."""
+        dropped = self.clear()
         for runner in list(ACTIVE):
             runner.cancel()
         return dropped
@@ -604,6 +676,46 @@ class Queue:
     def wait(self, timeout=10):
         with self.condition:
             self.condition.wait_for(lambda: self.current is None and not self.items, timeout)
+
+
+def run_spec(session, spec):
+    """Run a saved queue request in the given session."""
+    kind = spec['kind']
+    if kind == 'ask':
+        execute(session, [(spec['engine'], spec['text'])])
+    elif kind == 'skill':
+        execute(session, [(spec['tool'], spec['prompt'])], raw=spec.get('raw', False))
+    elif kind == 'parallel':
+        execute(session, [tuple(task) for task in spec['tasks']], parallel=True)
+    elif kind == 'compact':
+        compact(session)
+    else:
+        raise ValueError(f'pedido desconhecido na fila: {kind}')
+
+
+def queue_command(queue, argument):
+    """/queue · /queue rm N · /queue up N · /queue down N · /queue clear"""
+    action, _, number = argument.strip().partition(' ')
+    if action in ('rm', 'remove', 'up', 'down'):
+        if not number.strip().isdigit():
+            raise ValueError(tr('queue_usage'))
+        n = int(number)
+        if action in ('rm', 'remove'):
+            display(tr('queue_removed', v=ui.short(queue.remove(n).split('\n')[0], 60)))
+        else:
+            display(tr('queue_moved', n=queue.move(n, -1 if action == 'up' else 1)))
+    elif action == 'clear':
+        display(tr('queue_cleared', n=queue.clear()))
+    elif action:
+        raise ValueError(tr('queue_usage'))
+    current, waiting = queue.snapshot()
+    if current is None and not waiting:
+        display(tr('queue_empty'))
+        return
+    if current is not None:
+        display(f"▶ {ui.short(current.split(chr(10))[0], ui.width() - 4)}")
+    for i, label in enumerate(waiting, 1):
+        display(f"{i:>2}. {ui.short(label.split(chr(10))[0], ui.width() - 5)}")
 
 
 def activity(queue):
@@ -759,7 +871,7 @@ def run_tool(args):
         pass
 
 
-BUILTIN = ['/usage', '/clear', '/compact', '/versions', '/setup', '/terminal-setup', '/tool', '/model', '/account', '/key', '/status', '/reset', '/sync', '/update', '/mode', '/lang',
+BUILTIN = ['/usage', '/clear', '/compact', '/queue', '/versions', '/setup', '/terminal-setup', '/tool', '/model', '/account', '/key', '/status', '/reset', '/sync', '/update', '/mode', '/lang',
            '/skills', '/history', '/sent', '/trace', '/sessions', '/resume', '/new', '/parallel', '/help', '/exit']
 
 
@@ -947,6 +1059,12 @@ def main(argv=None):
                 except (ValueError, KeyError):
                     continue
             return listed
+        if command == '/queue':
+            if not done:
+                return [('rm', 'tirar da fila'), ('up', 'subir uma posição'), ('down', 'descer uma posição'), ('clear', 'esvaziar a fila')]
+            if len(done) == 1 and done[0] != 'clear':
+                return [(str(i), label.split('\n')[0]) for i, label in enumerate(queue.snapshot()[1], 1)]
+            return []
         if command == '/sync':
             return [('--dry-run', 'só mostra o que faria')] if not done else []
         if command == '/parallel':
@@ -962,18 +1080,43 @@ def main(argv=None):
         last = next((m for m in reversed(session.data['messages']) if m['role'] == 'assistant'), None)
         return not label.startswith('/') and last is not None and already_answered(label, last['content'])
 
-    queue = Queue(skip=redundant)
+    def persist(pending):
+        # saved on every change, so even a killed terminal leaves the line behind for --resume
+        if pending or session.data.get('queue'):
+            session.data['queue'] = pending
+            session.save()
+
+    queue = Queue(skip=redundant, run=lambda spec: run_spec(session, spec), changed=persist)
     box = ui.InputBox(Path(session_dir()).parent / 'input_history', commands, status,
                       lambda: tr('placeholder'), lambda: tr('hints'),
                       arguments=arguments, cwd=lambda: session.data['cwd'], mode=lambda: session.data.get('mode', 'default'),
                       activity=lambda: activity(queue))
 
-    def submit(label, work):
+    def submit(label, spec):
         """With the input box, requests go to the queue and you keep typing; without it they run right away."""
         if box.session:
-            queue.put(label, work)
+            queue.put(label, spec)
         else:
-            work()
+            run_spec(session, spec)
+
+    def restore():
+        """Requests left in the queue when this session was closed: show them and offer to run them."""
+        pending = session.data.pop('queue', None) or []
+        if not pending or not box.session:
+            return
+        display(tr('queue_restore', n=len(pending)))
+        for i, spec in enumerate(pending, 1):
+            display(f"{i:>2}. {ui.short(spec.get('label', '').split(chr(10))[0], ui.width() - 5)}")
+        try:
+            answer = input(tr('queue_restore_ask')).strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            answer = 'n'
+        if answer in ('', 's', 'sim', 'y', 'yes', 'si', 'sí', 'o', 'oui'):
+            for spec in pending:
+                spec = dict(spec)
+                queue.put(spec.pop('label', ''), spec, waited=True)
+        else:
+            session.save()
 
     def idle(command):
         # these take over the terminal or swap the session under the running request
@@ -1000,6 +1143,7 @@ def main(argv=None):
         printing = contextlib.nullcontext()
     try:
         printing.__enter__()
+        restore()
         while True:
             try:
                 mode = session.data.get('mode', 'default')
@@ -1011,6 +1155,7 @@ def main(argv=None):
                 break
             except KeyboardInterrupt:
                 if queue.busy():
+                    # an explicit cancel: nothing stays saved
                     display(ui.yellow('  ' + tr('queue_dropped', n=queue.cancel())))
                     continue
                 display('')
@@ -1074,6 +1219,7 @@ def main(argv=None):
                     display(f"Sessão {session.id} · {session.data['cwd']}")
                     if session.data['messages']:
                         ui.replay(session.data['messages'])
+                    restore()
                 elif command in ('/sent', '/trace'):
                     jobs = session.data['requests']
                     job = next((j for j in reversed(jobs) if not argument or j['id'] == argument), None)
@@ -1089,13 +1235,15 @@ def main(argv=None):
                     ui.clear_screen()
                     ui.set_title('Omni AI')
                     display(tr('cleared', id=session.id))
+                elif command == '/queue':
+                    queue_command(queue, argument)
                 elif command == '/versions':
                     show_versions(argument.strip())
                 elif command == '/compact':
-                    submit(line, lambda current=session: compact(current))
+                    submit(line, {'kind': 'compact'})
                 elif command == '/parallel':
                     tasks = parse_parallel(argument)
-                    submit(line, lambda current=session: execute(current, tasks, parallel=True))
+                    submit(line, {'kind': 'parallel', 'tasks': tasks})
                 elif command == '/skills':
                     catalog = skills.discover(session.data['cwd'])
                     if not catalog:
@@ -1119,17 +1267,23 @@ def main(argv=None):
                             continue
                     prompt, raw = skills.build_prompt(command[1:], argument, tool, entry)
                     display(tr('skill_run', name=command[1:], tool=tool))
-                    submit(line, lambda current=session, tool=tool, prompt=prompt, raw=raw: execute(current, [(tool, prompt)], raw=raw))
+                    submit(line, {'kind': 'skill', 'tool': tool, 'prompt': prompt, 'raw': raw})
                 else:
                     # the tool is fixed when you send, so a /tool typed later only affects what comes after
-                    submit(line, lambda current=session, engine=session.data['engine'], text=line: execute(current, [(engine, text)]))
+                    submit(line, {'kind': 'ask', 'engine': session.data['engine'], 'text': line})
             except (ValueError, OSError) as error:
                 display(tr('error', e=error))
     finally:
+        # leaving with requests in line: keep them for --resume, stop only what runs now
+        pending = queue.pending()
+        queue.changed = None
         if queue.busy():
             queue.cancel()
             queue.wait()
         printing.__exit__(None, None, None)
+        if pending:
+            session.data['queue'] = pending
+            display(tr('queue_saved', n=len(pending), id=session.id))
         session.save()
         ui.set_title('')
         display(tr('saved', id=session.id))
