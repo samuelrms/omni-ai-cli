@@ -473,16 +473,21 @@ CLASSIFIER_SYSTEM = (
     'Reply with exactly one word: complex or simple.')
 
 
-def ask_classifier(url, key, data, labels=('complex', 'simple')):
-    """One labelling request to an OpenAI-compatible endpoint; None on any failure."""
+def ask_text(url, key, data, timeout=6):
+    """One request to an OpenAI-compatible endpoint; the reply text, or None on any failure."""
     import urllib.request
     request = urllib.request.Request(url, data=json.dumps(data).encode(), method='POST', headers={
         'Content-Type': 'application/json', 'Authorization': f'Bearer {key}', 'User-Agent': 'omni-ai-cli'})
     try:
-        with urllib.request.urlopen(request, timeout=6) as resp:
-            answer = (json.loads(resp.read().decode())['choices'][0]['message']['content'] or '').lower()
+        with urllib.request.urlopen(request, timeout=timeout) as resp:
+            return json.loads(resp.read().decode())['choices'][0]['message']['content'] or ''
     except (OSError, ValueError, KeyError, IndexError, TypeError):
         return None
+
+
+def ask_classifier(url, key, data, labels=('complex', 'simple')):
+    """One labelling request; the first label found in the reply, None on any failure."""
+    answer = (ask_text(url, key, data) or '').lower()
     return next((label for label in labels if label in answer), None)
 
 
