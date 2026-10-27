@@ -10,6 +10,7 @@ import subprocess
 from . import config as config_tool
 from . import ui
 from .osutils import resolve_bin
+from .tools import CLASSIFIER_KEYS, TOOLS
 
 MARKER = config_tool.CONFIG_DIR / 'onboarded'
 
@@ -53,18 +54,13 @@ T = {
                   'fr': "Aucun outil prêt : connectez-vous à au moins un ci-dessus. Puis lancez /setup pour vérifier."},
 }
 
-# name, label, install command, login command, how to tell it is logged in
-AGENTS = [
-    ('claude', 'Claude Code', 'curl -fsSL https://claude.ai/install.sh | bash', 'claude auth login'),
-    ('codex', 'Codex CLI', 'npm install -g @openai/codex', 'codex login'),
-    ('agy', 'Antigravity', 'https://antigravity.google  (CLI: agy)', 'agy   (Google sign-in on first run)'),
-    ('grok', 'Grok Build', 'curl -fsSL https://x.ai/cli/install.sh | bash', 'grok login'),
-    ('cursor', 'Cursor CLI', 'curl https://cursor.com/install -fsS | bash', 'cursor-agent login'),
-]
-WINDOWS_INSTALL = {'claude': 'irm https://claude.ai/install.ps1 | iex', 'grok': 'irm https://x.ai/cli/install.ps1 | iex'}
-KEYS = [('groq', 'free', 'groq_use'), ('cerebras', 'free', 'groq_use'), ('openrouter', 'free', 'or_use'), ('grok', 'paid', 'fallback'),
-        ('claude', 'paid', 'fallback'), ('codex', 'paid', 'fallback'), ('agy', 'free', 'fallback'),
-        ('deepseek', 'paid', 'fallback'), ('cursor', 'paid', 'fallback')]
+# name, label, install command, login command
+AGENTS = [(name, tool.label, tool.install, tool.login) for name, tool in TOOLS.items() if tool.bin]
+WINDOWS_INSTALL = {name: tool.install_windows for name, tool in TOOLS.items() if tool.install_windows}
+# The free classifiers come first: without one of them every prompt is labelled by keywords only
+KEYS = [(name, 'free', 'groq_use') for name in CLASSIFIER_KEYS] + \
+       [(name, 'free', 'or_use') for name in TOOLS if name == 'openrouter'] + \
+       [(name, tool.price, 'fallback') for name, tool in TOOLS.items() if tool.key and name != 'openrouter']
 
 
 def logged_in(tool):
@@ -75,7 +71,7 @@ def logged_in(tool):
         if tool == 'codex':
             return subprocess.run([resolve_bin('codex'), 'login', 'status'], capture_output=True, timeout=15).returncode == 0
         if tool == 'cursor':
-            return subprocess.run([resolve_bin('cursor-agent'), 'status'], capture_output=True, timeout=15).returncode == 0
+            return subprocess.run([resolve_bin(TOOLS[tool].bin), 'status'], capture_output=True, timeout=15).returncode == 0
     except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
         return False
     files = {'agy': '~/.gemini/jetski-standalone-oauth-token', 'grok': '~/.grok/auth.json'}
@@ -88,7 +84,7 @@ def guide(lang='pt'):
     lines = ['', ui.gradient(ui.MARK) + ' ' + ui.bold(t('title')), ui.dim(t('intro')), '', ui.bold(t('agents'))]
     any_ready = False
     for tool, label, install, login in AGENTS:
-        if resolve_bin('cursor-agent' if tool == 'cursor' else tool) is None:
+        if resolve_bin(TOOLS[tool].bin) is None:
             lines += [f'  {off} {label:<12} {ui.dim(t("missing"))}',
                       f'      {t("install")}: ' + ui.rgb(ui.TOOL_RGB[tool], WINDOWS_INSTALL.get(tool, install) if os.name == 'nt' else install),
                       f'      {t("login")}:   ' + ui.rgb(ui.TOOL_RGB[tool], login)]

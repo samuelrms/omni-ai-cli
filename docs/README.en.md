@@ -440,6 +440,7 @@ ai --log                               # latest calls
 ```text
 omni-ai-cli/
 ├── omni_ai/                  # the program (Python package)
+│   ├── tools.py              # single tool registry: name, color, CLI, model, key
 │   ├── cli.py                # ai command: classifies, routes and runs each tool
 │   ├── chat.py               # chat: sessions, events, Ctrl-C, languages
 │   ├── ui.py                 # look: input box, status bar, actions and answers

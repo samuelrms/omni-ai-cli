@@ -450,6 +450,7 @@ ai --log                               # derniers appels
 ```text
 omni-ai-cli/
 ├── omni_ai/                  # le programme (paquet Python)
+│   ├── tools.py              # registre unique des outils : nom, couleur, CLI, modèle, clé
 │   ├── cli.py                # commande ai : classe, route et exécute chaque outil
 │   ├── chat.py               # chat : sessions, événements, Ctrl-C, langues
 │   ├── ui.py                 # rendu : saisie, barre d'état, actions et réponses
