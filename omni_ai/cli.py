@@ -133,7 +133,7 @@ def header(label, note):
 def run_claude(profile, prompt):
     if not installed('claude'):
         say(f'{RED}✗ Claude Code não instalado.{NC}')
-        say(f'{DIM}  Execute o instalador: {REPO / 'scripts' / ('install.ps1' if os.name == 'nt' else 'install.sh')}{NC}')
+        say(f'{DIM}  Execute o instalador: {REPO / "scripts" / ("install.ps1" if os.name == "nt" else "install.sh")}{NC}')
         return 1
     env = dict(os.environ)
     env.pop('CLAUDE_CONFIG_DIR', None)

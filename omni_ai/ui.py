@@ -540,7 +540,7 @@ class InputBox:
         from prompt_toolkit.completion import WordCompleter
         message = self.HTML(f'  <arrow>{escape(command)}</arrow> ')
         return self.session.prompt(message, completer=WordCompleter(options, sentence=True),
-                                   placeholder=self.HTML(f'<placeholder>{escape(hint)} · {escape(t('args'))}</placeholder>'),
+                                   placeholder=self.HTML(f'<placeholder>{escape(hint)} · {escape(t("args"))}</placeholder>'),
                                    bottom_toolbar=None)
 
     def ask(self):
