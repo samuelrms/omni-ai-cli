@@ -600,7 +600,7 @@ def route(prompt, tool='auto'):
     emit({'type': 'smart.route', 'label': label, 'by': CLASSIFIED_BY[0]})
     if label == 'complex':
         say(f'{DIM}📊 Classificado como: {CYAN}query complexa{NC}{DIM} → usando Claude{NC}\n')
-        return claude_with_fallback(prompt)
+        return forced['claude'](prompt)
     say(f'{DIM}📊 Classificado como: {YELLOW}query simples{NC}{DIM} → roteando para alternativa{NC}\n')
     routing = config().get('routing', {})
     order = [routing.get('prefer_tool_for_simple', 'codex')] + routing.get('fallback_order', ['openrouter', 'codex', 'agy'])
@@ -616,7 +616,7 @@ def route(prompt, tool='auto'):
         if forced[name](prompt) == 0:
             return 0
     say(f'\n{DIM}→ Usando Claude como fallback final{NC}')
-    return claude_with_fallback(prompt)
+    return forced['claude'](prompt)
 
 
 # ─── management commands ─────────────────────────────────────────
