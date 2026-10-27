@@ -3,7 +3,7 @@
 
   ai                                  open the chat
   ai "question"                       automatic routing
-  ai --claude|--codex|--cursor|--agy|--openrouter|--grok|--deepseek "question"
+  ai --claude|--codex|--cursor|... "question"   (one flag per tool)
   ai --mode plan|edits|auto|yolo "question"
   ai --usage                         Uso e limites de todas as ferramentas e contas
   ai --setup                         First-run guide: logins and API keys
@@ -21,11 +21,15 @@ import time
 from . import config as config_tool
 from . import usage
 from .osutils import REPO, enable_ansi, module_cmd, module_env, resolve_bin
+from .tools import CLIS, KEY_NAMES, TOOLS
 
 STATE_FILE = Path(os.environ.get('SMART_AI_STATE', '~/.cache/smart-ai/state.json')).expanduser()
 LOG_FILE = Path(os.environ.get('SMART_AI_LOG', '~/.cache/smart-ai/usage.log')).expanduser()
-BINS = {tool: os.environ.get(tool.upper() + '_BIN', tool) for tool in ('claude', 'codex', 'agy', 'grok')}
-BINS['cursor'] = os.environ.get('CURSOR_BIN', 'cursor-agent')
+BINS = {name: os.environ.get(name.upper() + '_BIN', TOOLS[name].bin) for name in CLIS}
+# --claude or -c, --codex or -x ...
+FLAGS = {**{name: name for name in TOOLS}, **{tool.flag: name for name, tool in TOOLS.items()}}
+TOOL_FLAGS = '|'.join('--' + name for name in TOOLS)
+KEY_LIST = '|'.join(KEY_NAMES)
 MODES = ('default', 'plan', 'edits', 'auto', 'yolo')
 RATE_LIMITED = 2
 NOT_READY = 3  # account without login: skip it, don't stop the fallback
@@ -576,9 +580,14 @@ def claude_with_fallback(prompt):
     return 1
 
 
+def runners():
+    """What runs each tool; every entry in tools.TOOLS needs one (the tests check)."""
+    return {'claude': claude_with_fallback, 'codex': run_codex, 'cursor': run_cursor, 'agy': run_agy,
+            'openrouter': run_openrouter, 'grok': run_grok, 'deepseek': run_deepseek}
+
+
 def route(prompt, tool='auto'):
-    forced = {'claude': claude_with_fallback, 'codex': run_codex, 'agy': run_agy, 'openrouter': run_openrouter, 'grok': run_grok,
-              'deepseek': run_deepseek, 'cursor': run_cursor}
+    forced = runners()
     if tool in forced:
         return forced[tool](prompt)
     if classify(prompt) == 'complex':
@@ -593,7 +602,8 @@ def route(prompt, tool='auto'):
             continue
         if name == 'deepseek' and not config_tool.stored_key('deepseek')[0]:
             continue
-        if name in ('codex', 'agy', 'cursor') and not installed(name):
+        # grok also answers over its API key (checked above); the other CLIs need to be installed
+        if name in CLIS and name != 'grok' and not installed(name):
             continue
         if forced[name](prompt) == 0:
             return 0
@@ -634,11 +644,11 @@ def show_status():
     say(f"  Chaves de API: {', '.join(keys) if keys else 'nenhuma (ai --key)'}")
     say(f'  Modo padrão: {mode()}\n')
     say(f'{BOLD}  Ferramentas:{NC}\n')
-    for tool, label in (('claude', 'Claude Code'), ('codex', 'Codex CLI'), ('agy', 'Antigravity'), ('grok', 'Grok Build'), ('cursor', 'Cursor CLI')):
+    for tool, label in ((name, TOOLS[name].label) for name in CLIS):
         say(f'  {GREEN}●{NC} {label}: {version(tool)}' if installed(tool) else f'  {RED}○{NC} {label}: não instalado')
     if LOG_FILE.is_file():
         lines = LOG_FILE.read_text(errors='replace').splitlines()
-        counts = {t: sum(f'tool={t} ' in l for l in lines) for t in ('claude', 'codex', 'agy', 'openrouter', 'grok', 'deepseek', 'cursor')}
+        counts = {t: sum(f'tool={t} ' in l for l in lines) for t in TOOLS}
         say(f'\n{BOLD}  📊 Estatísticas de uso:{NC}')
         say(f'    Total de chamadas: {len(lines)}')
         say('    ' + ' | '.join(f'{t}: {n}' for t, n in counts.items()))
@@ -747,7 +757,7 @@ def render_usage():
         windows((live or {}).get('windows', []))
     keys_of('claude', '')
     say(f'  {DIM}+ nova conta: /account add NOME · outra chave: /key add claude [NOME]{NC}')
-    for tool, label in (('codex', 'Codex'), ('agy', 'Antigravity'), ('grok', 'Grok Build'), ('cursor', 'Cursor')):
+    for tool, label in ((name, TOOLS[name].label) for name in CLIS if TOOLS[name].in_usage):
         say(f'\n{BOLD}{label}{NC}  {DIM}{calls(tool)} chamadas hoje{NC}')
         if not installed(tool):
             say(f'  {RED}não instalado{NC}')
@@ -819,11 +829,11 @@ def update():
 USAGE = f'''{BOLD}Uso:{NC}
   ai                                 Abrir o chat (/help dentro dele)
   ai "pergunta"                      Roteamento automático
-  ai --claude|--codex|--cursor|--agy|--openrouter|--grok|--deepseek "pergunta"
+  ai {TOOL_FLAGS} "pergunta"
   ai --mode plan|edits|auto|yolo "pergunta"
   ai --model [chave valor]           Modelos
   ai --account [list|add|login|sync|remove] NOME
-  ai --key [claude|codex|cursor|agy|openrouter|grok|deepseek|groq|cerebras|remove X]
+  ai --key [{KEY_LIST}|remove X]
   ai --sync [--dry-run]              MCPs e skills entre Claude, Codex e agy
   ai --usage                         Uso e limites de todas as ferramentas e contas
   ai --setup                          Guia de primeiro acesso: logins e chaves
@@ -865,8 +875,8 @@ def main(argv):
         if arg == '--':
             words += argv[i + 1:]
             break
-        if arg in ('--claude', '-c', '--codex', '-x', '--agy', '-a', '--openrouter', '-o', '--grok', '-g', '--deepseek', '-d', '--cursor', '-u'):
-            tool = {'c': 'claude', 'x': 'codex', 'a': 'agy', 'o': 'openrouter', 'g': 'grok', 'd': 'deepseek', 'u': 'cursor'}.get(arg.lstrip('-'), arg.lstrip('-'))
+        if arg.lstrip('-') in FLAGS and arg.startswith('-'):
+            tool = FLAGS[arg.lstrip('-')]
         elif arg == '--mode':
             value = argv[i + 1] if i + 1 < len(argv) else ''
             if value not in MODES:

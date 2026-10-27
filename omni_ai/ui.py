@@ -7,6 +7,8 @@ import sys
 import threading
 import time
 
+from .tools import TOOLS
+
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / 'vendor'))
 
@@ -72,8 +74,7 @@ def badge(label, color):
 
 LIMIT_WORDS = re.compile(r'limit|quota|cota|cooldown|rate.?limit|resets?|try again', re.I)
 red, green, yellow, blue, magenta, cyan = _c('31'), _c('32'), _c('33'), _c('34'), _c('35'), _c('36')
-TOOL_COLOR = {'claude': _c('38;5;173'), 'codex': green, 'agy': magenta, 'openrouter': yellow, 'grok': blue, 'deepseek': blue, 'cursor': dim}
-TOOL_RGB = {'claude': (217, 119, 87), 'codex': (16, 185, 129), 'agy': (99, 102, 241), 'openrouter': (234, 179, 8), 'grok': (59, 130, 246), 'deepseek': (77, 107, 254), 'cursor': (200, 200, 200)}
+TOOL_RGB = {name: tool.rgb for name, tool in TOOLS.items()}
 MARK = '✦'  # Omni's mark: the star at the center of the orbit
 LOCK = threading.RLock()
 LANG = ['pt']  # set by the chat; screen texts follow it
@@ -326,8 +327,8 @@ def splash(seconds=1.5):
     cols, rows = shutil.get_terminal_size((100, 30))
     big = cols >= len(BIG_TITLE[0]) + 4 and rows >= 16
     title_w = len(BIG_TITLE[0]) if big else len('O M N I   A I')
-    tools = dim(' · ').join(rgb(TOOL_RGB[t], t) for t in ('claude', 'codex', 'cursor', 'agy', 'openrouter', 'grok', 'deepseek'))
-    tools_w = len('claude · codex · cursor · agy · openrouter · grok · deepseek')
+    tools = dim(' · ').join(rgb(TOOL_RGB[t], t) for t in TOOLS)
+    tools_w = len(' · '.join(TOOLS))
     bar_w = min(44, cols - 8)
     height = 3 + 1 + (len(BIG_TITLE) if big else 1) + 1 + 1 + 1 + 1
     top = max(0, (rows - height) // 2)
@@ -366,7 +367,7 @@ def splash(seconds=1.5):
 
 def welcome(session_id, cwd, engine, model, mode, lang_hint, animate=True):
     w = min(width() - 2, 78)
-    tools = dim(' · ').join(rgb(TOOL_RGB[t], t) for t in ('claude', 'codex', 'cursor', 'agy', 'openrouter', 'grok', 'deepseek'))
+    tools = dim(' · ').join(rgb(TOOL_RGB[t], t) for t in TOOLS)
     where = home_path(cwd) + dim(' · ') + f'{engine} · {model}' + ('' if mode == 'default' else dim(' · ') + rgb((239, 68, 68) if mode == 'yolo' else (59, 130, 246), mode))
     strip = re.compile(r'\033\[[0-9;]*m')
     border = lambda t: rgb((88, 70, 140), t)

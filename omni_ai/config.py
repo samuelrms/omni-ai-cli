@@ -19,6 +19,7 @@ import sys
 import tempfile
 
 from .osutils import link, resolve_bin
+from .tools import TOOLS, keys as tool_keys
 
 ROOT = Path(__file__).resolve().parent
 CONFIG_DIR = Path(os.environ.get('SMART_AI_HOME', '~/.config/smart-ai')).expanduser()
@@ -37,30 +38,13 @@ def profiles_path():
         shutil.copy2(TEMPLATE_PROFILES, user)
     return user
 
-# key: (default, env override, description)
-MODELS = {
-    'claude': ('opus', 'SMART_AI_CLAUDE_MODEL', 'Claude Code: opus, sonnet, haiku ou ID completo'),
-    'codex': ('gpt-6-astra', 'SMART_AI_CODEX_MODEL', 'Codex CLI: ID do modelo'),
-    'codex_effort': ('high', 'SMART_AI_CODEX_EFFORT', 'Codex: minimal, low, medium, high, xhigh'),
-    'agy': ('', 'SMART_AI_AGY_MODEL', 'Antigravity: vazio = padrão do agy'),
-    'openrouter': ('', 'SMART_AI_OPENROUTER_MODEL', 'OpenRouter: ID do modelo; pago exige openrouter_paid on'),
-    'grok': ('', 'SMART_AI_GROK_MODEL', 'Grok Build/xAI: ID do modelo; vazio = padrão do grok'),
-    'deepseek': ('', 'SMART_AI_DEEPSEEK_MODEL', 'DeepSeek: deepseek-chat ou deepseek-reasoner; vazio = deepseek-chat'),
-    'cursor': ('', 'SMART_AI_CURSOR_MODEL', 'Cursor CLI: ID do modelo; vazio = padrão da conta'),
-    'openrouter_paid': ('off', 'SMART_AI_OPENROUTER_PAID', 'OpenRouter: on autoriza modelos pagos (cobrados na sua conta)'),
-}
+# key: (default, env override, description); one per tool, plus the two settings that are not a model
+MODELS = {name: (tool.model_default, tool.model_env, tool.model_help) for name, tool in TOOLS.items()}
+MODELS = dict(list(MODELS.items())[:2] + [('codex_effort', ('high', 'SMART_AI_CODEX_EFFORT', 'Codex: minimal, low, medium, high, xhigh'))]
+              + list(MODELS.items())[2:]
+              + [('openrouter_paid', ('off', 'SMART_AI_OPENROUTER_PAID', 'OpenRouter: on autoriza modelos pagos (cobrados na sua conta)'))])
 # provider: (env var the CLI reads, expected prefix or None, where to create one)
-KEYS = {
-    'claude': ('ANTHROPIC_API_KEY', 'sk-ant-', 'console.anthropic.com/settings/keys'),
-    'codex': ('CODEX_API_KEY', 'sk-', 'platform.openai.com/api-keys'),
-    'agy': ('GEMINI_API_KEY', None, 'aistudio.google.com/apikey'),
-    'openrouter': ('OPENROUTER_API_KEY', 'sk-or-', 'openrouter.ai/keys'),
-    'grok': ('XAI_API_KEY', 'xai-', 'console.x.ai'),
-    'groq': ('GROQ_API_KEY', 'gsk_', 'console.groq.com/keys'),
-    'cerebras': ('CEREBRAS_API_KEY', 'csk-', 'cloud.cerebras.ai'),
-    'deepseek': ('DEEPSEEK_API_KEY', 'sk-', 'platform.deepseek.com/api_keys'),
-    'cursor': ('CURSOR_API_KEY', None, 'cursor.com/dashboard → Integrations → API Keys'),
-}
+KEYS = tool_keys()
 KEYS_DIR = CONFIG_DIR / 'keys'
 LEGACY_OPENROUTER = CONFIG_DIR / 'openrouter_key'
 EFFORTS = ('minimal', 'low', 'medium', 'high', 'xhigh')

@@ -443,6 +443,7 @@ ai --log                               # últimas chamadas
 ```text
 omni-ai-cli/
 ├── omni_ai/                  # o programa (pacote Python)
+│   ├── tools.py              # cadastro único das ferramentas: nome, cor, CLI, modelo, chave
 │   ├── cli.py                # comando ai: classifica, roteia e executa cada ferramenta
 │   ├── chat.py               # chat: sessões, eventos, Ctrl-C, idiomas
 │   ├── ui.py                 # visual: caixa de entrada, barra de status, ações e respostas
