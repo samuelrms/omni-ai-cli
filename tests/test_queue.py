@@ -317,7 +317,8 @@ class ChatQueueTerminalTests(unittest.TestCase):
         config.mkdir(parents=True)
         (config / 'lang').write_text('pt')
 
-    def run_chat(self, lines, wait=6):
+    def run_chat(self, lines, wait=6, done=None):
+        """Type lines once the input shows up; stop after `wait` seconds, or as soon as done(output) is true."""
         import pty
         pid, fd = pty.fork()
         if pid == 0:
@@ -334,12 +335,17 @@ class ChatQueueTerminalTests(unittest.TestCase):
                         output += os.read(fd, 65536)
                     except OSError:
                         return
-        pump(3)
+        # slow machines (CI on macOS) take a while to draw the input (or the resume question) the first time
+        end = time.time() + 20
+        while not any(mark.encode() in output for mark in ('❯', '[S/n]')) and time.time() < end:
+            pump(0.1)
         try:
             for line in lines:
                 os.write(fd, line.encode() + b'\r')
                 pump(0.3)
-            pump(wait)
+            end = time.time() + (30 if done else wait)
+            while time.time() < end and not (done and done(output.decode('utf-8', 'replace'))):
+                pump(0.1)
             os.write(fd, b'\x04')
             pump(2)
         except OSError:
@@ -354,7 +360,8 @@ class ChatQueueTerminalTests(unittest.TestCase):
         return re.sub(r'\x1b\[[0-9;?>]*[a-zA-Z]|\x1b\][^\x07]*\x07', '', output.decode('utf-8', 'replace'))
 
     def test_messages_typed_while_busy_are_queued_and_run(self):
-        text = self.run_chat(['/tool codex', 'first', 'second', '/clear'])
+        # done once both answers finished ("Levou Ns · codex" twice)
+        text = self.run_chat(['/tool codex', 'first', 'second', '/clear'], done=lambda out: out.count('Levou') >= 2)
         calls = [json.loads(row) for row in (self.root / 'calls').read_text().splitlines()]
         self.assertEqual(len(calls), 2)
         self.assertGreaterEqual(calls[1]['start'] - calls[0]['start'], 1.4)  # second waited for the first
@@ -368,14 +375,14 @@ class ChatQueueTerminalTests(unittest.TestCase):
 class QueueResumeTerminalTests(ChatQueueTerminalTests):
     def test_queue_left_on_exit_runs_again_on_resume(self):
         self.env['TEST_DELAY'] = '3'
-        text = self.run_chat(['/tool codex', 'first', 'second', 'third'], wait=0.5)
+        text = self.run_chat(['/tool codex', 'first', 'second', 'third'], done=lambda out: 'na fila (2)' in out)
         self.assertRegex(text, r'3 pedido\(s\)|3 queued|3 pedido|3 demande')
         saved = json.loads(next((self.root / 'sessions').glob('*.json')).read_text())
         self.assertEqual([spec['label'] for spec in saved['queue']], ['first', 'second', 'third'])
         self.env['TEST_DELAY'] = '0'
         (self.root / 'calls').unlink()
         self.env_args = ['--resume', saved['id']]
-        text = self.run_chat(['', '/queue'], wait=4)
+        text = self.run_chat(['', '/queue'], done=lambda out: out.count('Levou') >= 3)
         calls = [json.loads(row)['prompt'] for row in (self.root / 'calls').read_text().splitlines()]
         self.assertEqual(len(calls), 3)
         self.assertTrue(calls[0].endswith('first') and calls[2].endswith('third'))
@@ -384,7 +391,7 @@ class QueueResumeTerminalTests(ChatQueueTerminalTests):
 
     def test_declining_resume_drops_the_saved_queue(self):
         self.env['TEST_DELAY'] = '3'
-        self.run_chat(['/tool codex', 'first', 'second'], wait=0.5)
+        self.run_chat(['/tool codex', 'first', 'second'], done=lambda out: 'na fila (1)' in out)
         session_id = json.loads(next((self.root / 'sessions').glob('*.json')).read_text())['id']
         (self.root / 'calls').unlink()
         self.env_args = ['--resume', session_id]
