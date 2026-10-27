@@ -115,7 +115,8 @@ Trois détails que le diagramme rend explicites :
   temps écoulé et les suivantes. Une demande qui a attendu passe par un classifieur gratuit
   avant de s'exécuter : si la réponse précédente la règle déjà, elle est ignorée. Les
   commandes et skills s'exécutent toujours. Ctrl-C avec la file active annule tout sans
-  quitter le chat.
+  quitter le chat. Si vous fermez le chat avec des demandes en attente, elles restent
+  enregistrées dans la session et `ai --resume ID` propose de les relancer.
 - **Seule la réponse entre dans l'historique.** Les lignes de statut et de diagnostic
   s'affichent à l'écran, mais ne sont pas envoyées comme contexte à la question suivante.
   Le raisonnement interne des modèles est aussi écarté.
@@ -235,6 +236,7 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 | `/mode default\|plan\|edits\|auto\|yolo` | Mode de permissions, identique sur les trois outils |
 | `/sync` | Partage MCP et skills entre Claude, Codex et Antigravity |
 | `/usage [watch]` · `/limits` | Usage réel de chaque compte en barres (e-mail, offre, % des fenêtres de 5 h et hebdomadaire, heure de remise à zéro) pour Claude et Codex ; dépense de la clé sur OpenRouter ; pour les autres, le message de limite de l'outil. `watch` rafraîchit toutes les 30 s |
+| `/queue [rm\|up\|down N\|clear]` | Affiche la file ; retire (`rm`), monte (`up`), descend (`down`) une demande ou vide (`clear`) ce qui attend |
 | `/versions [N]` | Ce qui a changé dans chaque version, la plus récente d'abord ; `N` ouvre la note technique. Avant la première release, affiche les `feat`/`fix` de `main` |
 | `/clear` · `/compact` | Effacer la conversation · la résumer en un bloc pour économiser du contexte |
 | `/claude:usage` · `/codex:status` · `/agy:usage` … | Commandes natives de chaque outil : ouvre son écran et revient à Omni en sortant |

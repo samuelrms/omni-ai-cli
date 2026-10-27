@@ -513,8 +513,11 @@ class InputBox:
         def _(event):
             buffer = event.current_buffer
             if buffer.complete_state and buffer.complete_state.current_completion:
+                before = buffer.text
                 buffer.apply_completion(buffer.complete_state.current_completion)
-                return
+                # picking what is already typed (e.g. "/clear" → "/clear") sends it instead of asking for a second Enter
+                if buffer.text != before:
+                    return
             # A trailing backslash continues on the next line, like in a shell and in Claude Code
             if buffer.document.text_before_cursor.endswith('\\'):
                 buffer.delete_before_cursor(1)

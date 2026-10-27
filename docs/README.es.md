@@ -113,7 +113,8 @@ Tres detalles que el diagrama deja explícitos:
 - **La cola no bloquea nada.** Sobre la caja aparecen el pedido en ejecución, el tiempo y
   los siguientes de la cola. Un pedido que esperó pasa por un clasificador gratis antes de
   ejecutarse: si la respuesta anterior ya lo resuelve, se omite. Los comandos y skills
-  siempre se ejecutan. Ctrl-C con la cola activa cancela todo sin salir del chat.
+  siempre se ejecutan. Ctrl-C con la cola activa cancela todo sin salir del chat. Si cierras el chat
+  con pedidos en la cola, quedan guardados en la sesión y `ai --resume ID` pregunta si quieres continuar.
 - **Solo la respuesta entra al historial.** Las líneas de estado y diagnóstico aparecen
   en pantalla, pero no se envían como contexto en la siguiente pregunta. El razonamiento
   interno de los modelos también se descarta.
@@ -233,6 +234,7 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 | `/mode default\|plan\|edits\|auto\|yolo` | Modo de permisos, igual en las tres herramientas |
 | `/sync` | Comparte MCPs y skills entre Claude, Codex y Antigravity |
 | `/usage [watch]` · `/limits` | Uso real de cada cuenta en barras (e-mail, plan, % de la ventana de 5 h y semanal, hora de reinicio) para Claude y Codex; gasto de la clave en OpenRouter; en las demás, el aviso de límite que dio la herramienta. `watch` actualiza cada 30 s |
+| `/queue [rm\|up\|down N\|clear]` | Muestra la cola; quita (`rm`), sube (`up`), baja (`down`) un pedido o vacía (`clear`) lo que espera |
 | `/versions [N]` | Qué cambió en cada versión, la más reciente primero; `N` abre la nota técnica. Antes de la primera release, muestra los `feat`/`fix` de `main` |
 | `/clear` · `/compact` | Limpiar la conversación · resumirla en un bloque para ahorrar contexto |
 | `/claude:usage` · `/codex:status` · `/agy:usage` … | Comandos nativos de cada herramienta: abre su pantalla y vuelve a Omni al salir |
