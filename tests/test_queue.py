@@ -348,6 +348,14 @@ class ChatQueueTerminalTests(unittest.TestCase):
                 while output.count('❯'.encode()) <= drawn and time.time() < end:
                     pump(0.05)
                 pump(0.2)
+                # an Enter that lands while the input is being rebuilt is lost and the text stays in the box;
+                # a person would press Enter again
+                for _ in range(3):
+                    tail = re.sub(r'\x1b\[[0-9;?>]*[a-zA-Z]', '', output[-600:].decode('utf-8', 'replace'))
+                    if not line or not tail.rstrip().endswith('❯ ' + line):
+                        break
+                    os.write(fd, b'\r')
+                    pump(0.5)
             end = time.time() + (30 if done else wait)
             while time.time() < end and not (done and done(output.decode('utf-8', 'replace'))):
                 pump(0.1)
@@ -390,7 +398,7 @@ class QueueResumeTerminalTests(ChatQueueTerminalTests):
             return 0
 
     def test_queue_left_on_exit_runs_again_on_resume(self):
-        self.env['TEST_DELAY'] = '3'
+        self.env['TEST_DELAY'] = '10'  # still running when the chat is closed
         text = self.run_chat(['/tool codex', 'first', 'second', 'third'], done=lambda out: self.saved_queue() == 3)
         self.assertRegex(text, r'3 pedido\(s\)|3 queued|3 pedido|3 demande')
         saved = json.loads(next((self.root / 'sessions').glob('*.json')).read_text())
@@ -406,7 +414,7 @@ class QueueResumeTerminalTests(ChatQueueTerminalTests):
         self.assertEqual(saved.get('queue', []), [])
 
     def test_declining_resume_drops_the_saved_queue(self):
-        self.env['TEST_DELAY'] = '3'
+        self.env['TEST_DELAY'] = '10'  # still running when the chat is closed
         self.run_chat(['/tool codex', 'first', 'second'], done=lambda out: self.saved_queue() == 2)
         session_id = json.loads(next((self.root / 'sessions').glob('*.json')).read_text())['id']
         (self.root / 'calls').unlink(missing_ok=True)
