@@ -71,7 +71,9 @@ def logged_in(tool):
         if tool == 'codex':
             return subprocess.run([resolve_bin('codex'), 'login', 'status'], capture_output=True, timeout=15).returncode == 0
         if tool == 'cursor':
-            return subprocess.run([resolve_bin(TOOLS[tool].bin), 'status'], capture_output=True, timeout=15).returncode == 0
+            # exits 0 either way; only the text says whether it is logged in
+            done = subprocess.run([resolve_bin(TOOLS[tool].bin), 'status'], capture_output=True, text=True, timeout=15)
+            return done.returncode == 0 and 'not logged in' not in (done.stdout + done.stderr).lower()
     except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
         return False
     files = {'agy': '~/.gemini/jetski-standalone-oauth-token', 'grok': '~/.grok/auth.json'}
