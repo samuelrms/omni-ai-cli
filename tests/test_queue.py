@@ -351,8 +351,9 @@ class ChatQueueTerminalTests(unittest.TestCase):
                 # an Enter that lands while the input is being rebuilt is lost and the text stays in the box;
                 # a person would press Enter again
                 for _ in range(3):
-                    tail = re.sub(r'\x1b\[[0-9;?>]*[a-zA-Z]', '', output[-600:].decode('utf-8', 'replace'))
-                    if not line or not tail.rstrip().endswith('❯ ' + line):
+                    tail = re.sub(r'\x1b\[[0-9;?>]*[a-zA-Z]', '', output[-3000:].decode('utf-8', 'replace'))
+                    # what sits in the box now: the text right after the last prompt arrow (the status bar follows it)
+                    if not line or '❯' not in tail or not tail.rsplit('❯', 1)[1].strip().startswith(line):
                         break
                     os.write(fd, b'\r')
                     pump(0.5)
