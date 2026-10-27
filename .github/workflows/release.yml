@@ -36,7 +36,7 @@ jobs:
             echo "::warning::NPM_TOKEN secret not set; skipping release."
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.token.outputs.present == 'true'
         with:
           fetch-depth: 0
