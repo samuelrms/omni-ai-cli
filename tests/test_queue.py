@@ -341,8 +341,13 @@ class ChatQueueTerminalTests(unittest.TestCase):
             pump(0.1)
         try:
             for line in lines:
+                # like a person, type the next line only once the input is drawn again
+                drawn = output.count('❯'.encode())
                 os.write(fd, line.encode() + b'\r')
-                pump(0.3)
+                end = time.time() + 10
+                while output.count('❯'.encode()) <= drawn and time.time() < end:
+                    pump(0.05)
+                pump(0.2)
             end = time.time() + (30 if done else wait)
             while time.time() < end and not (done and done(output.decode('utf-8', 'replace'))):
                 pump(0.1)
