@@ -363,8 +363,10 @@ class ChatQueueTerminalTests(unittest.TestCase):
             os.write(fd, b'\x04')
         except OSError:
             pass  # the chat already exited; what it printed is in output
-        # keep reading while it shuts down (it prints the saved queue last); never hang the suite
-        end, exited = time.time() + 15, False
+        # keep reading while it shuts down (it prints the saved queue last); never hang the suite.
+        # The loop breaks as soon as the process exits, so a generous cap only costs time when the
+        # chat is still winding down a running job — slow CI runners need well over 15s for that.
+        end, exited = time.time() + 60, False
         while time.time() < end and not exited:
             pump(0.1)
             exited = os.waitpid(pid, os.WNOHANG)[0] == pid
