@@ -25,29 +25,18 @@ jobs:
       pull-requests: write
       id-token: write
     steps:
-      - name: Check npm token
-        id: token
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -n "$NPM_TOKEN" ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::warning::NPM_TOKEN secret not set; skipping release."
-            echo "present=false" >> "$GITHUB_OUTPUT"
-          fi
       - uses: actions/checkout@v7
-        if: steps.token.outputs.present == 'true'
         with:
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v7
-        if: steps.token.outputs.present == 'true'
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+      # OIDC trusted publishing needs npm >= 11.5.1; node 22 ships npm 10.
+      - name: Upgrade npm for OIDC
+        run: npm install -g npm@latest
       - name: semantic-release
-        if: steps.token.outputs.present == 'true'
         run: >
           npx --yes
           -p semantic-release@24
@@ -55,5 +44,4 @@ jobs:
           semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: 'true'
