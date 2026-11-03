@@ -26,6 +26,7 @@ class HistoryTests(unittest.TestCase):
             'SMART_AI_SESSIONS': str(self.omni),
             'CLAUDE_CONFIG_DIR': str(self.claude),
             'CODEX_HOME': str(self.codex),
+            'CURSOR_STATE_DB': str(self.root / 'no-cursor.vscdb'),  # isolate from the real machine
         })
         env.start()
         self.addCleanup(env.stop)
@@ -63,6 +64,27 @@ class HistoryTests(unittest.TestCase):
         (self.omni / 'ok.json').write_text(json.dumps({'id': 'ok', 'messages': [{'role': 'user', 'content': 'hi'}]}))
         ids = [s['id'] for s in history.sessions(['omni'])]
         self.assertEqual(ids, ['omni:ok'])
+
+    def test_cursor_reader(self):
+        import sqlite3
+        db = self.root / 'state.vscdb'
+        con = sqlite3.connect(db)
+        con.execute('CREATE TABLE cursorDiskKV (key TEXT PRIMARY KEY, value TEXT)')
+        cid = 'abc'
+        con.execute('INSERT INTO cursorDiskKV VALUES (?,?)', (f'composerData:{cid}', json.dumps({
+            'composerId': cid, 'name': 'Minha conversa cursor', 'lastUpdatedAt': 5000,
+            'fullConversationHeadersOnly': [{'bubbleId': 'b1', 'type': 1}, {'bubbleId': 'b2', 'type': 2}]})))
+        con.execute('INSERT INTO cursorDiskKV VALUES (?,?)', (f'bubbleId:{cid}:b1', json.dumps({'type': 1, 'text': 'pergunta cursor'})))
+        con.execute('INSERT INTO cursorDiskKV VALUES (?,?)', (f'bubbleId:{cid}:b2', json.dumps({'type': 2, 'text': 'resposta cursor'})))
+        con.commit()
+        con.close()
+        with patch.dict(os.environ, {'CURSOR_STATE_DB': str(db)}):
+            meta = {s['source']: s for s in history.sessions(['cursor'])}
+            self.assertEqual(meta['cursor']['title'], 'Minha conversa cursor')
+            self.assertEqual(meta['cursor']['count'], 2)
+            conv = history.conversation('cursor:abc')
+            self.assertEqual([(m['role'], m['content']) for m in conv['messages']],
+                             [('user', 'pergunta cursor'), ('assistant', 'resposta cursor')])
 
     def test_cli_history_json(self):
         (self.omni / 'a.json').write_text(json.dumps({'id': 'a', 'messages': [{'role': 'user', 'content': 'hi'}]}))
