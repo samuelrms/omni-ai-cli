@@ -154,6 +154,7 @@ T = {
 /account [list|add|login|remove] [codex|agy|grok] NOME  Contas (Claude por padrão; quantas quiser)
 /key [add|remove] [{keys}] [NOME] Chaves de API (várias por ferramenta, usadas em ordem)
 /status   /reset                         Status das contas / zerar cooldowns
+/doctor                                 Diagnóstico de instalação, contas e chaves
 /sync [--dry-run]                        Compartilhar MCPs e skills entre Claude, Codex e agy
 /mode default|plan|edits|auto|yolo      Modo de permissão (vale para Claude, Codex e agy)
 /setup [install]                         Guia de primeiro acesso; install instala as ferramentas que faltam
@@ -177,6 +178,7 @@ T = {
 /account [list|add|login|remove] [codex|agy|grok] NAME  Accounts (Claude by default; as many as you want)
 /key [add|remove] [{keys}] [NAME] API keys (several per tool, tried in order)
 /status   /reset                         Account status / clear cooldowns
+/doctor                                 Diagnose install, accounts and keys
 /sync [--dry-run]                        Share MCPs and skills across Claude, Codex and agy
 /mode default|plan|edits|auto|yolo      Permission mode (applies to Claude, Codex and agy)
 /setup [install]                         First-run guide; install installs the missing tools
@@ -200,6 +202,7 @@ T = {
 /account [list|add|login|remove] [codex|agy|grok] NOMBRE  Cuentas (Claude por defecto; las que quieras)
 /key [add|remove] [{keys}] [NOMBRE] Claves de API (varias por herramienta, en orden)
 /status   /reset                         Estado de cuentas / limpiar cooldowns
+/doctor                                 Diagnóstico de instalación, cuentas y claves
 /sync [--dry-run]                        Compartir MCPs y skills entre Claude, Codex y agy
 /mode default|plan|edits|auto|yolo      Modo de permisos (Claude, Codex y agy)
 /setup [install]                         Guía de primer acceso; install instala las herramientas que faltan
@@ -223,6 +226,7 @@ T = {
 /account [list|add|login|remove] [codex|agy|grok] NOM  Comptes (Claude par défaut ; autant que voulu)
 /key [add|remove] [{keys}] [NOM] Clés API (plusieurs par outil, essayées dans l'ordre)
 /status   /reset                         État des comptes / réinitialiser les cooldowns
+/doctor                                 Diagnostic installation, comptes et clés
 /sync [--dry-run]                        Partager MCP et skills entre Claude, Codex et agy
 /mode default|plan|edits|auto|yolo      Mode de permissions (Claude, Codex et agy)
 /setup [install]                         Guide de démarrage ; install installe les outils manquants
@@ -1030,7 +1034,7 @@ def compact(session):
 
 
 TOOL_COMMANDS = {'/usage': ['--usage'], '/limits': ['--usage'], '/model': ['--model'], '/account': ['--account'], '/key': ['--key'],
-                 '/status': ['--status'], '/sync': ['--sync'], '/update': ['--update'], '/reset': ['--reset']}
+                 '/status': ['--status'], '/doctor': ['--doctor'], '/sync': ['--sync'], '/update': ['--update'], '/reset': ['--reset']}
 
 
 def run_tool(args):
@@ -1041,7 +1045,7 @@ def run_tool(args):
         pass
 
 
-BUILTIN = ['/usage', '/clear', '/compact', '/queue', '/versions', '/setup', '/terminal-setup', '/tool', '/model', '/account', '/key', '/status', '/reset', '/sync', '/update', '/mode', '/lang',
+BUILTIN = ['/usage', '/clear', '/compact', '/queue', '/versions', '/setup', '/terminal-setup', '/tool', '/model', '/account', '/key', '/status', '/doctor', '/reset', '/sync', '/update', '/mode', '/lang',
            '/skills', '/history', '/sent', '/trace', '/sessions', '/resume', '/new', '/parallel', '/help', '/exit']
 
 

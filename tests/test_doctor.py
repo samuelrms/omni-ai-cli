@@ -46,6 +46,11 @@ class DoctorTests(unittest.TestCase):
             self.assertEqual(cli.main(['doctor']), 0)
         self.assertEqual(doc.call_count, 2)
 
+    def test_chat_slash_doctor_maps_to_the_command(self):
+        from omni_ai import chat
+        self.assertEqual(chat.TOOL_COMMANDS['/doctor'], ['--doctor'])
+        self.assertIn('/doctor', chat.BUILTIN)
+
 
 if __name__ == '__main__':
     unittest.main()
