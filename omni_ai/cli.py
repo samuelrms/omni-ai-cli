@@ -465,11 +465,22 @@ CEREBRAS_CLASSIFIER_MODELS = ['llama3.1-8b', 'gpt-oss-120b']
 CLASSIFIER_MODELS = ['nvidia/nemotron-3.5-lightning:free', 'google/gemma-4-26b-a4b-it:free', 'openrouter/free']
 CLASSIFIER_SYSTEM = (
     'You are a router, not an assistant: never answer or carry out the prompt, only label it.\n'
-    'The CLI runs inside the user\'s project directory.\n'
-    'complex: asks to analyze, change, create, fix, improve, run or test something (code, files, repository, '
-    'shell, GitHub), even without naming a file, or needs real coding work.\n'
-    'simple: a general question a plain chat model answers without seeing any file '
-    '(concepts, definitions, translations, trivia, short text).\n'
+    'The CLI runs inside the user\'s project directory and can read files, run shell and use tools.\n'
+    'complex: anything that touches code, files, the repository, shell or GitHub, or that reasons, '
+    'plans, debugs, designs, compares trade-offs, or needs more than one step or any real work — '
+    'even when short and even when no file is named.\n'
+    'simple: ONLY a one-shot general-knowledge chat a plain model answers off the top of its head '
+    'with no project context — a definition, a fact, a translation, a quick rewrite of given text.\n'
+    'The two tiers cost very differently, so misrouting complex as simple is the expensive mistake: '
+    'when the prompt is borderline, mixed, or you are unsure, answer complex.\n'
+    'Examples:\n'
+    'what is a REST API -> simple\n'
+    'translate "good morning" to french -> simple\n'
+    'how do I reverse a list in python -> simple\n'
+    'why is my build failing -> complex\n'
+    'write a function to parse this log -> complex\n'
+    'explain how auth works in this app -> complex\n'
+    'add retries to the http client -> complex\n'
     'Reply with exactly one word: complex or simple.')
 
 
@@ -539,7 +550,7 @@ def classify_rules(prompt):
         return 'complex'
     # Anything that acts on the workspace needs an agent with file access; OpenRouter only chats
     if re.search(r'\b(projeto|project|repo|reposit[oó]rio|codebase|c[oó]digo|code|arquivos?|files?|pastas?|folder|'
-                 r'github|git|commit|push|pull request|pr|readme|about|branch|analis|analy[sz]|atuali[sz]|update|'
+                 r'github|git|commit|push|pull request|pr\b|readme|about|branch|analis|analy[sz]|atuali[sz]|update|'
                  r'edit|alter|mud[ae]|ajust|adicion|add|remov|delet|instal|rod[ae]|run|execut|test)', lower):
         return 'complex'
     if re.search(r'\.(py|js|ts|go|rs|java|kt|dart|swift|rb|sh|yml|yaml|json|toml|sql)', prompt):
@@ -548,8 +559,12 @@ def classify_rules(prompt):
         return 'complex'
     if any(k in lower for k in routing.get('simple_keywords', [])):
         return 'simple'
-    if len(prompt) <= int(routing.get('max_simple_length', 200)) and \
-            not re.search(r'function|class|module|package|dependency|error|stack|trace|test|spec', lower):
+    # Only a genuinely short general question falls through to simple; anything longer, or that
+    # mentions code machinery, routes to Claude. Borderline stays complex (the cheap OpenRouter path
+    # is for day-to-day chat only).
+    if len(prompt) <= int(routing.get('max_simple_length', 120)) and \
+            not re.search(r'function|class|module|package|dependency|error|stack|trace|test|spec|'
+                          r'debug|deploy|build|config|script|api|server|database|query', lower):
         return 'simple'
     return 'complex'
 
