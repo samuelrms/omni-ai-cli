@@ -7,6 +7,7 @@
 [![npm](https://img.shields.io/npm/v/omni-ai-cli?color=C4552F)](https://www.npmjs.com/package/omni-ai-cli)
 [![downloads](https://img.shields.io/npm/dm/omni-ai-cli?color=1A1714)](https://www.npmjs.com/package/omni-ai-cli)
 [![provenance](https://img.shields.io/badge/npm-OIDC%20trusted%20publishing-C4552F)](https://docs.npmjs.com/trusted-publishers)
+[![coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/samuelrms/omni-ai-cli/badges/coverage.json)](https://github.com/samuelrms/omni-ai-cli/actions/workflows/coverage.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-C4552F.svg)](../LICENSE)
 ![Plataformas](https://img.shields.io/badge/macOS%20·%20Linux%20·%20Windows-1A1714)
 ![Idiomas](https://img.shields.io/badge/pt--BR%20·%20en%20·%20es%20·%20fr-C4552F)
@@ -451,7 +452,7 @@ python3 -m unittest discover -s tests -v
 bash -n scripts/install.sh
 ```
 
-**106 pruebas**: persistencia y reanudación de sesión, límite de contexto, permisos de
+**123 pruebas**: persistencia y reanudación de sesión, límite de contexto, permisos de
 los archivos, sesión abierta en dos terminales, lectura de eventos, cancelación del árbol
 de procesos, paralelismo real, sandbox de solo lectura, enmascaramiento de datos
 personales, fallback OpenRouter → Codex, validación de modelos, almacenamiento de las

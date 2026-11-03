@@ -1,0 +1,43 @@
+name: Coverage
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Measure coverage
+        run: |
+          pip install coverage
+          coverage run --source=omni_ai --omit='omni_ai/vendor/*' -m unittest discover -s tests
+          coverage report
+          pct=$(coverage report | awk '/^TOTAL/{print $NF}' | tr -d '%')
+          echo "PCT=$pct" >> "$GITHUB_ENV"
+      - name: Publish coverage badge
+        run: |
+          pct="${PCT:-0}"
+          if [ "$pct" -ge 90 ]; then color=brightgreen
+          elif [ "$pct" -ge 75 ]; then color=green
+          elif [ "$pct" -ge 60 ]; then color=yellow
+          else color=orange; fi
+          printf '{"schemaVersion":1,"label":"coverage","message":"%s%%","color":"%s"}\n' "$pct" "$color" > /tmp/coverage.json
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin badges 2>/dev/null && git checkout badges || { git checkout --orphan badges && git rm -rf . >/dev/null 2>&1 || true; }
+          cp /tmp/coverage.json coverage.json
+          git add coverage.json
+          git commit -m "chore: update coverage badge [skip ci]" || { echo "no change"; exit 0; }
+          git push origin badges
