@@ -214,9 +214,19 @@ class View:
     def __init__(self, prefix=''):
         self.prefix = prefix
         self.pending = None  # last action, so its result can be attached under it
+        self._streamed = False  # whether a streaming answer has started printing
 
     def _p(self, text):
         out('\n'.join(self.prefix + line for line in text.split('\n')))
+
+    def stream_line(self, line):
+        """One completed line of a streaming answer, printed as it arrives (line-granular keeps the
+        chat's input box intact, unlike raw partial writes). The first line carries the answer mark."""
+        if not self._streamed:
+            self._p('\n' + gradient(MARK) + ' ' + line)
+            self._streamed = True
+        else:
+            self._p('  ' + line)
 
     def provider(self, tool, detail):
         self._p(dim('  ') + rgb(TOOL_RGB.get(tool, (6, 182, 212)), '● ' + tool) + (dim(' · ' + detail) if detail else ''))

@@ -554,8 +554,6 @@ Le workflow demande déjà `id-token: write` et `NPM_CONFIG_PROVENANCE` ; il n'y
 - La classification simple/complexe repose sur des mots-clés et la taille, pas sur un
   modèle.
 - Changer de modèle ne renouvelle pas le quota du compte.
-- OpenRouter n'a pas de streaming dans cette version : la réponse apparaît en entier à
-  la fin.
 - Sous Windows le code utilise les équivalents natifs (groupes de processus et `taskkill`, `msvcrt`, jonctions de dossier), mais il n'a été testé pour de vrai que sous macOS.
 
 ---

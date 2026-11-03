@@ -542,7 +542,6 @@ guardar nem rotacionar.
   arquivos. Os agentes não editam o projeto ao mesmo tempo.
 - A classificação simples/complexa é por palavras-chave e tamanho, não por um modelo.
 - Trocar de modelo não renova a cota da conta.
-- O OpenRouter não tem streaming nesta versão: a resposta aparece inteira no final.
 - No Windows, o código usa os equivalentes nativos (grupo de processos e `taskkill`, `msvcrt`, junções de pasta), mas foi testado de verdade só no macOS.
 
 ---
