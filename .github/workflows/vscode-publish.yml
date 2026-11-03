@@ -7,7 +7,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write   # VS Code Marketplace trusted publishing (OIDC), no PAT
+  id-token: write   # for VS Code Marketplace OIDC, when available
 
 jobs:
   publish:
@@ -23,21 +23,33 @@ jobs:
           node-version: 22
       - name: Install tooling
         run: npm install -g @vscode/vsce@latest ovsx@latest
+      - name: Match the released version
+        if: github.event_name == 'release'
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
       - name: Package
         run: vsce package --no-dependencies -o omni-ai-cli.vsix
-      - name: Publish to VS Code Marketplace (OIDC)
-        run: vsce publish --no-dependencies --packagePath omni-ai-cli.vsix
+      # Open VSX (Cursor) first and on its own, so a Marketplace hiccup never blocks it.
       - name: Check Open VSX token
         id: ovsx
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: |
           if [ -n "$OVSX_PAT" ]; then echo "present=true" >> "$GITHUB_OUTPUT";
-          else echo "::warning::OVSX_PAT secret not set; skipping Open VSX."; echo "present=false" >> "$GITHUB_OUTPUT"; fi
+          else echo "::warning::OVSX_PAT not set; skipping Open VSX."; echo "present=false" >> "$GITHUB_OUTPUT"; fi
       - name: Publish to Open VSX
         if: steps.ovsx.outputs.present == 'true'
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: ovsx publish omni-ai-cli.vsix -p "$OVSX_PAT"
+      # VS Code Marketplace: prefer a PAT (VSCE_PAT); otherwise try OIDC. Never fails the whole run.
+      - name: Publish to VS Code Marketplace
+        continue-on-error: true
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
-          ovsx create-namespace samuelrms -p "$OVSX_PAT" || true
-          ovsx publish omni-ai-cli.vsix -p "$OVSX_PAT"
+          if [ -n "$VSCE_PAT" ]; then
+            vsce publish --no-dependencies --packagePath omni-ai-cli.vsix -p "$VSCE_PAT"
+          else
+            echo "::warning::VSCE_PAT not set; trying OIDC trusted publishing."
+            vsce publish --no-dependencies --packagePath omni-ai-cli.vsix
+          fi
