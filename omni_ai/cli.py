@@ -867,7 +867,12 @@ def show_log():
 def update():
     """Pull the latest version into the install folder; settings live in ~/.config and are kept."""
     if (REPO / '.git').is_dir() and resolve_bin('git'):
-        code = subprocess.call(['git', '-C', str(REPO), 'pull', '--ff-only'])
+        # Pull the current branch from origin explicitly, so it works even when the branch has no
+        # upstream tracking set (a plain `git pull` fails there). A detached HEAD updates from main.
+        branch = subprocess.run(['git', '-C', str(REPO), 'rev-parse', '--abbrev-ref', 'HEAD'],
+                                capture_output=True, text=True).stdout.strip()
+        ref = branch if branch and branch != 'HEAD' else 'main'
+        code = subprocess.call(['git', '-C', str(REPO), 'pull', '--ff-only', 'origin', ref])
         say(f'{GREEN}✓ Omni AI atualizado.{NC}' if code == 0 else f'{RED}✗ Não consegui atualizar; veja a mensagem acima.{NC}')
         return code
     if os.environ.get('SMART_AI_INSTALLER') == 'npm':
