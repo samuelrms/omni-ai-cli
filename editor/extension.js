@@ -101,6 +101,122 @@ function baseArgs() {
   return args;
 }
 
+/** Run `ai <args>` and resolve with its stdout (for --json queries). */
+function runCapture(args) {
+  return new Promise((resolve) => {
+    const cfg = config();
+    const bin = cfg.get('binPath', 'ai');
+    const cwd = (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0])
+      ? vscode.workspace.workspaceFolders[0].uri.fsPath : os.homedir();
+    let out = '';
+    let child;
+    try {
+      child = spawn(bin, args, { cwd, env: { ...process.env, NO_COLOR: '1' } });
+    } catch (e) {
+      resolve(''); return;
+    }
+    child.stdout.on('data', (d) => { out += d.toString(); });
+    child.on('error', () => resolve(''));
+    child.on('close', () => resolve(out));
+  });
+}
+
+/** Sidebar history: lists past conversations across tools and opens one; "Continue" seeds the chat. */
+class OmniHistoryView {
+  constructor(chatView) {
+    this.chatView = chatView;
+  }
+
+  resolveWebviewView(view) {
+    this.view = view;
+    view.webview.options = { enableScripts: true };
+    view.webview.html = this.html();
+    view.webview.onDidReceiveMessage(async (msg) => {
+      if (msg.type === 'list') {
+        const raw = await runCapture(['history', '--json']);
+        this.post({ type: 'items', items: safeJson(raw, []) });
+      } else if (msg.type === 'open') {
+        const raw = await runCapture(['history', msg.id, '--json']);
+        this.post({ type: 'conversation', conv: safeJson(raw, null) });
+      } else if (msg.type === 'continue') {
+        const raw = await runCapture(['history', msg.id, '--json']);
+        const conv = safeJson(raw, null);
+        if (conv && this.chatView) this.chatView.continueFrom(conv);
+      }
+    });
+  }
+
+  post(message) {
+    if (this.view) this.view.webview.postMessage(message);
+  }
+
+  html() {
+    return `<!doctype html><html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+<style>
+  body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); margin: 0; }
+  #search { width: 100%; box-sizing: border-box; padding: 6px 8px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: none; border-bottom: 1px solid var(--vscode-panel-border); }
+  .item { padding: 8px; border-bottom: 1px solid var(--vscode-panel-border); cursor: pointer; }
+  .item:hover { background: var(--vscode-list-hoverBackground); }
+  .src { font-size: 10px; text-transform: uppercase; opacity: .7; margin-right: 6px; }
+  .omni { color: #22d3ee; } .claude { color: #e0b341; } .codex { color: #4ade80; } .cursor { color: #a78bfa; }
+  .meta { opacity: .6; font-size: 11px; }
+  .title { display: block; margin-top: 2px; }
+  #transcript { padding: 8px; white-space: pre-wrap; word-break: break-word; display: none; }
+  #bar { padding: 8px; display: none; gap: 6px; }
+  button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; border-radius: 4px; padding: 6px 10px; cursor: pointer; }
+  .you { color: var(--vscode-textLink-foreground); font-weight: 600; }
+  .turn { margin: 8px 0; }
+</style></head><body>
+<input id="search" placeholder="Filter conversations…">
+<div id="list"></div>
+<div id="bar"><button id="back">← Back</button><button id="continue">Continue in chat</button></div>
+<div id="transcript"></div>
+<script>
+  const vs = acquireVsCodeApi();
+  const list = document.getElementById('list'), tr = document.getElementById('transcript');
+  const bar = document.getElementById('bar'), search = document.getElementById('search');
+  let items = [], current = null;
+  function render(filter) {
+    list.innerHTML = '';
+    for (const it of items) {
+      if (filter && !(it.title || '').toLowerCase().includes(filter)) continue;
+      const d = document.createElement('div'); d.className = 'item';
+      const when = new Date((it.updated || 0) * 1000).toLocaleString();
+      d.innerHTML = '<span class="src ' + it.source + '">' + it.source + '</span>' +
+        '<span class="meta">' + it.count + ' msg · ' + when + '</span>' +
+        '<span class="title"></span>';
+      d.querySelector('.title').textContent = it.title || '(no title)';
+      d.onclick = () => vs.postMessage({ type: 'open', id: it.id });
+      list.appendChild(d);
+    }
+  }
+  search.addEventListener('input', () => render(search.value.trim().toLowerCase()));
+  document.getElementById('back').onclick = () => { tr.style.display = 'none'; bar.style.display = 'none'; list.style.display = ''; search.style.display = ''; };
+  document.getElementById('continue').onclick = () => { if (current) vs.postMessage({ type: 'continue', id: current.id }); };
+  window.addEventListener('message', (e) => {
+    const m = e.data;
+    if (m.type === 'items') { items = m.items || []; render(''); }
+    else if (m.type === 'conversation' && m.conv) {
+      current = m.conv; tr.innerHTML = ''; list.style.display = 'none'; search.style.display = 'none';
+      bar.style.display = 'flex'; tr.style.display = 'block';
+      for (const msg of m.conv.messages) {
+        const t = document.createElement('div'); t.className = 'turn';
+        const who = document.createElement('span'); who.className = msg.role === 'user' ? 'you' : '';
+        who.textContent = msg.role === 'user' ? 'you' : '●'; t.appendChild(who);
+        t.appendChild(document.createTextNode(' ' + msg.content)); tr.appendChild(t);
+      }
+    }
+  });
+  vs.postMessage({ type: 'list' });
+</script></body></html>`;
+  }
+}
+
+function safeJson(text, fallback) {
+  try { return JSON.parse(text); } catch (e) { return fallback; }
+}
+
 /** Sidebar chat: spawns `ai` per prompt and streams its output into a webview. */
 class OmniChatView {
   constructor(context) {
@@ -120,6 +236,15 @@ class OmniChatView {
 
   post(message) {
     if (this.view) this.view.webview.postMessage(message);
+  }
+
+  continueFrom(conv) {
+    const tail = (conv.messages || []).slice(-8)
+      .map((m) => (m.role === 'user' ? 'User: ' : 'Assistant: ') + m.content).join('\n\n');
+    const prompt = `Continue this conversation (from ${conv.source}). Context:\n\n${tail}\n\nContinue from here.`;
+    try { if (this.view) this.view.show(true); } catch (e) { /* view not ready */ }
+    this.post({ type: 'seed', text: prompt });
+    this.send(prompt);
   }
 
   cancel() {
@@ -202,8 +327,10 @@ class OmniChatView {
 }
 
 function activate(context) {
+  const chatView = new OmniChatView(context);
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider('omni-ai.chat', new OmniChatView(context))
+    vscode.window.registerWebviewViewProvider('omni-ai.chat', chatView),
+    vscode.window.registerWebviewViewProvider('omni-ai.history', new OmniHistoryView(chatView))
   );
 
   const cmds = {
