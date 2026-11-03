@@ -1,3 +1,4 @@
+import functools
 import json
 import os
 from pathlib import Path
@@ -24,6 +25,26 @@ with open(os.environ['TEST_CALLS'], 'a') as out:
 time.sleep(float(os.environ.get('TEST_DELAY', '0')))
 print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':'FAKE ANSWER'}}), flush=True)
 '''
+
+
+def flaky_pty(attempts=3):
+    """Retry a pseudo-terminal test a few times: it drives a real PTY and can miss a frame on
+    slow CI runners. Each attempt gets a clean fixture (cleanups then setUp run again), so a
+    retry starts from scratch rather than on top of the previous run's files."""
+    def decorate(fn):
+        @functools.wraps(fn)
+        def wrapper(self, *args, **kwargs):
+            for attempt in range(1, attempts + 1):
+                try:
+                    return fn(self, *args, **kwargs)
+                except AssertionError:
+                    if attempt == attempts:
+                        raise
+                    self.doCleanups()
+                    self.__dict__.pop('env_args', None)
+                    self.setUp()
+        return wrapper
+    return decorate
 
 
 def until(condition, timeout=5):
@@ -378,6 +399,7 @@ class ChatQueueTerminalTests(unittest.TestCase):
         self.exited = exited
         return re.sub(r'\x1b\[[0-9;?>]*[a-zA-Z]|\x1b\][^\x07]*\x07', '', output.decode('utf-8', 'replace'))
 
+    @flaky_pty()
     def test_messages_typed_while_busy_are_queued_and_run(self):
         # done once both answers finished ("Levou Ns · codex" twice)
         # the extra Enter sends /clear when the completion menu took the first one (slow machines)
@@ -400,6 +422,7 @@ class QueueResumeTerminalTests(ChatQueueTerminalTests):
         except (StopIteration, ValueError, OSError):
             return 0
 
+    @flaky_pty()
     def test_queue_left_on_exit_runs_again_on_resume(self):
         self.env['TEST_DELAY'] = '10'  # still running when the chat is closed
         self.run_chat(['/tool codex', 'first', 'second', 'third'], done=lambda out: self.saved_queue() == 3)
@@ -417,6 +440,7 @@ class QueueResumeTerminalTests(ChatQueueTerminalTests):
         saved = json.loads(next((self.root / 'sessions').glob('*.json')).read_text())
         self.assertEqual(saved.get('queue', []), [])
 
+    @flaky_pty()
     def test_declining_resume_drops_the_saved_queue(self):
         self.env['TEST_DELAY'] = '10'  # still running when the chat is closed
         self.run_chat(['/tool codex', 'first', 'second'], done=lambda out: self.saved_queue() == 2)

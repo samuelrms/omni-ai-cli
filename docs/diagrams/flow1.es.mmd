@@ -1,0 +1,47 @@
+flowchart TD
+    A["Escribes y presionas Enter<br/>(la caja nunca se bloquea)"] --> B{"¿Empieza con / ?"}
+    B -- sí --> C["Comando interno<br/>/model · /account · /key · /lang · /versions"]
+    C --> C1["config.py guarda en<br/>models.json, profiles.json o keys/"]
+    B -- no --> FQ["Entra en la cola<br/>con la herramienta del momento del envío"]
+
+    subgraph CHAT ["chat.py — chat"]
+        FQ --> FW{"¿Esperó en la cola y la respuesta<br/>anterior ya resuelve el pedido?"}
+        FW -- "sí (clasificador gratis)" --> FS["Omitido, avisa en pantalla"]
+        FW -- no --> D["Arma el contexto: últimos mensajes<br/>de la sesión hasta 48 mil caracteres + idioma"]
+        D --> E["Worker en hilo lanza el enrutador<br/>en un grupo de procesos propio"]
+        E -. "eventos JSON línea por línea" .-> F["Muestra proveedor, comandos y respuesta"]
+        X["Ctrl-C"] -. "vacía la cola; SIGTERM al grupo,<br/>tras 5 s, SIGKILL" .-> E
+    end
+
+    subgraph ROUTER ["cli.py — enrutador"]
+        E --> G["Carga modelos:<br/>env > models.json > predeterminado"]
+        G --> H{"¿Herramienta fijada<br/>con /tool?"}
+        H -- sí --> H1["Solo la herramienta elegida"]
+        H -- auto --> I{"Clasifica: Groq → Cerebras →<br/>OpenRouter gratis → Grok;<br/>sin respuesta, palabras clave"}
+        I -- simple --> J["OpenRouter: gratuitos, o pagos<br/>si se autorizan · datos personales enmascarados"]
+        J -- "sin clave o falló" --> K["Codex: suscripción,<br/>luego clave de API"]
+        K -- falló --> L["Antigravity: suscripción,<br/>luego clave de API"]
+        L -- falló --> LP["De pago solo si están en fallback_order:<br/>Cursor, Grok, DeepSeek"]
+        LP -- falló --> M
+        I -- compleja --> M["Claude: siguiente cuenta activa<br/>por prioridad"]
+        M --> N{"¿Rate limit?"}
+        N -- sí --> O["Cuenta en cooldown de 60 min"]
+        O --> P{"¿Otra cuenta<br/>disponible?"}
+        P -- sí --> M
+        P -- no --> PK{"¿Clave de API<br/>de Anthropic?"}
+        PK -- sí --> PK1["Claude con ANTHROPIC_API_KEY"]
+        PK1 -- ok --> R
+        PK1 -- falló --> Q
+        PK -- no --> Q["Último recurso:<br/>Codex, luego Antigravity"]
+    end
+
+    N -- no --> R["Respuesta"]
+    J -- ok --> R
+    K -- ok --> R
+    L -- ok --> R
+    LP -- ok --> R
+    Q --> R
+    H1 --> R
+    R --> F
+    F --> S[("Sesión guardada en disco<br/>con escritura atómica")]
+    S --> FQ
