@@ -387,6 +387,7 @@ ai --deepseek "explicar CAP theorem"   # fuerza DeepSeek
 ai --install                           # instala las herramientas que faltan (pregunta antes)
 ai --classify "prompt"                 # muestra cómo se clasificaría
 ai --log                               # últimas llamadas
+ai doctor                              # diagnóstico de instalación, cuentas y claves
 ```
 
 ---

@@ -7,7 +7,7 @@
   ai --mode plan|edits|auto|yolo "question"
   ai --usage                         Uso e limites de todas as ferramentas e contas
   ai --setup                         First-run guide: logins and API keys
-  ai --status | --reset | --log | --classify "prompt"
+  ai --status | --doctor | --reset | --log | --classify "prompt"
   ai --model ... | --account ... | --key ... | --sync ...
 """
 import json
@@ -683,6 +683,91 @@ def show_status():
     say()
 
 
+def ai_version():
+    try:
+        return json.loads((REPO / 'package.json').read_text()).get('version', '?')
+    except (OSError, ValueError):
+        return '?'
+
+
+def doctor():
+    """Health check: what is installed, logged in and configured, and what is missing. Returns 1 when
+    nothing can answer a request (no Claude login and no API key), 0 otherwise."""
+    import platform
+    ok, warn, bad = f'{GREEN}✓{NC}', f'{YELLOW}!{NC}', f'{RED}✗{NC}'
+    problems = []
+
+    say(f'{BOLD}{CYAN}  🩺 Omni AI CLI — diagnóstico{NC}\n')
+
+    say(f'{BOLD}  Sistema{NC}')
+    say(f'  {ok} Omni AI CLI {ai_version()}')
+    say(f'  {ok} Python {platform.python_version()} · {platform.system()} {platform.machine()}')
+    local_bin = str(Path('~/.local/bin').expanduser())
+    if local_bin in os.environ.get('PATH', '').split(os.pathsep):
+        say(f'  {ok} ~/.local/bin no PATH')
+    else:
+        say(f'  {warn} ~/.local/bin fora do PATH (adicione ao shell para o comando `ai`)')
+        problems.append('~/.local/bin não está no PATH')
+    say()
+
+    say(f'{BOLD}  Configuração{NC}')
+    cfg = config_tool.CONFIG_DIR
+    say(f'  {ok if cfg.is_dir() else warn} {cfg}')
+    say()
+
+    say(f'{BOLD}  Contas Claude{NC}')
+    logged = 0
+    profiles = config_tool.ordered(config_tool.profiles())
+    for name, conf in profiles:
+        if not conf.get('enabled', True):
+            say(f'  {warn} {name}: desabilitado')
+            continue
+        has_login = bool(conf.get('config_dir')) or (
+            conf.get('credentials_file') and Path(conf['credentials_file']).expanduser().is_file())
+        left = cooldown_left(name)
+        if has_login and left:
+            say(f'  {warn} {name}: em cooldown ({left // 60}m{left % 60}s)')
+            logged += 1
+        elif has_login:
+            say(f'  {ok} {name}: logado')
+            logged += 1
+        else:
+            say(f'  {bad} {name}: sem login (ai --account login {name})')
+    if not logged:
+        say(f'  {warn} nenhuma conta Claude logada')
+    say()
+
+    say(f'{BOLD}  Chaves de API{NC}')
+    keys = [p for p in config_tool.KEYS if config_tool.stored_key(p)[0]]
+    say(f"  {ok if keys else warn} {', '.join(keys) if keys else 'nenhuma configurada (ai --key)'}")
+    say()
+
+    say(f'{BOLD}  Ferramentas{NC}')
+    for name in CLIS:
+        label = TOOLS[name].label
+        say(f'  {ok} {label}: {version(name)}' if installed(name) else f'  {warn} {label}: não instalado')
+    say()
+
+    classifiers = [p for p in ('groq', 'cerebras') if config_tool.stored_key(p)[0]]
+    if classifiers:
+        say(f'  {ok} Classificador: {", ".join(classifiers)} (rápido e grátis)')
+    else:
+        say(f'  {warn} Sem chave de classificador (Groq/Cerebras); usa OpenRouter grátis ou palavras-chave')
+    say()
+
+    if not logged and not keys:
+        problems.append('nenhuma conta Claude logada e nenhuma chave de API: o roteador não tem como responder')
+
+    if problems:
+        say(f'{BOLD}{YELLOW}  Pendências:{NC}')
+        for p in problems:
+            say(f'  {warn} {p}')
+        say(f'\n{DIM}  Rode `ai --setup` para um guia de primeiro acesso.{NC}\n')
+    else:
+        say(f'{GREEN}  Tudo pronto.{NC}\n')
+    return 1 if not logged and not keys else 0
+
+
 def ago(seconds):
     seconds = int(seconds)
     return f'{seconds // 3600}h{seconds % 3600 // 60:02d}m' if seconds >= 3600 else f'{seconds // 60}m'
@@ -895,7 +980,7 @@ USAGE = f'''{BOLD}Uso:{NC}
   ai --usage                         Uso e limites de todas as ferramentas e contas
   ai --setup                          Guia de primeiro acesso: logins e chaves
   ai --install                       Instala as ferramentas que faltam (pergunta antes)
-  ai --status | --reset | --log | --classify "prompt"
+  ai --status | --doctor | --reset | --log | --classify "prompt"
   ai --update                        Atualizar para a versão mais nova
 '''
 
@@ -945,6 +1030,8 @@ def main(argv):
         elif arg in ('--status', '-s'):
             show_status()
             return 0
+        elif arg in ('--doctor', 'doctor'):
+            return doctor()
         elif arg in ('--setup', '--install'):
             from . import onboarding
             onboarding.main(install_missing=arg == '--install' or 'install' in argv[i + 1:])
