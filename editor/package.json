@@ -27,7 +27,8 @@
     },
     "views": {
       "omni-ai": [
-        { "id": "omni-ai.chat", "name": "Chat", "type": "webview" }
+        { "id": "omni-ai.chat", "name": "Chat", "type": "webview" },
+        { "id": "omni-ai.history", "name": "History", "type": "webview" }
       ]
     },
     "commands": [
