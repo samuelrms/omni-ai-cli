@@ -20,6 +20,16 @@
   "bugs": "https://github.com/samuelrms/omni-ai-cli/issues",
   "main": "./extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        { "id": "omni-ai", "title": "Omni AI", "icon": "media/omni.svg" }
+      ]
+    },
+    "views": {
+      "omni-ai": [
+        { "id": "omni-ai.chat", "name": "Chat", "type": "webview" }
+      ]
+    },
     "commands": [
       { "command": "omni-ai.ask", "title": "Ask", "category": "Omni AI" },
       { "command": "omni-ai.explainSelection", "title": "Explain selection", "category": "Omni AI" },
