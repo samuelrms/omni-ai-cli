@@ -121,6 +121,8 @@ N'importe laquelle des commandes ci-dessus (script ou gestionnaire de paquets) i
 brew install samuelrms/tap/omni-ai-cli
 ```
 
+> Sur Homebrew récent, s'il refuse le tap comme « untrusted », exécutez une fois : `brew trust samuelrms/tap`.
+
 Pour mettre à jour ensuite : `ai --update` (ou `/update` dans le chat).
 
 Depuis les sources, pour développer :

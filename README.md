@@ -118,6 +118,8 @@ Qualquer um dos comandos acima (script ou gerenciador de pacotes) instala o mesm
 brew install samuelrms/tap/omni-ai-cli
 ```
 
+> Em Homebrew recente, se recusar o tap como "untrusted", rode uma vez: `brew trust samuelrms/tap`.
+
 Para atualizar depois: `ai --update` (ou `/update` no chat).
 
 Pelo código-fonte, para desenvolver:
