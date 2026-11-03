@@ -24,6 +24,8 @@ jobs:
       issues: write
       pull-requests: write
       id-token: write
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -33,7 +35,6 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
-      # OIDC trusted publishing needs npm >= 11.5.1; node 22 ships npm 10.
       - name: Upgrade npm for OIDC
         run: npm install -g npm@latest
       - name: semantic-release
@@ -45,3 +46,87 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_CONFIG_PROVENANCE: 'true'
+      # The tag semantic-release just created points at HEAD; empty when nothing was released.
+      - name: Detect released version
+        id: ver
+        run: |
+          tag=$(git tag --points-at HEAD | grep -E '^v[0-9]' | head -1 || true)
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+  extension:
+    name: Publish the editor extension
+    needs: release
+    if: needs.release.outputs.version != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: editor
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Install tooling
+        run: npm install -g @vscode/vsce@latest ovsx@latest
+      - name: Set version
+        run: npm version "${{ needs.release.outputs.version }}" --no-git-tag-version --allow-same-version
+      - name: Package
+        run: vsce package --no-dependencies -o omni-ai-cli.vsix
+      - name: Check Open VSX token
+        id: ovsx
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [ -n "$OVSX_PAT" ]; then echo "present=true" >> "$GITHUB_OUTPUT";
+          else echo "::warning::OVSX_PAT not set; skipping Open VSX."; echo "present=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Publish to Open VSX
+        if: steps.ovsx.outputs.present == 'true'
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: ovsx publish omni-ai-cli.vsix -p "$OVSX_PAT"
+      - name: Publish to VS Code Marketplace
+        continue-on-error: true
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -n "$VSCE_PAT" ]; then
+            vsce publish --no-dependencies --packagePath omni-ai-cli.vsix -p "$VSCE_PAT"
+          else
+            echo "::warning::VSCE_PAT not set; trying OIDC."
+            vsce publish --no-dependencies --packagePath omni-ai-cli.vsix
+          fi
+
+  homebrew:
+    name: Bump the Homebrew formula
+    needs: release
+    if: needs.release.outputs.version != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check tap token
+        id: token
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -n "$TAP_TOKEN" ]; then echo "present=true" >> "$GITHUB_OUTPUT";
+          else echo "::warning::HOMEBREW_TAP_TOKEN not set; skipping."; echo "present=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Bump formula
+        if: steps.token.outputs.present == 'true'
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          url="https://github.com/samuelrms/omni-ai-cli/archive/refs/tags/${tag}.tar.gz"
+          sha=$(curl -fsSL "$url" | shasum -a 256 | awk '{print $1}')
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/samuelrms/homebrew-tap" tap
+          cd tap
+          sed -i -E "s#archive/refs/tags/v[0-9.]+\.tar\.gz#archive/refs/tags/${tag}.tar.gz#" Formula/omni-ai-cli.rb
+          sed -i -E "s/sha256 \"[a-f0-9]+\"/sha256 \"${sha}\"/" Formula/omni-ai-cli.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -am "omni-ai-cli ${VERSION}" || { echo "formula already current"; exit 0; }
+          git push
