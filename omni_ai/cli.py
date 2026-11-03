@@ -690,6 +690,37 @@ def ai_version():
         return '?'
 
 
+def completion_words():
+    """Every top-level word `ai` accepts, for shell completion."""
+    flags = ['--model', '--account', '--key', '--keys', '--sync', '--usage', '--limits', '--setup',
+             '--install', '--status', '--doctor', '--reset', '--log', '--classify', '--update',
+             '--mode', '--chat', '--resume', '--sessions', '--new', '--help', '--version', '--completions']
+    return flags + ['--' + name for name in TOOLS] + ['doctor']
+
+
+def completions(shell):
+    """A completion script for `ai`, printed for the user to source. Completes the top-level flags."""
+    words = ' '.join(completion_words())
+    if shell == 'bash':
+        say(f'''# Omni AI CLI bash completion. Install:  ai --completions bash > ~/.ai-completion.bash
+#   then add to ~/.bashrc:  source ~/.ai-completion.bash
+_ai_complete() {{
+  local cur="${{COMP_WORDS[COMP_CWORD]}}"
+  COMPREPLY=( $(compgen -W "{words}" -- "$cur") )
+}}
+complete -F _ai_complete ai''')
+        return 0
+    if shell == 'zsh':
+        say(f'''#compdef ai
+# Omni AI CLI zsh completion. Install:  ai --completions zsh > ~/.zsh/_ai
+#   then ensure that dir is on $fpath before compinit in ~/.zshrc
+_ai() {{ compadd -- {words} }}
+compdef _ai ai''')
+        return 0
+    say(f'{RED}✗ Shell não suportado: {shell}. Use zsh ou bash.{NC}')
+    return 1
+
+
 def doctor():
     """Health check: what is installed, logged in and configured, and what is missing. Returns 1 when
     nothing can answer a request (no Claude login and no API key), 0 otherwise."""
@@ -987,6 +1018,8 @@ USAGE = f'''{BOLD}Uso:{NC}
   ai --install                       Instala as ferramentas que faltam (pergunta antes)
   ai --status | --doctor | --reset | --log | --classify "prompt"
   ai --update                        Atualizar para a versão mais nova
+  ai --version                       Versão do Omni AI CLI
+  ai --completions zsh|bash          Script de autocomplete do shell
 '''
 
 
@@ -1037,6 +1070,11 @@ def main(argv):
             return 0
         elif arg in ('--doctor', 'doctor'):
             return doctor()
+        elif arg in ('--version', '-v'):
+            say(ai_version())
+            return 0
+        elif arg == '--completions':
+            return completions(argv[i + 1] if i + 1 < len(argv) else '')
         elif arg in ('--setup', '--install'):
             from . import onboarding
             onboarding.main(install_missing=arg == '--install' or 'install' in argv[i + 1:])
