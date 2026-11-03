@@ -15,6 +15,9 @@
     "README.md",
     "LICENSE"
   ],
+  "scripts": {
+    "diagrams": "bash scripts/diagrams.sh"
+  },
   "optionalDependencies": {
     "@anthropic-ai/claude-code": "*"
   },

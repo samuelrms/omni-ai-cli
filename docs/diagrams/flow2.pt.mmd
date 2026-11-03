@@ -1,0 +1,14 @@
+flowchart TD
+    A[PR aberto] --> B[CI: testes Python 3.11-3.13 em Linux e macOS<br/>+ npm pack + launcher]
+    A --> C[PR title: Conventional Commits?]
+    B -->|falhou| X[Merge bloqueado]
+    C -->|fora do padrão| X
+    B -->|ok| D[Squash merge em main / next / beta]
+    C -->|ok| D
+    D --> E[Release: CI roda de novo]
+    E -->|falhou| Y[Nada é publicado]
+    E -->|ok| F{semantic-release:<br/>há feat/fix/breaking<br/>desde a última tag?}
+    F -->|não| Z[Sem release]
+    F -->|sim| G[Calcula versão e cria tag vX.Y.Z]
+    G --> H[npm publish via OIDC / trusted publishing<br/>com provenance, no dist-tag da branch]
+    G --> I[GitHub Release com notas]

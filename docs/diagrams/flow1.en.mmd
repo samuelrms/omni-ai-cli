@@ -1,0 +1,47 @@
+flowchart TD
+    A["You type and press Enter<br/>(the box never locks)"] --> B{"Starts with / ?"}
+    B -- yes --> C["Internal command<br/>/model · /account · /key · /lang · /versions"]
+    C --> C1["config.py writes to<br/>models.json, profiles.json or keys/"]
+    B -- no --> FQ["Goes into the queue<br/>with the tool selected at send time"]
+
+    subgraph CHAT ["chat.py — chat"]
+        FQ --> FW{"Waited in the queue and the previous<br/>answer already covers the request?"}
+        FW -- "yes (free classifier)" --> FS["Skipped, shown on screen"]
+        FW -- no --> D["Builds the context: latest messages<br/>of the session up to 48 thousand characters + language"]
+        D --> E["Thread worker launches the router<br/>in its own process group"]
+        E -. "JSON events line by line" .-> F["Shows provider, commands and answer"]
+        X["Ctrl-C"] -. "empties the queue; SIGTERM to the group,<br/>after 5 s, SIGKILL" .-> E
+    end
+
+    subgraph ROUTER ["cli.py — router"]
+        E --> G["Loads models:<br/>env > models.json > default"]
+        G --> H{"Tool pinned<br/>with /tool?"}
+        H -- yes --> H1["Only the chosen tool"]
+        H -- auto --> I{"Classifies: Groq → Cerebras →<br/>free OpenRouter → Grok;<br/>no answer, keywords"}
+        I -- simple --> J["OpenRouter: free, or paid<br/>if authorized · personal data masked"]
+        J -- "no key or failed" --> K["Codex: subscription,<br/>then API key"]
+        K -- failed --> L["Antigravity: subscription,<br/>then API key"]
+        L -- failed --> LP["Paid ones only if listed in fallback_order:<br/>Cursor, Grok, DeepSeek"]
+        LP -- failed --> M
+        I -- complex --> M["Claude: next active account<br/>by priority"]
+        M --> N{"Rate limit?"}
+        N -- yes --> O["Account on 60 min cooldown"]
+        O --> P{"Another account<br/>available?"}
+        P -- yes --> M
+        P -- no --> PK{"Anthropic<br/>API key?"}
+        PK -- yes --> PK1["Claude with ANTHROPIC_API_KEY"]
+        PK1 -- ok --> R
+        PK1 -- failed --> Q
+        PK -- no --> Q["Last resort:<br/>Codex, then Antigravity"]
+    end
+
+    N -- no --> R["Answer"]
+    J -- ok --> R
+    K -- ok --> R
+    L -- ok --> R
+    LP -- ok --> R
+    Q --> R
+    H1 --> R
+    R --> F
+    F --> S[("Session saved to disk<br/>with atomic write")]
+    S --> FQ

@@ -1,6 +1,8 @@
 # Omni AI CLI
 
-![npm](https://img.shields.io/badge/npm-coming%20soon-1A1714)
+[![npm](https://img.shields.io/npm/v/omni-ai-cli?color=C4552F)](https://www.npmjs.com/package/omni-ai-cli)
+[![downloads](https://img.shields.io/npm/dm/omni-ai-cli?color=1A1714)](https://www.npmjs.com/package/omni-ai-cli)
+[![provenance](https://img.shields.io/badge/npm-OIDC%20trusted%20publishing-C4552F)](https://docs.npmjs.com/trusted-publishers)
 [![License: MIT](https://img.shields.io/badge/license-MIT-C4552F.svg)](../LICENSE)
 ![Platforms](https://img.shields.io/badge/macOS%20·%20Linux%20·%20Windows-1A1714)
 ![Languages](https://img.shields.io/badge/pt--BR%20·%20en%20·%20es%20·%20fr-C4552F)
@@ -49,55 +51,7 @@ From the typed line to the saved answer. The chat (`chat.py`) does not call any 
 directly: it launches the router (`cli.py`) as a subprocess and reads the events it
 emits, line by line, to show who is answering and what they are doing.
 
-```mermaid
-flowchart TD
-    A["You type and press Enter<br/>(the box never locks)"] --> B{"Starts with / ?"}
-    B -- yes --> C["Internal command<br/>/model · /account · /key · /lang · /versions"]
-    C --> C1["config.py writes to<br/>models.json, profiles.json or keys/"]
-    B -- no --> FQ["Goes into the queue<br/>with the tool selected at send time"]
-
-    subgraph CHAT ["chat.py — chat"]
-        FQ --> FW{"Waited in the queue and the previous<br/>answer already covers the request?"}
-        FW -- "yes (free classifier)" --> FS["Skipped, shown on screen"]
-        FW -- no --> D["Builds the context: latest messages<br/>of the session up to 48 thousand characters + language"]
-        D --> E["Thread worker launches the router<br/>in its own process group"]
-        E -. "JSON events line by line" .-> F["Shows provider, commands and answer"]
-        X["Ctrl-C"] -. "empties the queue; SIGTERM to the group,<br/>after 5 s, SIGKILL" .-> E
-    end
-
-    subgraph ROUTER ["cli.py — router"]
-        E --> G["Loads models:<br/>env > models.json > default"]
-        G --> H{"Tool pinned<br/>with /tool?"}
-        H -- yes --> H1["Only the chosen tool"]
-        H -- auto --> I{"Classifies: Groq → Cerebras →<br/>free OpenRouter → Grok;<br/>no answer, keywords"}
-        I -- simple --> J["OpenRouter: free, or paid<br/>if authorized · personal data masked"]
-        J -- "no key or failed" --> K["Codex: subscription,<br/>then API key"]
-        K -- failed --> L["Antigravity: subscription,<br/>then API key"]
-        L -- failed --> LP["Paid ones only if listed in fallback_order:<br/>Cursor, Grok, DeepSeek"]
-        LP -- failed --> M
-        I -- complex --> M["Claude: next active account<br/>by priority"]
-        M --> N{"Rate limit?"}
-        N -- yes --> O["Account on 60 min cooldown"]
-        O --> P{"Another account<br/>available?"}
-        P -- yes --> M
-        P -- no --> PK{"Anthropic<br/>API key?"}
-        PK -- yes --> PK1["Claude with ANTHROPIC_API_KEY"]
-        PK1 -- ok --> R
-        PK1 -- failed --> Q
-        PK -- no --> Q["Last resort:<br/>Codex, then Antigravity"]
-    end
-
-    N -- no --> R["Answer"]
-    J -- ok --> R
-    K -- ok --> R
-    L -- ok --> R
-    LP -- ok --> R
-    Q --> R
-    H1 --> R
-    R --> F
-    F --> S[("Session saved to disk<br/>with atomic write")]
-    S --> FQ
-```
+![Request-to-answer flow](https://raw.githubusercontent.com/samuelrms/omni-ai-cli/main/docs/diagrams/flow1.en.png)
 
 Three details the diagram makes explicit:
 
@@ -142,7 +96,7 @@ curl -fsSL https://raw.githubusercontent.com/samuelrms/omni-ai-cli/main/get.sh |
 irm https://raw.githubusercontent.com/samuelrms/omni-ai-cli/main/get.ps1 | iex
 ```
 
-**Coming soon to npm, yarn, pnpm and bun.** The `omni-ai-cli` package is ready and ships as soon as publishing is unlocked:
+**On npm, yarn, pnpm or bun:**
 
 ```bash
 npm install -g omni-ai-cli
@@ -151,7 +105,7 @@ pnpm add -g omni-ai-cli
 bun add -g omni-ai-cli
 ```
 
-For now, use the macOS/Linux or Windows command above.
+Any of the commands above (script or package manager) installs the same `ai`.
 
 To update later: `ai --update` (or `/update` in the chat).
 
@@ -489,7 +443,7 @@ python3 -m unittest discover -s tests -v
 bash -n scripts/install.sh
 ```
 
-**38 tests**: session persistence and resume, context limit, file permissions, session
+**106 tests**: session persistence and resume, context limit, file permissions, session
 open in two terminals, event reading, process tree cancellation, real parallelism,
 read-only sandbox, personal data masking, OpenRouter → Codex fallback, model
 validation, key storage and the account lifecycle. All the
@@ -540,31 +494,20 @@ titles that don't follow the convention.
 - One commit per noticeable change. Refactoring and tests go in `refactor:`/`test:`,
   which don't show up in `/versions`.
 
-```mermaid
-flowchart TD
-    A[PR opened] --> B[CI: Python 3.11-3.13 tests on Linux and macOS<br/>+ npm pack + launcher]
-    A --> C[PR title: Conventional Commits?]
-    B -->|failed| X[Merge blocked]
-    C -->|invalid| X
-    B -->|ok| D[Squash merge into main / next / beta]
-    C -->|ok| D
-    D --> E[Release: CI runs again]
-    E -->|failed| Y[Nothing is published]
-    E -->|ok| F{semantic-release:<br/>any feat/fix/breaking<br/>since last tag?}
-    F -->|no| Z[No release]
-    F -->|yes| G[Compute version and tag vX.Y.Z]
-    G --> H[npm publish with provenance<br/>on the branch dist-tag]
-    G --> I[GitHub Release with notes]
-```
+![Release and publish flow](https://raw.githubusercontent.com/samuelrms/omni-ai-cli/main/docs/diagrams/flow2.en.png)
 
-One-time GitHub setup:
+Publishing uses **OIDC / trusted publishing**: GitHub Actions authenticates to npm with no
+token and the package ships with *provenance*. One-time setup:
 
-1. **Settings → Secrets and variables → Actions**: add `NPM_TOKEN` (an *Automation* or
-   *Granular* npmjs.com token with publish permission).
-2. **Settings → Branches**: protect `main` (and `next`/`beta` if used), requiring a PR and
-   the `Tests (...)`, `npm package` and `conventional` checks.
-3. **Settings → General → Pull Requests**: allow only *squash merging* and tick *Default
-   to pull request title*.
+1. **npm → package page → Settings → Trusted Publisher**: add *GitHub Actions* with
+   `samuelrms/omni-ai-cli` and the `release.yml` workflow.
+2. **GitHub → Settings → Branches**: protect `main` (and `next`/`beta` if used), requiring a
+   PR and the `Tests (...)`, `npm package` and `conventional` checks.
+3. **GitHub → Settings → General → Pull Requests**: allow only *squash merging* and tick
+   *Default to pull request title*.
+
+The workflow already requests `id-token: write` and `NPM_CONFIG_PROVENANCE`; there is no
+`NPM_TOKEN` to store or rotate.
 
 ---
 
