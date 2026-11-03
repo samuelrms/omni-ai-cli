@@ -21,6 +21,12 @@ Open the Command Palette and type **Omni AI**:
 
 Explain / Run also appear in the editor right-click menu when there is a selection.
 
+## Sidebar chat
+
+The **Omni AI** icon in the Activity Bar opens a chat panel. Type a question and the extension
+runs `ai` for you, streaming the answer into the panel (Enter sends, Shift+Enter adds a line,
+Stop cancels). It uses the same router, tool and mode settings as the commands.
+
 ## Settings
 
 - `omni-ai.binPath` — path to `ai` (default `ai`).
@@ -29,5 +35,5 @@ Explain / Run also appear in the editor right-click menu when there is a selecti
 
 ## Notes
 
-The selection is passed through a temporary file, which assumes a POSIX shell (macOS/Linux) for
-the integrated terminal. A richer sidebar chat panel is planned.
+The terminal commands pass the selection through a temporary file, which assumes a POSIX shell
+(macOS/Linux). The sidebar chat spawns `ai` directly (no shell), so it is cross-platform.

@@ -1,0 +1,43 @@
+name: Publish extension
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write   # VS Code Marketplace trusted publishing (OIDC), no PAT
+
+jobs:
+  publish:
+    name: Publish the editor extension
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: editor
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Install tooling
+        run: npm install -g @vscode/vsce@latest ovsx@latest
+      - name: Package
+        run: vsce package --no-dependencies -o omni-ai-cli.vsix
+      - name: Publish to VS Code Marketplace (OIDC)
+        run: vsce publish --no-dependencies --packagePath omni-ai-cli.vsix
+      - name: Check Open VSX token
+        id: ovsx
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [ -n "$OVSX_PAT" ]; then echo "present=true" >> "$GITHUB_OUTPUT";
+          else echo "::warning::OVSX_PAT secret not set; skipping Open VSX."; echo "present=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Publish to Open VSX
+        if: steps.ovsx.outputs.present == 'true'
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          ovsx create-namespace samuelrms -p "$OVSX_PAT" || true
+          ovsx publish omni-ai-cli.vsix -p "$OVSX_PAT"
