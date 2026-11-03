@@ -105,6 +105,55 @@ class OpenRouterClient:
         except urllib.error.URLError as e:
             raise RuntimeError("Falha de rede ao acessar OpenRouter") from None
 
+    def _stream_request(self, data: dict):
+        """POST /chat/completions with stream=True, yielding ('delta', text) per token and a final
+        ('final', {content, model, usage}). Raises RuntimeError on any failure, like _request."""
+        if os.environ.get('SMART_AI_EVENTS') == '1':
+            print(json.dumps({'type': 'smart.request', 'data': data}, ensure_ascii=False), file=sys.stderr, flush=True)
+        headers = {
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/samuelrms/omni-ai-cli",
+            "X-Title": "Omni AI CLI",
+            "Accept": "text/event-stream",
+        }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        body = json.dumps(dict(data, stream=True, stream_options={"include_usage": True})).encode()
+        req = urllib.request.Request(f"{OPENROUTER_BASE}/chat/completions", data=body, headers=headers, method="POST")
+        content, model, usage = [], None, {}
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                for raw in resp:
+                    line = raw.decode("utf-8", "replace").strip()
+                    if not line.startswith("data:"):
+                        continue
+                    payload = line[5:].strip()
+                    if payload == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(payload)
+                    except ValueError:
+                        continue
+                    model = chunk.get("model") or model
+                    usage = chunk.get("usage") or usage
+                    for choice in chunk.get("choices", []):
+                        piece = (choice.get("delta") or {}).get("content") or ""
+                        if piece:
+                            content.append(piece)
+                            yield ("delta", piece)
+        except urllib.error.HTTPError as e:
+            try:
+                reason = json.loads(e.read().decode())["error"]["message"][:160]
+            except (ValueError, KeyError, TypeError, OSError):
+                reason = ""
+            e.close()
+            raise RuntimeError(f"OpenRouter HTTP {e.code}" + (f": {reason}" if reason else "")) from None
+        except (ValueError, TimeoutError):
+            raise RuntimeError("Resposta inválida ou timeout do OpenRouter") from None
+        except urllib.error.URLError:
+            raise RuntimeError("Falha de rede ao acessar OpenRouter") from None
+        yield ("final", {"content": "".join(content), "model": model, "usage": usage})
+
     def list_free_models(self) -> list:
         """Lista todos os modelos gratuitos disponíveis."""
         resp = self._request("/models")
@@ -122,6 +171,7 @@ class OpenRouterClient:
         system_prompt: str = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
+        on_delta=None,
     ) -> dict:
         """
         Envia um prompt e retorna a resposta.
@@ -185,10 +235,26 @@ class OpenRouterClient:
             if not self.allow_paid:
                 data["provider"] = {"max_price": {"prompt": 0, "completion": 0}}
             try:
-                resp = self._request("/chat/completions", data=data, method="POST")
-                if resp.get("choices"):
-                    break
-                last_error = RuntimeError("OpenRouter não retornou uma resposta válida")
+                if on_delta is not None:
+                    # Stream the tokens as they arrive; a chunk may still be a masked placeholder, so
+                    # unmask each piece best-effort and unmask the whole answer again at the end.
+                    final = None
+                    for kind, payload in self._stream_request(data):
+                        if kind == "delta":
+                            piece = self.masker.unmask(payload, self._pii_map) if (self.masker and self._pii_map) else payload
+                            on_delta(piece)
+                        else:
+                            final = payload
+                    if final and final["content"].strip():
+                        resp = {"choices": [{"message": {"content": final["content"]}}],
+                                "model": final["model"], "usage": final["usage"]}
+                        break
+                    last_error = RuntimeError("OpenRouter não retornou uma resposta válida")
+                else:
+                    resp = self._request("/chat/completions", data=data, method="POST")
+                    if resp.get("choices"):
+                        break
+                    last_error = RuntimeError("OpenRouter não retornou uma resposta válida")
             except RuntimeError as error:
                 last_error = error
                 # Bad key or no credit: another model won't help
@@ -310,19 +376,31 @@ def main():
             parser.print_help()
             sys.exit(1)
 
+    events = os.environ.get('SMART_AI_EVENTS') == '1'
+    # Stream tokens for the chat (events) and for a human at a terminal; keep --json buffered.
+    if events:
+        on_delta = lambda piece: print(json.dumps({'type': 'smart.delta', 'text': piece}, ensure_ascii=False), flush=True)
+    elif not args.json:
+        on_delta = lambda piece: (sys.stdout.write(piece), sys.stdout.flush())
+    else:
+        on_delta = None
+
     try:
         result = client.chat(
             prompt=prompt,
             system_prompt=args.system,
             temperature=args.temperature,
+            on_delta=on_delta,
         )
 
-        if os.environ.get('SMART_AI_EVENTS') == '1':
+        if events:
             print(json.dumps({'type': 'smart.answer', **result}, ensure_ascii=False), flush=True)
         elif args.json:
             print(json.dumps(result, indent=2, ensure_ascii=False))
-        else:
+        elif on_delta is None:
             print(result["content"])
+        else:
+            print()  # end the streamed line
 
     except RuntimeError as e:
         print(f"❌ Erro: {e}", file=sys.stderr)

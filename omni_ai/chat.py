@@ -477,10 +477,24 @@ class Runner:
             if job.get('dispatches'):
                 job['dispatches'][-1]['sent'] = event['data']
             view.note('dados pessoais mascarados antes do envio · /sent para ver')
+        elif kind == 'smart.delta':
+            # Stream the answer line by line as the tokens arrive (OpenRouter).
+            job['stream_buf'] = job.get('stream_buf', '') + event.get('text', '')
+            job['streamed'] = True
+            while '\n' in job['stream_buf']:
+                line, job['stream_buf'] = job['stream_buf'].split('\n', 1)
+                view.stream_line(line)
         elif kind == 'smart.answer':
             job['model'] = event.get('model')
             spend(job, event.get('usage') or {})
-            self.answer(job, event.get('content', ''))
+            if job.get('streamed'):
+                if job.get('stream_buf'):
+                    view.stream_line(job['stream_buf'])
+                    job['stream_buf'] = ''
+                # the streamed lines were display-only; keep the full, unmasked answer for the session
+                job['answers'] = [event.get('content', '')]
+            else:
+                self.answer(job, event.get('content', ''))
             view.note('modelo: ' + str(event.get('model', '?')))
         elif kind in ('item.started', 'item.completed'):
             item = event.get('item', {})

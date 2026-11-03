@@ -542,7 +542,6 @@ The workflow already requests `id-token: write` and `NPM_CONFIG_PROVENANCE`; the
   access the files. The agents do not edit the project at the same time.
 - The simple/complex classification is by keywords and length, not by a model.
 - Switching models does not renew the account's quota.
-- OpenRouter has no streaming in this version: the answer appears whole at the end.
 - On Windows the code uses the native equivalents (process groups and `taskkill`, `msvcrt`, folder junctions), but it has only been tested for real on macOS.
 
 ---

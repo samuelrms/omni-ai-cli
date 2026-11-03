@@ -30,6 +30,56 @@ class ClientTests(unittest.TestCase):
             answer = client.chat('alice@example.com', system_prompt='bob@example.com')
         self.assertEqual(answer['content'], 'bob@example.com alice@example.com')
 
+    def test_streaming_calls_back_each_piece_and_unmasks(self):
+        client = OpenRouterClient(api_key='synthetic-key', fallback_models=['test/a:free'])
+        pieces = []
+
+        def fake_stream(data):
+            self.assertTrue(data['models'])
+            yield ('delta', 'Hello ')
+            yield ('delta', 'world')
+            yield ('final', {'content': 'Hello world', 'model': 'test/a:free', 'usage': {'total_tokens': 3}})
+        with patch.object(client, '_stream_request', side_effect=fake_stream):
+            answer = client.chat('oi', on_delta=pieces.append)
+        self.assertEqual(pieces, ['Hello ', 'world'])
+        self.assertEqual(answer['content'], 'Hello world')
+        self.assertEqual(answer['usage'], {'total_tokens': 3})
+
+    def test_stream_request_parses_sse(self):
+        client = OpenRouterClient(api_key='synthetic-key', fallback_models=['test/a:free'])
+        lines = [
+            b': keep-alive\n',
+            b'data: {"model":"test/a:free","choices":[{"delta":{"content":"Hel"}}]}\n',
+            b'data: {"choices":[{"delta":{"content":"lo"}}]}\n',
+            b'data: {"choices":[{"delta":{}}],"usage":{"total_tokens":2}}\n',
+            b'data: [DONE]\n',
+        ]
+
+        class Resp:
+            def __enter__(self): return iter(lines)
+            def __exit__(self, *a): return False
+        with patch('omni_ai.openrouter.urllib.request.urlopen', return_value=Resp()):
+            events = list(client._stream_request({'models': ['test/a:free'], 'messages': []}))
+        self.assertEqual([t for t, _ in events], ['delta', 'delta', 'final'])
+        self.assertEqual(events[-1][1], {'content': 'Hello', 'model': 'test/a:free', 'usage': {'total_tokens': 2}})
+
+    def test_streaming_falls_back_to_next_group_on_empty(self):
+        client = OpenRouterClient(api_key='synthetic-key',
+                                  fallback_models=['test/a:free', 'test/b:free', 'test/c:free', 'test/d:free'])
+        calls = []
+
+        def fake_stream(data):
+            calls.append(list(data['models']))
+            if len(calls) == 1:
+                yield ('final', {'content': '', 'model': None, 'usage': {}})  # empty: move on
+            else:
+                yield ('delta', 'ok')
+                yield ('final', {'content': 'ok', 'model': 'test/d:free', 'usage': {}})
+        with patch.object(client, '_stream_request', side_effect=fake_stream):
+            answer = client.chat('oi', on_delta=lambda _p: None)
+        self.assertEqual(answer['content'], 'ok')
+        self.assertEqual(len(calls), 2)  # second group was tried after the first came back empty
+
     def test_reject_paid_models(self):
         with self.assertRaises(ValueError):
             OpenRouterClient(model='paid/model')
