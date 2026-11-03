@@ -690,11 +690,60 @@ def ai_version():
         return '?'
 
 
+SOURCE_LABEL = {'omni': f'{CYAN}omni{NC}', 'claude': f'{YELLOW}claude{NC}', 'codex': f'{GREEN}codex{NC}',
+                'cursor': 'cursor', 'agy': 'antigravity'}
+
+
+def history_command(args):
+    """`ai history [list] [--source X] [--json]` lists past conversations across tools;
+    `ai history <id> [--json]` prints one. Read-only."""
+    from . import history as history_mod
+    as_json = '--json' in args
+    rest = [a for a in args if a != '--json']
+    source = None
+    if '--source' in rest:
+        idx = rest.index('--source')
+        source = rest[idx + 1] if idx + 1 < len(rest) else None
+        rest = rest[:idx] + rest[idx + 2:]
+    target = next((a for a in rest if a != 'list'), None)
+
+    if target:
+        conv = history_mod.conversation(target)
+        if not conv:
+            if as_json:
+                say('null')
+            else:
+                say(f'{RED}✗ Conversa não encontrada: {target}{NC}')
+            return 1
+        if as_json:
+            say(json.dumps(conv, ensure_ascii=False))
+            return 0
+        say(f"{BOLD}{conv['title']}{NC} {DIM}· {SOURCE_LABEL.get(conv['source'], conv['source'])} · {conv.get('cwd', '')}{NC}\n")
+        for m in conv['messages']:
+            who = f'{CYAN}você{NC}' if m['role'] == 'user' else f'{GREEN}●{NC}'
+            say(f"{who} {m['content']}\n")
+        return 0
+
+    items = history_mod.sessions([source] if source else None)
+    if as_json:
+        say(json.dumps(items, ensure_ascii=False))
+        return 0
+    if not items:
+        say(f'{DIM}Nenhuma conversa encontrada.{NC}')
+        return 0
+    import time as _time
+    for it in items:
+        when = _time.strftime('%d/%m %H:%M', _time.localtime(it.get('updated') or 0))
+        say(f"{SOURCE_LABEL.get(it['source'], it['source'])} {DIM}{when} · {it['count']}msg{NC}  {it['title']}")
+        say(f"  {DIM}{it['id']}{NC}")
+    return 0
+
+
 def completion_words():
     """Every top-level word `ai` accepts, for shell completion."""
     flags = ['--model', '--account', '--key', '--keys', '--sync', '--usage', '--limits', '--setup',
              '--install', '--status', '--doctor', '--reset', '--log', '--classify', '--update',
-             '--mode', '--chat', '--resume', '--sessions', '--new', '--help', '--version', '--completions']
+             '--mode', '--chat', '--resume', '--sessions', '--new', '--help', '--version', '--completions', 'history']
     return flags + ['--' + name for name in TOOLS] + ['doctor']
 
 
@@ -1020,6 +1069,7 @@ USAGE = f'''{BOLD}Uso:{NC}
   ai --update                        Atualizar para a versão mais nova
   ai --version                       Versão do Omni AI CLI
   ai --completions zsh|bash          Script de autocomplete do shell
+  ai history [list|<id>]             Conversas de todas as ferramentas (--source, --json)
 '''
 
 
@@ -1047,6 +1097,8 @@ def main(argv):
         return 0
     if head in ('--update', '--upgrade'):
         return update()
+    if head in ('history', '--history'):
+        return history_command(argv[1:])
     if head == '--sync':
         from . import sync
         return sync.main(argv[1:])
