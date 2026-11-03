@@ -388,6 +388,8 @@ ai --install                           # instala as ferramentas que faltam (perg
 ai --classify "prompt"                 # mostra como seria classificado
 ai --log                               # últimas chamadas
 ai doctor                              # diagnóstico de instalação, contas e chaves
+ai --version                           # versão do Omni AI CLI
+ai --completions zsh|bash              # autocomplete do shell
 ```
 
 ---

@@ -397,6 +397,8 @@ ai --install                           # installe les outils manquants (demande 
 ai --classify "prompt"                 # montre la classification
 ai --log                               # derniers appels
 ai doctor                              # diagnostic installation, comptes et clés
+ai --version                           # version d'Omni AI CLI
+ai --completions zsh|bash              # autocomplétion du shell
 ```
 
 ---
