@@ -12,6 +12,7 @@
     "omni_ai/",
     "!omni_ai/**/__pycache__",
     "docs/",
+    "!docs/**/*.png",
     "README.md",
     "LICENSE"
   ],

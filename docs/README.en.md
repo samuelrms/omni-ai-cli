@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/samuelrms/omni-ai-cli/main/docs/assets/omni-ai-cli-logo.png" alt="Omni AI CLI" width="440">
+</p>
+
 # Omni AI CLI
 
 [![npm](https://img.shields.io/npm/v/omni-ai-cli?color=C4552F)](https://www.npmjs.com/package/omni-ai-cli)
