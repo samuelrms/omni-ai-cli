@@ -45,6 +45,10 @@ jobs:
           python-version: '3.12'
       - name: Launcher syntax
         run: node --check bin/ai.js
+      - name: Editor extension syntax
+        run: |
+          node --check editor/extension.js
+          node -e "JSON.parse(require('fs').readFileSync('editor/package.json','utf8'))"
       - name: Pack
         run: npm pack --dry-run
       - name: Install tarball and run launcher

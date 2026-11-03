@@ -1,0 +1,59 @@
+{
+  "name": "omni-ai-cli",
+  "displayName": "Omni AI CLI",
+  "description": "Run the Omni AI CLI (Claude, Codex, Cursor, Antigravity, Grok, DeepSeek, OpenRouter) from VS Code and Cursor.",
+  "version": "0.1.0",
+  "publisher": "samuelrms",
+  "license": "MIT",
+  "icon": "icon.png",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": ["Other"],
+  "keywords": ["ai", "cli", "claude", "codex", "openrouter", "cursor"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/samuelrms/omni-ai-cli.git",
+    "directory": "editor"
+  },
+  "homepage": "https://github.com/samuelrms/omni-ai-cli#readme",
+  "bugs": "https://github.com/samuelrms/omni-ai-cli/issues",
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "omni-ai.ask", "title": "Ask", "category": "Omni AI" },
+      { "command": "omni-ai.explainSelection", "title": "Explain selection", "category": "Omni AI" },
+      { "command": "omni-ai.runOnSelection", "title": "Run prompt on selection", "category": "Omni AI" },
+      { "command": "omni-ai.openChat", "title": "Open chat", "category": "Omni AI" },
+      { "command": "omni-ai.doctor", "title": "Doctor (health check)", "category": "Omni AI" }
+    ],
+    "menus": {
+      "editor/context": [
+        { "command": "omni-ai.explainSelection", "when": "editorHasSelection", "group": "omni-ai@1" },
+        { "command": "omni-ai.runOnSelection", "when": "editorHasSelection", "group": "omni-ai@2" }
+      ]
+    },
+    "configuration": {
+      "title": "Omni AI CLI",
+      "properties": {
+        "omni-ai.binPath": {
+          "type": "string",
+          "default": "ai",
+          "description": "Path to the ai executable (leave as 'ai' if it is on your PATH)."
+        },
+        "omni-ai.tool": {
+          "type": "string",
+          "enum": ["auto", "claude", "codex", "cursor", "agy", "openrouter", "grok", "deepseek"],
+          "default": "auto",
+          "description": "Which tool to use. 'auto' lets the router decide."
+        },
+        "omni-ai.mode": {
+          "type": "string",
+          "enum": ["default", "plan", "edits", "auto", "yolo"],
+          "default": "default",
+          "description": "Permission mode passed to the CLI."
+        }
+      }
+    }
+  }
+}
