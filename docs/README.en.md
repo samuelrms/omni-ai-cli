@@ -118,6 +118,8 @@ Any of the commands above (script or package manager) installs the same `ai`.
 brew install samuelrms/tap/omni-ai-cli
 ```
 
+> On recent Homebrew, if it refuses the tap as "untrusted", run once: `brew trust samuelrms/tap`.
+
 To update later: `ai --update` (or `/update` in the chat).
 
 From source, for development:
