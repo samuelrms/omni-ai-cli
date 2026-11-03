@@ -1,0 +1,43 @@
+name: Homebrew bump
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    name: Update the Homebrew formula
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check tap token
+        id: token
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -n "$TAP_TOKEN" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::HOMEBREW_TAP_TOKEN secret not set; skipping formula bump."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Bump formula
+        if: steps.token.outputs.present == 'true'
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          ver="${TAG#v}"
+          url="https://github.com/samuelrms/omni-ai-cli/archive/refs/tags/${TAG}.tar.gz"
+          sha=$(curl -fsSL "$url" | shasum -a 256 | awk '{print $1}')
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/samuelrms/homebrew-tap" tap
+          cd tap
+          sed -i -E "s#archive/refs/tags/v[0-9.]+\.tar\.gz#archive/refs/tags/${TAG}.tar.gz#" Formula/omni-ai-cli.rb
+          sed -i -E "s/sha256 \"[a-f0-9]+\"/sha256 \"${sha}\"/" Formula/omni-ai-cli.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -am "omni-ai-cli ${ver}" || { echo "formula already current"; exit 0; }
+          git push
