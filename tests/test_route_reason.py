@@ -20,7 +20,11 @@ class RouteReasonTests(unittest.TestCase):
                 cli.CLASSIFIED_BY[0] = provider
             return llm
         fakes = {name: (lambda _: 0) for name in cli.runners()}
-        with patch.object(cli, 'classify_llm', side_effect=classify_llm), patch.object(cli, 'emit', side_effect=events.append), \
+
+        def real_claude(_):
+            raise AssertionError('the real Claude must never run in tests')
+        with patch.object(cli, 'claude_with_fallback', side_effect=real_claude), \
+                patch.object(cli, 'classify_llm', side_effect=classify_llm), patch.object(cli, 'emit', side_effect=events.append), \
                 patch.object(cli, 'runners', return_value=fakes), patch.object(cli, 'say'), \
                 patch.dict(os.environ, {'SMART_AI_CLASSIFY_PROMPT': ''}):
             cli.route(prompt)

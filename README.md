@@ -242,7 +242,7 @@ Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 | `/sync` | Compartilha MCPs e skills entre Claude, Codex e Antigravity |
 | `/usage [watch]` · `/limits` | Uso real de cada conta em barras (e-mail, plano, % da janela de 5 h e da semana, horário de reset) para Claude e Codex; gasto da chave no OpenRouter; nas demais, o aviso de limite que a ferramenta deu. `watch` atualiza a cada 30 s |
 | `/queue [rm\|up\|down N\|clear]` | Mostra a fila; tira (`rm`), sobe (`up`), desce (`down`) um pedido ou esvazia (`clear`) o que espera |
-| `/versions [N]` | O que mudou em cada versão, mais recente primeiro; `N` abre a nota técnica. Antes da primeira release, mostra os `feat`/`fix` do `main` |
+| `/versions [N]` | O que mudou em cada versão, mais recente primeiro; `N` abre a nota técnica. Antes da primeira release, mostra os `feat`/`fix` do `main`. Os títulos saem no idioma do chat (traduzidos pelos classificadores grátis e guardados). Ao abrir o chat, uma linha avisa quando há versão nova. |
 | `/clear` · `/compact` | Limpar a conversa · resumir a conversa num único bloco para economizar contexto |
 | `/claude:usage` · `/codex:status` · `/agy:usage` … | Comandos nativos de cada ferramenta: abre a tela dela e volta ao Omni ao sair |
 | `/setup [install]` | Guia de primeiro acesso: o que falta instalar, logar e configurar; `install` instala as ferramentas que faltam |

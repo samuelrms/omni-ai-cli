@@ -473,16 +473,21 @@ CLASSIFIER_SYSTEM = (
     'Reply with exactly one word: complex or simple.')
 
 
-def ask_classifier(url, key, data, labels=('complex', 'simple')):
-    """One labelling request to an OpenAI-compatible endpoint; None on any failure."""
+def ask_text(url, key, data, timeout=6):
+    """One request to an OpenAI-compatible endpoint; the reply text, or None on any failure."""
     import urllib.request
     request = urllib.request.Request(url, data=json.dumps(data).encode(), method='POST', headers={
         'Content-Type': 'application/json', 'Authorization': f'Bearer {key}', 'User-Agent': 'omni-ai-cli'})
     try:
-        with urllib.request.urlopen(request, timeout=6) as resp:
-            answer = (json.loads(resp.read().decode())['choices'][0]['message']['content'] or '').lower()
+        with urllib.request.urlopen(request, timeout=timeout) as resp:
+            return json.loads(resp.read().decode())['choices'][0]['message']['content'] or ''
     except (OSError, ValueError, KeyError, IndexError, TypeError):
         return None
+
+
+def ask_classifier(url, key, data, labels=('complex', 'simple')):
+    """One labelling request; the first label found in the reply, None on any failure."""
+    answer = (ask_text(url, key, data) or '').lower()
     return next((label for label in labels if label in answer), None)
 
 
@@ -600,7 +605,7 @@ def route(prompt, tool='auto'):
     emit({'type': 'smart.route', 'label': label, 'by': CLASSIFIED_BY[0]})
     if label == 'complex':
         say(f'{DIM}📊 Classificado como: {CYAN}query complexa{NC}{DIM} → usando Claude{NC}\n')
-        return claude_with_fallback(prompt)
+        return forced['claude'](prompt)
     say(f'{DIM}📊 Classificado como: {YELLOW}query simples{NC}{DIM} → roteando para alternativa{NC}\n')
     routing = config().get('routing', {})
     order = [routing.get('prefer_tool_for_simple', 'codex')] + routing.get('fallback_order', ['openrouter', 'codex', 'agy'])
@@ -616,7 +621,7 @@ def route(prompt, tool='auto'):
         if forced[name](prompt) == 0:
             return 0
     say(f'\n{DIM}→ Usando Claude como fallback final{NC}')
-    return claude_with_fallback(prompt)
+    return forced['claude'](prompt)
 
 
 # ─── management commands ─────────────────────────────────────────
