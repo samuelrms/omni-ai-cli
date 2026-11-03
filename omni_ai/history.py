@@ -135,31 +135,124 @@ def _read_codex():
                'cwd': cwd, 'messages': messages}
 
 
+# ─── Cursor ──────────────────────────────────────────────────────
+# Cursor keeps chats in a SQLite "state" DB: composerData:<id> holds a conversation's metadata and the
+# ordered bubble headers; bubbleId:<composerId>:<bubbleId> holds each message (type 1=user, 2=assistant).
+# Listing reads only composerData (fast); the bubbles are fetched only when one conversation is opened.
+
+def _cursor_db():
+    env = os.environ.get('CURSOR_STATE_DB')
+    if env:
+        return Path(env).expanduser()
+    for candidate in ('~/Library/Application Support/Cursor/User/globalStorage/state.vscdb',
+                      '~/.config/Cursor/User/globalStorage/state.vscdb',
+                      '~/AppData/Roaming/Cursor/User/globalStorage/state.vscdb'):
+        path = Path(candidate).expanduser()
+        if path.is_file():
+            return path
+    return None
+
+
+def _cursor_connect():
+    import sqlite3
+    db = _cursor_db()
+    if not db or not db.is_file():
+        return None
+    try:
+        return sqlite3.connect(f'file:{db}?mode=ro', uri=True)
+    except Exception:
+        return None
+
+
+def _cursor_sessions():
+    con = _cursor_connect()
+    if not con:
+        return
+    try:
+        for (value,) in con.execute("SELECT value FROM cursorDiskKV WHERE key LIKE 'composerData:%'"):
+            try:
+                d = json.loads(value)
+            except ValueError:
+                continue
+            heads = d.get('fullConversationHeadersOnly') or []
+            name = d.get('name') or (d.get('text') or '').strip()
+            if not name or not heads:
+                continue
+            yield {'id': 'cursor:' + d.get('composerId', ''), 'source': 'cursor',
+                   'title': _first_line(name), 'updated': (d.get('lastUpdatedAt') or d.get('createdAt') or 0) / 1000,
+                   'cwd': '', 'count': len(heads)}
+    finally:
+        con.close()
+
+
+def _cursor_load(conv_id):
+    cid = conv_id.split(':', 1)[1]
+    con = _cursor_connect()
+    if not con:
+        return None
+    try:
+        row = con.execute("SELECT value FROM cursorDiskKV WHERE key=?", (f'composerData:{cid}',)).fetchone()
+        if not row:
+            return None
+        d = json.loads(row[0])
+        messages = []
+        for head in d.get('fullConversationHeadersOnly') or []:
+            bid = head.get('bubbleId')
+            br = con.execute("SELECT value FROM cursorDiskKV WHERE key=?", (f'bubbleId:{cid}:{bid}',)).fetchone()
+            if not br:
+                continue
+            try:
+                b = json.loads(br[0])
+            except ValueError:
+                continue
+            text = b.get('text') or ''
+            if text.strip():
+                messages.append({'role': 'assistant' if b.get('type') == 2 else 'user', 'content': text})
+        if not messages:
+            return None
+        return {'id': conv_id, 'source': 'cursor', 'title': _first_line(d.get('name') or messages[0]['content']),
+                'updated': (d.get('lastUpdatedAt') or d.get('createdAt') or 0) / 1000, 'cwd': '', 'messages': messages}
+    finally:
+        con.close()
+
+
 READERS = {'omni': _read_omni, 'claude': _read_claude, 'codex': _read_codex}
+# Sources with a fast metadata list separate from the heavy per-conversation load.
+LAZY = {'cursor': (_cursor_sessions, _cursor_load)}
 
 
-def conversations(sources=None):
-    """All conversations (with messages), newest first."""
-    picked = sources or list(READERS)
+ALL_SOURCES = list(READERS) + list(LAZY)
+
+
+def sessions(sources=None):
+    """Metadata only (no messages), newest first — for a fast list across all sources."""
+    picked = sources or ALL_SOURCES
     items = []
     for name in picked:
-        reader = READERS.get(name)
-        if not reader:
-            continue
         try:
-            items.extend(reader())
-        except Exception:  # a broken tool directory must not sink the rest
+            if name in READERS:
+                items += [{k: v for k, v in c.items() if k != 'messages'} | {'count': len(c['messages'])}
+                          for c in READERS[name]()]
+            elif name in LAZY:
+                items += list(LAZY[name][0]())
+        except Exception:  # a broken tool store must not sink the rest
             continue
     items.sort(key=lambda c: c.get('updated') or 0, reverse=True)
     return items
 
 
-def sessions(sources=None):
-    """Metadata only (no messages), newest first — for a fast list."""
-    return [{k: v for k, v in c.items() if k != 'messages'} | {'count': len(c['messages'])}
-            for c in conversations(sources)]
-
-
 def conversation(conv_id):
     """One conversation in full, by its id, or None."""
-    return next((c for c in conversations() if c['id'] == conv_id), None)
+    source = conv_id.split(':', 1)[0]
+    if source in LAZY:
+        try:
+            return LAZY[source][1](conv_id)
+        except Exception:
+            return None
+    reader = READERS.get(source)
+    if not reader:
+        return None
+    try:
+        return next((c for c in reader() if c['id'] == conv_id), None)
+    except Exception:
+        return None
