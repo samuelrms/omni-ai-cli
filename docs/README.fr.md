@@ -115,6 +115,12 @@ bun add -g omni-ai-cli
 
 N'importe laquelle des commandes ci-dessus (script ou gestionnaire de paquets) installe le même `ai`.
 
+**Homebrew** (macOS/Linux) :
+
+```bash
+brew install samuelrms/tap/omni-ai-cli
+```
+
 Pour mettre à jour ensuite : `ai --update` (ou `/update` dans le chat).
 
 Depuis les sources, pour développer :
