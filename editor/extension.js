@@ -233,6 +233,21 @@ class OmniChatView {
     this.context = context;
     this.child = null;
     this.webview = null;
+    this.attachments = [];
+  }
+
+  async attachFiles() {
+    const picks = await vscode.window.showOpenDialog({ canSelectMany: true, openLabel: 'Attach as context' });
+    if (!picks) return;
+    for (const uri of picks) {
+      try {
+        const bytes = await vscode.workspace.fs.readFile(uri);
+        let text = Buffer.from(bytes).toString('utf8');
+        if (text.length > 100000) text = text.slice(0, 100000) + '\n…(truncated)';
+        this.attachments.push({ name: uri.fsPath.split('/').pop(), path: uri.fsPath, content: text });
+      } catch (e) { /* skip unreadable */ }
+    }
+    this.post({ type: 'attached', names: this.attachments.map((a) => a.name) });
   }
 
   // Bind to a webview from either the sidebar view or an editor panel.
@@ -243,6 +258,8 @@ class OmniChatView {
     webview.onDidReceiveMessage((msg) => {
       if (msg.type === 'send') this.send(msg.text, { tool: msg.tool, mode: msg.mode });
       else if (msg.type === 'cancel') this.cancel();
+      else if (msg.type === 'attach') this.attachFiles();
+      else if (msg.type === 'command') vscode.commands.executeCommand(msg.id);
       else if (msg.type === 'ready') { this.sendDefaults(); this.loadLast(); }
     });
   }
@@ -300,7 +317,14 @@ class OmniChatView {
     const args = [];
     if (tool && tool !== 'auto') args.push('--' + tool);
     if (mode && mode !== 'default') args.push('--mode', mode);
-    args.push('--', text);
+    let prompt = text;
+    if (this.attachments.length) {
+      const ctx = this.attachments.map((a) => `--- ${a.path} ---\n${a.content}`).join('\n\n');
+      prompt = `Context files:\n\n${ctx}\n\n---\n\n${text}`;
+      this.attachments = [];
+      this.post({ type: 'attached', names: [] });
+    }
+    args.push('--', prompt);
     this.post({ type: 'start', prompt: text });
     let child;
     try {
@@ -380,115 +404,197 @@ class OmniChatView {
     return `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
 <style>
-  :root { --brand1:#f7a63b; --brand2:#7c5cff; }
+  :root { --brand1:#f7a63b; --brand2:#7c5cff; --col: 820px; }
   * { box-sizing: border-box; }
   body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); margin: 0; display: flex; flex-direction: column; height: 100vh; }
-  #log { flex: 1; overflow-y: auto; padding: 16px; }
+  #log { flex: 1; overflow-y: auto; padding: 16px 16px 4px; }
+  .col { max-width: var(--col); margin: 0 auto; }
   #welcome { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 8px; opacity: .92; }
   #welcome h1 { margin: 6px 0 0; font-size: 20px; font-weight: 600; }
-  #welcome .tag { font-size: 12px; opacity: .6; max-width: 320px; }
+  #welcome .tag { font-size: 12px; opacity: .6; max-width: 340px; }
   #welcome .hint { font-size: 12px; opacity: .5; margin-top: 10px; }
   .mark { filter: drop-shadow(0 2px 10px rgba(124,92,255,.35)); }
-  .turn { margin: 14px 0; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
-  .turn .who { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12px; opacity: .8; margin-bottom: 3px; }
+  .turn { margin: 16px 0; line-height: 1.55; }
+  .turn .who { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12px; opacity: .85; margin-bottom: 4px; }
   .turn.user .who { color: var(--vscode-textLink-foreground); }
+  .turn .body { word-break: break-word; }
+  .turn .body p { margin: 6px 0; }
+  .turn .body h1,.turn .body h2,.turn .body h3 { margin: 10px 0 4px; }
+  .turn .body ul { margin: 4px 0; padding-left: 20px; }
+  .turn .body code { background: var(--vscode-textCodeBlock-background, rgba(127,127,127,.18)); padding: 1px 4px; border-radius: 4px; font-family: var(--vscode-editor-font-family, monospace); font-size: .92em; }
+  .turn .body pre { background: var(--vscode-textCodeBlock-background, rgba(127,127,127,.14)); padding: 10px 12px; border-radius: 8px; overflow-x: auto; }
+  .turn .body pre code { background: none; padding: 0; }
   .dot { width: 14px; height: 14px; border-radius: 50%; background: linear-gradient(135deg, var(--brand1), var(--brand2)); display: inline-block; }
   .err { color: var(--vscode-errorForeground); opacity: .85; }
-  #barwrap { padding: 10px 12px 12px; border-top: 1px solid var(--vscode-panel-border); }
-  #bar { display: flex; align-items: flex-end; gap: 8px; border: 1px solid var(--vscode-input-border, #3a3a3a); border-radius: 12px; padding: 8px 10px; background: var(--vscode-input-background); }
+  #barwrap { padding: 8px 12px 10px; border-top: 1px solid var(--vscode-panel-border); position: relative; }
+  #chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+  .chip { font-size: 11px; background: rgba(124,92,255,.18); border: 1px solid var(--brand2); border-radius: 10px; padding: 1px 8px; }
+  #bar { display: flex; align-items: center; gap: 6px; border: 1px solid var(--vscode-input-border, #3a3a3a); border-radius: 12px; padding: 4px 6px 4px 10px; background: var(--vscode-input-background); }
   #bar:focus-within { border-color: var(--brand2); }
-  #q { flex: 1; resize: none; background: transparent; color: var(--vscode-input-foreground); border: none; outline: none; font: inherit; max-height: 160px; }
-  .icon-btn { border: none; border-radius: 8px; width: 30px; height: 30px; cursor: pointer; color: #fff; display: grid; place-items: center; }
+  #q { flex: 1; resize: none; background: transparent; color: var(--vscode-input-foreground); border: none; outline: none; font: inherit; line-height: 1.4; min-height: 22px; max-height: 160px; padding: 2px 0; }
+  .icon-btn { border: none; border-radius: 8px; width: 28px; height: 28px; cursor: pointer; color: #fff; display: grid; place-items: center; font-size: 15px; flex: none; }
+  #attach { background: transparent; color: var(--vscode-foreground); opacity: .7; }
   #send { background: linear-gradient(135deg, var(--brand1), var(--brand2)); }
   #stop { background: var(--vscode-button-secondaryBackground, #444); }
-  .icon-btn:disabled { opacity: .4; cursor: default; }
+  .icon-btn:disabled { opacity: .35; cursor: default; }
   .act { font-size: 12px; opacity: .6; margin: 4px 0; font-style: italic; }
-  .controls { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+  .controls { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
   .controls label { font-size: 11px; opacity: .6; }
   .controls select { background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, #3a3a3a); border-radius: 6px; padding: 2px 6px; font: inherit; font-size: 11px; }
+  #menu { position: absolute; left: 12px; right: 12px; bottom: 100%; background: var(--vscode-editorWidget-background, #252526); border: 1px solid var(--vscode-panel-border); border-radius: 8px; overflow: hidden; display: none; max-width: var(--col); margin: 0 auto; }
+  #menu .mi { padding: 6px 10px; cursor: pointer; display: flex; gap: 8px; font-size: 12px; }
+  #menu .mi:hover, #menu .mi.sel { background: var(--vscode-list-hoverBackground); }
+  #menu .mi b { color: var(--brand2); }
 </style></head><body>
 <div id="log">
   <div id="welcome">
     ${LOGO}
     <h1>Omni AI</h1>
     <div class="tag">Claude · Codex · Cursor · Antigravity · Grok · DeepSeek · OpenRouter — one chat, automatic routing.</div>
-    <div class="hint">Ask anything. Enter sends · Shift+Enter new line.</div>
+    <div class="hint">Ask anything. Enter sends · Shift+Enter new line · / for commands.</div>
   </div>
 </div>
 <div id="barwrap">
-  <div id="bar">
-    <textarea id="q" rows="1" placeholder="Ask anything…"></textarea>
-    <button id="stop" class="icon-btn" title="Stop" disabled>◼</button>
-    <button id="send" class="icon-btn" title="Send">↑</button>
-  </div>
-  <div class="controls">
-    <label>tool</label>
-    <select id="tool">
-      <option value="auto">auto</option><option>claude</option><option>codex</option><option>cursor</option>
-      <option value="agy">antigravity</option><option>openrouter</option><option>grok</option><option>deepseek</option>
-    </select>
-    <label>mode</label>
-    <select id="mode">
-      <option value="default">default</option><option>plan</option><option>edits</option><option>auto</option><option>yolo</option>
-    </select>
+  <div class="col">
+    <div id="menu"></div>
+    <div id="chips"></div>
+    <div id="bar">
+      <button id="attach" class="icon-btn" title="Attach files as context">+</button>
+      <textarea id="q" rows="1" placeholder="Ask anything…  (/ for commands)"></textarea>
+      <button id="stop" class="icon-btn" title="Stop" disabled>◼</button>
+      <button id="send" class="icon-btn" title="Send">↑</button>
+    </div>
+    <div class="controls">
+      <label>tool</label>
+      <select id="tool">
+        <option value="auto">auto</option><option>claude</option><option>codex</option><option>cursor</option>
+        <option value="agy">antigravity</option><option>openrouter</option><option>grok</option><option>deepseek</option>
+      </select>
+      <label>mode</label>
+      <select id="mode">
+        <option value="default">default</option><option>plan</option><option>edits</option><option>auto</option><option>yolo</option>
+      </select>
+    </div>
   </div>
 </div>
 <script>
-  const vs = acquireVsCodeApi();
-  const log = document.getElementById('log'), q = document.getElementById('q');
-  const sendBtn = document.getElementById('send'), stopBtn = document.getElementById('stop');
-  const toolSel = document.getElementById('tool'), modeSel = document.getElementById('mode');
-  const welcome = document.getElementById('welcome');
-  let answer = null, header = null, sendTime = 0, firstOut = 0;
-  const hhmm = (d) => new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const dur = (ms) => ms >= 60000 ? Math.floor(ms / 60000) + 'm' + Math.round(ms % 60000 / 1000) + 's' : (ms / 1000).toFixed(1) + 's';
-  function clearWelcome() { if (welcome && welcome.parentNode) welcome.remove(); }
-  function turn(role, text, time) {
+  var vs = acquireVsCodeApi();
+  var log = document.getElementById('log'), q = document.getElementById('q');
+  var sendBtn = document.getElementById('send'), stopBtn = document.getElementById('stop'), attachBtn = document.getElementById('attach');
+  var toolSel = document.getElementById('tool'), modeSel = document.getElementById('mode');
+  var chips = document.getElementById('chips'), menu = document.getElementById('menu');
+  var welcome = document.getElementById('welcome');
+  var answer = null, header = null, sendTime = 0, firstOut = 0, menuIdx = 0;
+  var COMMANDS = [
+    { cmd: '/clear', desc: 'Clear this chat' },
+    { cmd: '/doctor', desc: 'Health check (terminal)' },
+    { cmd: '/history', desc: 'Open history' },
+    { cmd: '/plan', desc: 'Set mode: plan' },
+    { cmd: '/edits', desc: 'Set mode: edits' },
+    { cmd: '/default', desc: 'Set mode: default' }
+  ];
+  var F = String.fromCharCode(96);
+  function esc(t){ return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function md(s){
+    var codes = [];
+    s = s.replace(new RegExp(F+F+F+'([\\\\s\\\\S]*?)'+F+F+F,'g'), function(_,c){ codes.push(c); return '\\u0000'+(codes.length-1)+'\\u0000'; });
+    s = esc(s);
+    s = s.replace(/^### (.*)$/gm,'<h3>$1</h3>').replace(/^## (.*)$/gm,'<h2>$1</h2>').replace(/^# (.*)$/gm,'<h1>$1</h1>');
+    s = s.replace(/^\\s*[-*] (.*)$/gm,'<li>$1</li>');
+    s = s.replace(/(<li>[\\s\\S]*?<\\/li>)/g, function(m){ return '<ul>'+m+'</ul>'; });
+    s = s.replace(new RegExp(F+'([^'+F+']+)'+F,'g'),'<code>$1</code>');
+    s = s.replace(/\\*\\*([^*]+)\\*\\*/g,'<b>$1</b>').replace(/\\*([^*]+)\\*/g,'<i>$1</i>');
+    s = s.replace(/\\[([^\\]]+)\\]\\((https?:[^)]+)\\)/g,'<span class="link">$1</span>');
+    s = s.replace(/\\n/g,'<br>');
+    s = s.replace(/\\u0000(\\d+)\\u0000/g, function(_,i){ return '<pre><code>'+esc(codes[i])+'</code></pre>'; });
+    return s;
+  }
+  var hhmm = function(d){ return new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
+  var dur = function(ms){ return ms >= 60000 ? Math.floor(ms/60000)+'m'+Math.round(ms%60000/1000)+'s' : (ms/1000).toFixed(1)+'s'; };
+  function clearWelcome(){ if (welcome && welcome.parentNode) welcome.remove(); }
+  function turn(role, text, time){
     clearWelcome();
-    const d = document.createElement('div'); d.className = 'turn ' + role;
-    const who = document.createElement('div'); who.className = 'who';
-    if (role === 'assistant') { const dot = document.createElement('span'); dot.className = 'dot'; who.appendChild(dot); who.appendChild(document.createTextNode('Omni')); }
+    var d = document.createElement('div'); d.className = 'turn ' + role;
+    var inner = document.createElement('div'); inner.className = 'col';
+    var who = document.createElement('div'); who.className = 'who';
+    if (role === 'assistant'){ var dot = document.createElement('span'); dot.className = 'dot'; who.appendChild(dot); who.appendChild(document.createTextNode('Omni')); }
     else { who.textContent = 'You'; }
-    const meta = document.createElement('span'); meta.className = 'act'; meta.style.marginLeft = '8px'; meta.style.fontStyle = 'normal';
+    var meta = document.createElement('span'); meta.className = 'act'; meta.style.marginLeft = '8px'; meta.style.fontStyle = 'normal';
     if (time) meta.textContent = hhmm(time);
     who.appendChild(meta);
-    const body = document.createElement('div'); body.textContent = text || '';
-    d.appendChild(who); d.appendChild(body); log.appendChild(d); log.scrollTop = log.scrollHeight;
-    return { body, meta };
+    var body = document.createElement('div'); body.className = 'body'; body._raw = text || '';
+    body.innerHTML = md(body._raw);
+    inner.appendChild(who); inner.appendChild(body); d.appendChild(inner); log.appendChild(d); log.scrollTop = log.scrollHeight;
+    return { body: body, meta: meta };
   }
-  function act(text) { clearWelcome(); const d = document.createElement('div'); d.className = 'act'; d.textContent = text; log.appendChild(d); log.scrollTop = log.scrollHeight; }
-  function autosize() { q.style.height = 'auto'; q.style.height = Math.min(q.scrollHeight, 160) + 'px'; }
-  function send() {
-    const text = q.value.trim(); if (!text) return;
-    turn('user', text, Date.now()); q.value = ''; autosize();
+  function act(text){ clearWelcome(); var d = document.createElement('div'); d.className = 'act col'; d.textContent = text; log.appendChild(d); log.scrollTop = log.scrollHeight; }
+  function autosize(){ q.style.height = 'auto'; q.style.height = Math.min(q.scrollHeight, 160) + 'px'; }
+  function send(){
+    var text = q.value.trim(); if (!text) return;
+    turn('user', text, Date.now()); q.value = ''; autosize(); hideMenu();
     answer = null; header = null; sendTime = Date.now(); firstOut = 0;
     sendBtn.disabled = true; stopBtn.disabled = false;
-    vs.postMessage({ type: 'send', text, tool: toolSel.value, mode: modeSel.value });
+    vs.postMessage({ type: 'send', text: text, tool: toolSel.value, mode: modeSel.value });
   }
+  function runCommand(cmd){
+    q.value = ''; hideMenu(); autosize();
+    if (cmd === '/clear'){ log.innerHTML = ''; }
+    else if (cmd === '/doctor'){ vs.postMessage({ type: 'command', id: 'omni-ai.doctor' }); }
+    else if (cmd === '/history'){ vs.postMessage({ type: 'command', id: 'omni-ai.history.focus' }); }
+    else if (cmd === '/plan'){ modeSel.value = 'plan'; }
+    else if (cmd === '/edits'){ modeSel.value = 'edits'; }
+    else if (cmd === '/default'){ modeSel.value = 'default'; }
+  }
+  function matches(){ var v = q.value.trim().toLowerCase(); return COMMANDS.filter(function(c){ return c.cmd.indexOf(v) === 0; }); }
+  function showMenu(){
+    var list = matches(); if (!q.value.startsWith('/') || !list.length){ hideMenu(); return; }
+    menuIdx = Math.min(menuIdx, list.length - 1);
+    menu.innerHTML = '';
+    list.forEach(function(c, i){
+      var el = document.createElement('div'); el.className = 'mi' + (i === menuIdx ? ' sel' : '');
+      el.innerHTML = '<b>' + c.cmd + '</b><span style="opacity:.6">' + c.desc + '</span>';
+      el.onclick = function(){ runCommand(c.cmd); };
+      menu.appendChild(el);
+    });
+    menu.style.display = 'block';
+  }
+  function hideMenu(){ menu.style.display = 'none'; menuIdx = 0; }
+  attachBtn.onclick = function(){ vs.postMessage({ type: 'attach' }); };
   sendBtn.onclick = send;
-  stopBtn.onclick = () => vs.postMessage({ type: 'cancel' });
-  q.addEventListener('input', autosize);
-  q.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
-  window.addEventListener('message', (e) => {
-    const m = e.data;
-    if (m.type === 'history') {
-      for (const msg of (m.messages || [])) turn(msg.role === 'assistant' ? 'assistant' : 'user', msg.content);
+  stopBtn.onclick = function(){ vs.postMessage({ type: 'cancel' }); };
+  q.addEventListener('input', function(){ autosize(); showMenu(); });
+  q.addEventListener('keydown', function(e){
+    if (menu.style.display === 'block'){
+      var list = matches();
+      if (e.key === 'ArrowDown'){ e.preventDefault(); menuIdx = (menuIdx + 1) % list.length; showMenu(); return; }
+      if (e.key === 'ArrowUp'){ e.preventDefault(); menuIdx = (menuIdx - 1 + list.length) % list.length; showMenu(); return; }
+      if (e.key === 'Enter'){ e.preventDefault(); if (list[menuIdx]) runCommand(list[menuIdx].cmd); return; }
+      if (e.key === 'Escape'){ hideMenu(); return; }
+    }
+    if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); }
+  });
+  window.addEventListener('message', function(e){
+    var m = e.data;
+    if (m.type === 'history'){
+      (m.messages || []).forEach(function(msg){ turn(msg.role === 'assistant' ? 'assistant' : 'user', msg.content); });
       answer = null;
-    } else if (m.type === 'defaults') {
+    } else if (m.type === 'defaults'){
       if (m.tool) toolSel.value = m.tool; if (m.mode) modeSel.value = m.mode;
-    } else if (m.type === 'seed') {
+    } else if (m.type === 'attached'){
+      chips.innerHTML = ''; (m.names || []).forEach(function(n){ var c = document.createElement('span'); c.className = 'chip'; c.textContent = '📎 ' + n; chips.appendChild(c); });
+    } else if (m.type === 'seed'){
       q.value = m.text; autosize(); q.focus();
-    } else if (m.type === 'act') {
+    } else if (m.type === 'act'){
       act(m.text);
-    } else if (m.type === 'out') {
-      if (m.stream === 'err') { act('✗ ' + m.text); }
+    } else if (m.type === 'out'){
+      if (m.stream === 'err'){ act('✗ ' + m.text); }
       else {
-        if (!answer) { const t = turn('assistant', ''); answer = t.body; header = t.meta; }
-        if (!firstOut) { firstOut = Date.now(); if (header) header.textContent = 'thought ' + dur(firstOut - sendTime); }
-        answer.textContent += m.text;
+        if (!answer){ var t = turn('assistant', ''); answer = t.body; header = t.meta; }
+        if (!firstOut){ firstOut = Date.now(); if (header) header.textContent = 'thought ' + dur(firstOut - sendTime); }
+        answer._raw += m.text; answer.innerHTML = md(answer._raw);
       }
       log.scrollTop = log.scrollHeight;
-    } else if (m.type === 'done') {
+    } else if (m.type === 'done'){
       sendBtn.disabled = false; stopBtn.disabled = true;
       if (header && sendTime) header.textContent = (firstOut ? 'thought ' + dur(firstOut - sendTime) + ' · ' : '') + 'done ' + hhmm(Date.now()) + ' · ' + dur(Date.now() - sendTime);
       answer = null; header = null;
@@ -510,6 +616,7 @@ function activate(context) {
   const openChatPanel = () => {
     const panel = vscode.window.createWebviewPanel('omni-ai.chatPanel', 'Omni AI', vscode.ViewColumn.Active,
       { enableScripts: true, retainContextWhenHidden: true });
+    panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'icon.png');
     const chat = new OmniChatView(context);
     chat.attach(panel.webview);
     panel.onDidDispose(() => chat.cancel());
