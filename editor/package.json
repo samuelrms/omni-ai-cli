@@ -19,7 +19,35 @@
   "homepage": "https://github.com/samuelrms/omni-ai-cli#readme",
   "bugs": "https://github.com/samuelrms/omni-ai-cli/issues",
   "main": "./extension.js",
+  "activationEvents": ["onStartupFinished"],
   "contributes": {
+    "walkthroughs": [
+      {
+        "id": "omni-ai.start",
+        "title": "Get started with Omni AI",
+        "description": "Install the CLI, connect your tools, and open the chat.",
+        "steps": [
+          {
+            "id": "install",
+            "title": "Install the Omni AI CLI",
+            "description": "The extension drives the `ai` command.\n[Install with npm](command:omni-ai.openChatTerminal)\nor run `brew install samuelrms/tap/omni-ai-cli`.",
+            "media": { "markdown": "walkthrough/install.md" }
+          },
+          {
+            "id": "configure",
+            "title": "Connect accounts and keys",
+            "description": "Run the first-run guide and health check.\n[Run doctor](command:omni-ai.doctor)",
+            "media": { "markdown": "walkthrough/configure.md" }
+          },
+          {
+            "id": "chat",
+            "title": "Open the chat",
+            "description": "Chat in the sidebar or as an editor tab.\n[Open chat](command:omni-ai.openChatPanel)",
+            "media": { "markdown": "walkthrough/chat.md" }
+          }
+        ]
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         { "id": "omni-ai", "title": "Omni AI", "icon": "media/omni.svg" }

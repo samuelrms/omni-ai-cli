@@ -634,6 +634,48 @@ function activate(context) {
   for (const [id, fn] of Object.entries(cmds)) {
     context.subscriptions.push(vscode.commands.registerCommand(id, fn));
   }
+
+  ensureCli(context);
+  firstRun(context);
+}
+
+// Install the omni-ai-cli (the `ai` command) in a terminal with the user's chosen manager.
+function installCli(manager) {
+  const term = vscode.window.createTerminal('Omni AI setup');
+  term.show();
+  const cmd = manager === 'brew'
+    ? 'brew install samuelrms/tap/omni-ai-cli'
+    : (manager === 'script'
+      ? 'curl -fsSL https://raw.githubusercontent.com/samuelrms/omni-ai-cli/main/get.sh | bash'
+      : 'npm install -g omni-ai-cli');
+  term.sendText(cmd);
+}
+
+// If the `ai` CLI is missing, offer to install it (the extension only drives the CLI).
+function ensureCli(context) {
+  const bin = config().get('binPath', 'ai');
+  let child;
+  try { child = spawn(bin, ['--version'], { env: process.env }); } catch (e) { child = null; }
+  const offer = () => {
+    vscode.window.showWarningMessage(
+      'Omni AI needs the `ai` CLI. Install it now?', 'npm', 'Homebrew', 'Script'
+    ).then((pick) => {
+      if (pick === 'npm') installCli('npm');
+      else if (pick === 'Homebrew') installCli('brew');
+      else if (pick === 'Script') installCli('script');
+    });
+  };
+  if (!child) { offer(); return; }
+  child.on('error', offer);
+  child.on('close', (code) => { if (code !== 0) offer(); });
+}
+
+// On first activation, open the setup walkthrough so new users learn the commands.
+function firstRun(context) {
+  if (context.globalState.get('omni-ai.welcomed')) return;
+  context.globalState.update('omni-ai.welcomed', true);
+  vscode.commands.executeCommand('workbench.action.openWalkthrough', 'samuelrms.omni-ai-cli#omni-ai.start', false)
+    .then(undefined, () => { /* walkthrough may be unavailable; ignore */ });
 }
 
 function deactivate() {}
