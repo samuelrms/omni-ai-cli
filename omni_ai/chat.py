@@ -1046,7 +1046,7 @@ def run_tool(args):
 
 
 BUILTIN = ['/usage', '/clear', '/compact', '/queue', '/versions', '/setup', '/terminal-setup', '/tool', '/model', '/account', '/key', '/status', '/doctor', '/reset', '/sync', '/update', '/mode', '/lang',
-           '/skills', '/history', '/sent', '/trace', '/sessions', '/resume', '/new', '/parallel', '/help', '/exit']
+           '/skills', '/history', '/sent', '/trace', '/sessions', '/resume', '/new', '/parallel', '/print', '/export', '/help', '/exit']
 
 
 NATIVE_HINT = {
@@ -1390,6 +1390,24 @@ def main(argv=None):
                 elif command == '/history':
                     for message in session.data['messages']:
                         display(f"{message['role']} · {message.get('provider', '')}\n{message['content']}\n")
+                elif command in ('/print', '/export'):
+                    from . import export as _export
+                    if not session.data['messages']:
+                        display('A conversa está vazia; nada para exportar.')
+                        continue
+                    conv = _export.normalize(session.data)
+                    if command == '/print':
+                        out = os.path.abspath(_export.default_name(conv, 'pdf'))
+                        _export.to_pdf(conv, out)
+                        display(f'📄 PDF da conversa salvo em {out}')
+                    else:
+                        text = _export.to_markdown(conv, argument.strip() or None)
+                        out = os.path.abspath(_export.default_name(conv, 'md'))
+                        with open(out, 'w', encoding='utf-8') as stream:
+                            stream.write(text)
+                        copied = _export.to_clipboard(text)
+                        display(f'📝 Resumo para continuar em outra LLM salvo em {out}'
+                                + (' (copiado para a área de transferência)' if copied else ''))
                 elif command == '/sessions':
                     list_sessions()
                 elif command in ('/resume', '/new'):

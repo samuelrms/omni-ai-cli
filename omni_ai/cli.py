@@ -1102,6 +1102,9 @@ def main(argv):
     if head == '--sync':
         from . import sync
         return sync.main(argv[1:])
+    if head in ('--print', '--export'):
+        from . import export
+        return export.main(argv)
     if head == '--menu-json':
         from . import skills as _skills
         data = {

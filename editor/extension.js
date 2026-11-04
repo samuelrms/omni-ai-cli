@@ -319,6 +319,7 @@ class OmniChatView {
       else if (msg.type === 'setDefault') { try { config().update(msg.key, msg.value, true); } catch (e) {} }
       else if (msg.type === 'newConversation') this.clearConv();
       else if (msg.type === 'remote') this.remoteControl(msg.name);
+      else if (msg.type === 'export') this.exportConv(msg.mode, msg.model);
       else if (msg.type === 'diff') this.openDiff(msg.path);
       else if (msg.type === 'diffInline') this.getDiff(msg.path);
       else if (msg.type === 'setDecision') { const dec = this.loadDec(); dec[msg.path] = msg.state; this.saveDec(dec); }
@@ -457,6 +458,56 @@ class OmniChatView {
     child.on('close', (code) => {
       this.child = null;
       if (acc.trim()) { const ts = Date.now(); this.pushHistory({ role: 'user', content: label, ts }, { role: 'cli', label, content: acc, ts }); }
+      this.post({ type: 'done', code });
+    });
+  }
+
+  // /print → PDF of the conversation; /export [model] → markdown handoff for another LLM.
+  // Both feed the webview's stored conversation to the CLI (`ai --print` / `ai --export`).
+  exportConv(mode, model) {
+    const path = require('path'), fs = require('fs'), os = require('os');
+    const messages = [];
+    for (const e of this.loadConv()) {
+      if (e.role === 'user') messages.push({ role: 'user', content: e.content });
+      else if (e.role === 'assistant') messages.push({ role: 'assistant', content: e.content });
+      else if (e.role === 'cli') messages.push({ role: 'cli', content: e.content, provider: e.label || '' });
+      else if (e.role === 'changes') messages.push({ role: 'changes', content: (e.files || []).join(', ') });
+    }
+    if (!messages.length) { this.post({ type: 'out', stream: 'out', text: 'A conversa está vazia; nada para exportar.\n' }); this.post({ type: 'done', code: 0 }); return; }
+    const title = (messages[0].content || 'Conversa').split('\n')[0].slice(0, 60);
+    const conv = { id: '', title, cwd: workspaceCwd(), created: Date.now() / 1000, messages };
+    const tmp = path.join(os.tmpdir(), 'omni-conv-' + Date.now() + '.json');
+    try { fs.writeFileSync(tmp, JSON.stringify(conv)); } catch (e) { this.post({ type: 'out', stream: 'err', text: String(e) }); this.post({ type: 'done', code: 1 }); return; }
+    const ext = mode === 'print' ? 'pdf' : 'md';
+    const out = path.join(workspaceCwd(), 'omni-conversa-' + Date.now() + '.' + ext);
+    const args = mode === 'print'
+      ? ['--print', '--from', tmp, '--out', out]
+      : ['--export'].concat(model ? [model] : []).concat(['--from', tmp, '--out', out]);
+    const bin = config().get('binPath', 'ai');
+    this.post({ type: 'cliBegin', label: '/' + mode + (model ? ' ' + model : '') });
+    let child;
+    try { child = spawn(bin, args, { cwd: workspaceCwd(), env: { ...process.env, NO_COLOR: '1' } }); }
+    catch (e) { this.post({ type: 'out', stream: 'err', text: String(e) }); this.post({ type: 'done', code: 1 }); return; }
+    let errAcc = '';
+    child.stderr.on('data', (d) => { errAcc += d.toString(); });
+    child.on('error', (e) => { this.post({ type: 'out', stream: 'err', text: String(e.message || e) }); this.post({ type: 'done', code: 1 }); });
+    child.on('close', (code) => {
+      try { fs.unlinkSync(tmp); } catch (e) {}
+      if (code === 0 && fs.existsSync(out)) {
+        if (mode === 'print') {
+          this.post({ type: 'out', stream: 'out', text: '📄 PDF da conversa salvo em ' + out + '\n' });
+          try { vscode.env.openExternal(vscode.Uri.file(out)); } catch (e) {}
+          try { vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(out)); } catch (e) {}
+        } else {
+          const copied = errAcc.indexOf('transfer') >= 0;
+          this.post({ type: 'out', stream: 'out', text: '📝 Resumo para continuar em outra LLM salvo em ' + out + (copied ? ' (copiado para a área de transferência)' : '') + '\n' });
+          try { vscode.workspace.openTextDocument(vscode.Uri.file(out)).then((doc) => vscode.window.showTextDocument(doc)); } catch (e) {}
+        }
+        const ts = Date.now();
+        this.pushHistory({ role: 'cli', label: '/' + mode, content: (mode === 'print' ? 'PDF: ' : 'Resumo: ') + out, ts });
+      } else {
+        this.post({ type: 'out', stream: 'err', text: errAcc || ('Falha ao exportar (código ' + code + ')\n') });
+      }
       this.post({ type: 'done', code });
     });
   }
@@ -841,6 +892,8 @@ class OmniChatView {
     { cmd: '/setup', desc: 'First-run setup' },
     { cmd: '/versions', desc: 'Show version' },
     { cmd: '/log', desc: 'Show usage log' },
+    { cmd: '/print', desc: 'Export this conversation to PDF' },
+    { cmd: '/export', desc: 'Copy a handoff summary to continue in another LLM', needsArg: true },
     { cmd: '/tool', desc: 'Set tool (auto|claude|codex|…)', needsArg: true },
     { cmd: '/mode', desc: 'Set mode (default|plan|edits|auto|yolo)', needsArg: true },
     { cmd: '/lang', desc: 'Interface language', needsArg: true },
@@ -1091,6 +1144,7 @@ class OmniChatView {
     if (cmd === '/lang'){ notify('Interface language follows the CLI; set it with the terminal chat.'); return; }
     if (cmd === '/update'){ runCli('/update', ['--update']); vs.postMessage({ type: 'command', id: 'workbench.extensions.action.checkForUpdates' }); notify('Checking for extension updates…'); return; }
     if (cmd === '/remote-control' || cmd === '/remote-mode' || cmd === '/remote'){ notify('Starting Claude Remote Control in a terminal (pairing URL appears there)…'); vs.postMessage({ type: 'remote', name: rest[0] || '' }); return; }
+    if (cmd === '/print' || cmd === '/export'){ userTurn(line, Date.now()); cur = null; sendBtn.disabled = true; stopBtn.disabled = false; vs.postMessage({ type: 'export', mode: cmd === '/print' ? 'print' : 'export', model: rest[0] || '' }); return; }
     if (CLI_MAP[cmd]){ runCli(cmd + (rest.length ? ' ' + rest.join(' ') : ''), CLI_MAP[cmd].concat(rest)); return; }
     if (isSkill(cmd)){ userTurn(line, Date.now()); cur = null; sendBtn.disabled = true; stopBtn.disabled = false; vs.postMessage({ type: 'send', text: line, tool: toolSel.value, mode: modeSel.value }); return; }
     notify('Unknown command: ' + cmd);
