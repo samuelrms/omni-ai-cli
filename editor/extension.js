@@ -631,8 +631,10 @@ class OmniChatView {
   .ch-btn.rej:hover { border-color: var(--vscode-errorForeground); color: var(--vscode-errorForeground); }
   .turn .body { word-break: break-word; }
   .turn .body p { margin: 6px 0; }
-  .turn .body h1,.turn .body h2,.turn .body h3 { margin: 10px 0 4px; }
-  .turn .body ul { margin: 4px 0; padding-left: 20px; }
+  .turn .body h1,.turn .body h2,.turn .body h3,.turn .body h4 { margin: 10px 0 4px; }
+  .turn .body h4 { font-size: 1em; opacity: .9; }
+  .turn .body hr { border: none; border-top: 1px solid var(--vscode-panel-border); margin: 10px 0; }
+  .turn .body ul,.turn .body ol { margin: 4px 0; padding-left: 22px; }
   .turn .body code { background: var(--vscode-textCodeBlock-background, rgba(127,127,127,.18)); padding: 1px 4px; border-radius: 4px; font-family: var(--vscode-editor-font-family, monospace); font-size: .92em; }
   .turn .body pre { background: var(--vscode-textCodeBlock-background, rgba(127,127,127,.14)); padding: 10px 12px; border-radius: 8px; overflow-x: auto; }
   .turn .body pre code { background: none; padding: 0; }
@@ -752,9 +754,12 @@ class OmniChatView {
     var codes = [];
     s = s.replace(new RegExp(F+F+F+'([\\\\s\\\\S]*?)'+F+F+F,'g'), function(_,c){ codes.push(c); return '\\u0000'+(codes.length-1)+'\\u0000'; });
     s = esc(s);
-    s = s.replace(/^### (.*)$/gm,'<h3>$1</h3>').replace(/^## (.*)$/gm,'<h2>$1</h2>').replace(/^# (.*)$/gm,'<h1>$1</h1>');
+    s = s.replace(/^#{4,6} (.*)$/gm,'<h4>$1</h4>').replace(/^### (.*)$/gm,'<h3>$1</h3>').replace(/^## (.*)$/gm,'<h2>$1</h2>').replace(/^# (.*)$/gm,'<h1>$1</h1>');
+    s = s.replace(/^\\s*([-*_])\\1\\1[-*_ ]*$/gm,'<hr>');
     s = s.replace(/^\\s*[-*] (.*)$/gm,'<li>$1</li>');
     s = s.replace(/(<li>[\\s\\S]*?<\\/li>)/g, function(m){ return '<ul>'+m+'</ul>'; });
+    s = s.replace(/^\\s*\\d+\\. (.*)$/gm,'<oli>$1</oli>');
+    s = s.replace(/(<oli>[\\s\\S]*?<\\/oli>)/g, function(m){ return '<ol>'+m.replace(/<oli>/g,'<li>').replace(/<\\/oli>/g,'</li>')+'</ol>'; });
     s = s.replace(new RegExp(F+'([^'+F+']+)'+F,'g'), function(_, c){
       return isPath(c) ? '<code class="file" title="Open file" data-p="' + c.replace(/"/g,'&quot;') + '">' + c + '</code>' : '<code>' + c + '</code>';
     });
