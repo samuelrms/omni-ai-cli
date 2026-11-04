@@ -315,6 +315,7 @@ class OmniChatView {
       else if (msg.type === 'newConversation') this.clearConv();
       else if (msg.type === 'remote') this.remoteControl(msg.name);
       else if (msg.type === 'diff') this.openDiff(msg.path);
+      else if (msg.type === 'diffInline') this.getDiff(msg.path);
       else if (msg.type === 'revert') this.revertFile(msg.path);
       else if (msg.type === 'command') vscode.commands.executeCommand(msg.id);
       else if (msg.type === 'ready') { this.sendDefaults(); this.sendMenu(); this.loadLast(); }
@@ -332,6 +333,27 @@ class OmniChatView {
       if (exact) return exact.fsPath;
     } catch (e) {}
     return abs;
+  }
+
+  // Produce the git diff for a file and send it to the chat to render inline.
+  getDiff(p) {
+    const root = gitRoot(workspaceCwd());
+    const run = (args, cb) => {
+      let out = '';
+      let c;
+      try { c = spawn('git', args, { cwd: root }); } catch (e) { cb(''); return; }
+      c.stdout.on('data', (d) => { out += d.toString(); });
+      c.stderr.on('data', () => {});
+      c.on('error', () => cb(''));
+      c.on('close', () => cb(out));
+    };
+    run(['diff', '--', p], (d) => {
+      if (d.trim()) { this.post({ type: 'diffText', path: p, text: d }); return; }
+      run(['diff', '--staged', '--', p], (d2) => {
+        if (d2.trim()) { this.post({ type: 'diffText', path: p, text: d2 }); return; }
+        run(['diff', '--no-index', '--', '/dev/null', p], (d3) => { this.post({ type: 'diffText', path: p, text: d3 || '(no diff available)' }); });
+      });
+    });
   }
 
   // Open the git diff (working tree vs HEAD) for a changed file so the user can review it.
@@ -668,6 +690,13 @@ class OmniChatView {
   .ch-row.reverted { opacity: .5; text-decoration: line-through; }
   .ch-btn { font: inherit; font-size: 11px; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--vscode-panel-border); background: transparent; color: var(--vscode-foreground); cursor: pointer; }
   .ch-btn.rej:hover { border-color: var(--vscode-errorForeground); color: var(--vscode-errorForeground); }
+  .diffblock { align-self: stretch; margin: 6px 0; border: 1px solid var(--vscode-panel-border); border-radius: 8px; overflow: hidden; }
+  .diffblock > summary { font-size: 12px; padding: 6px 10px; cursor: pointer; opacity: .8; font-family: var(--vscode-editor-font-family, monospace); }
+  .diffpre { margin: 0; padding: 8px 10px; font-size: 12px; overflow-x: auto; white-space: pre; font-family: var(--vscode-editor-font-family, monospace); }
+  .diffpre .dl-add { display: block; color: #4ec9b0; background: rgba(78,201,176,.08); }
+  .diffpre .dl-del { display: block; color: #f48771; background: rgba(244,135,113,.08); }
+  .diffpre .dl-hunk { display: block; color: #569cd6; }
+  .diffpre span { display: block; }
   .turn .body { word-break: break-word; }
   .turn .body p { margin: 6px 0; }
   .turn .body h1,.turn .body h2,.turn .body h3,.turn .body h4 { margin: 10px 0 4px; }
@@ -818,6 +847,21 @@ class OmniChatView {
   var hhmm = function(d){ return new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
   var dur = function(ms){ return ms >= 60000 ? Math.floor(ms/60000)+'m'+Math.round(ms%60000/1000)+'s' : (ms/1000).toFixed(1)+'s'; };
   function clearWelcome(){ if (welcome && welcome.parentNode) welcome.remove(); }
+  function colorDiff(t){
+    return esc(t).split('\\n').map(function(l){
+      var c = '';
+      if (l.indexOf('+') === 0 && l.indexOf('+++') !== 0) c = 'dl-add';
+      else if (l.indexOf('-') === 0 && l.indexOf('---') !== 0) c = 'dl-del';
+      else if (l.indexOf('@@') === 0) c = 'dl-hunk';
+      return '<span class="' + c + '">' + (l || ' ') + '</span>';
+    }).join('');
+  }
+  function appendDiffBlock(pth, text){
+    var d = document.createElement('details'); d.className = 'diffblock'; d.open = true;
+    var s = document.createElement('summary'); s.textContent = 'diff · ' + pth;
+    var pre = document.createElement('pre'); pre.className = 'diffpre'; pre.innerHTML = colorDiff(text || '');
+    d.appendChild(s); d.appendChild(pre); thread.appendChild(d); scroll();
+  }
   function renderMermaid(){
     if (!window.mermaid) return;
     var els = thread.querySelectorAll('.mermaid:not([data-done])');
@@ -842,10 +886,11 @@ class OmniChatView {
     d.appendChild(h);
     files.forEach(function(f){
       var row = document.createElement('div'); row.className = 'ch-row';
-      var name = document.createElement('span'); name.className = 'ch-name'; name.textContent = f; name.onclick = function(){ vs.postMessage({ type: 'diff', path: f }); };
-      var diffb = document.createElement('button'); diffb.className = 'ch-btn'; diffb.textContent = 'Diff'; diffb.onclick = function(){ vs.postMessage({ type: 'diff', path: f }); };
+      var name = document.createElement('span'); name.className = 'ch-name'; name.textContent = f; name.onclick = function(){ vs.postMessage({ type: 'diffInline', path: f }); };
+      var diffb = document.createElement('button'); diffb.className = 'ch-btn'; diffb.textContent = 'Diff'; diffb.onclick = function(){ vs.postMessage({ type: 'diffInline', path: f }); };
+      var openb = document.createElement('button'); openb.className = 'ch-btn'; openb.textContent = 'Open'; openb.onclick = function(){ vs.postMessage({ type: 'diff', path: f }); };
       var rev = document.createElement('button'); rev.className = 'ch-btn rej'; rev.textContent = 'Revert'; rev.onclick = function(){ vs.postMessage({ type: 'revert', path: f }); row.classList.add('reverted'); };
-      row.appendChild(name); row.appendChild(diffb); row.appendChild(rev); d.appendChild(row);
+      row.appendChild(name); row.appendChild(diffb); row.appendChild(openb); row.appendChild(rev); d.appendChild(row);
     });
     thread.appendChild(d); scroll();
   }
@@ -1069,6 +1114,8 @@ class OmniChatView {
       else { outAppend(m.text, m.pre); }
     } else if (m.type === 'changes'){
       renderChanges(m.files);
+    } else if (m.type === 'diffText'){
+      appendDiffBlock(m.path, m.text);
     } else if (m.type === 'done'){
       sendBtn.disabled = false; stopBtn.disabled = true;
       finishTurn();
