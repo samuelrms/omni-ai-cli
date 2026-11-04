@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import threading
 import sys
 import time
 
@@ -114,15 +115,32 @@ def run(argv, env=None, stdin=None):
     process = subprocess.Popen([executable] + argv[1:], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
                                text=True, encoding='utf-8', errors='replace')
+    writer = None
     if stdin is not None:
-        process.stdin.write(stdin)
-        process.stdin.close()
+        # Feed stdin from a thread: writing inline can deadlock when the child fills its
+        # stdout pipe before draining stdin, and it crashes with BrokenPipeError if the
+        # child exits early. The reader loop below keeps stdout drained meanwhile.
+        def _feed():
+            try:
+                process.stdin.write(stdin)
+            except (BrokenPipeError, OSError):
+                pass
+            finally:
+                try:
+                    process.stdin.close()
+                except OSError:
+                    pass
+        writer = threading.Thread(target=_feed, daemon=True)
+        writer.start()
     captured = []
     for line in process.stdout:
         sys.stdout.write(line)
         sys.stdout.flush()
         captured.append(line)
-    return process.wait(), ''.join(captured)
+    code = process.wait()
+    if writer is not None:
+        writer.join(timeout=1)
+    return code, ''.join(captured)
 
 
 def installed(tool):
@@ -145,6 +163,7 @@ def run_claude(profile, prompt):
     env.pop('CLAUDE_CONFIG_DIR', None)
     main_creds = Path('~/.claude/.credentials.json').expanduser()
     backup = None
+    swapped = had_main = False
     if profile == 'api-key' or profile.startswith('api-key:'):
         wanted = profile.partition(':')[2]
         env['ANTHROPIC_API_KEY'] = next((v for n, v, _ in config_tool.stored_keys('claude') if not wanted or n == wanted),
@@ -167,8 +186,10 @@ def run_claude(profile, prompt):
                     say(f'{RED}✗ Arquivo de credenciais não encontrado: {creds}{NC}')
                     say(f'{DIM}  Execute: ai --account add {profile}{NC}')
                     return NOT_READY
-                backup = main_creds.read_bytes() if main_creds.exists() else b''
+                had_main = main_creds.exists()
+                backup = main_creds.read_bytes() if had_main else None
                 main_creds.write_bytes(creds.read_bytes())
+                swapped = True
                 say(f'{DIM}  → Credenciais trocadas para perfil: {profile}{NC}')
     emit_provider('claude', profile)
     header(f'{BLUE}🤖 Claude Code{NC}', f'perfil: {profile}')
@@ -181,8 +202,13 @@ def run_claude(profile, prompt):
     try:
         code, output = run(argv, env)
     finally:
-        if backup is not None:
-            main_creds.write_bytes(backup)
+        if swapped:
+            if had_main:
+                main_creds.write_bytes(backup)
+            else:
+                # There was no main login before the swap: remove the borrowed file instead
+                # of leaving an empty one that would look like a broken login.
+                main_creds.unlink(missing_ok=True)
     if hit_limit(output, code):
         remember_limit(f'claude:{profile}', output)
         mark_rate_limited(profile)
@@ -230,7 +256,7 @@ def remember_limit(key, output):
     limits = data.setdefault('limits', {})
     if match:
         text = match.group(0)
-        inner = re.search(r'"message"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"', text)  # JSON error: keep only its message
+        inner = re.search(r'"message"\s*:\s*"((?:[^"\\]|\\.)*)"', text)  # JSON error: keep only its message
         if inner:
             text = inner.group(1)
         text = ' '.join(text.split())[:220]
@@ -274,6 +300,14 @@ def hit_limit(output, code):
     return any(LIMIT_TEXT.search(v) for v in verdicts)
 
 
+def tail_hit_limit(output):
+    """Rate-limit check for the non-Claude tools: look only at the last few non-empty lines
+    of a failed run (the tool's own error), so tool output mentioning 'rate limit' earlier
+    (a log, a diff, a review) can't put the account in cooldown. Mirrors hit_limit's text mode."""
+    tail = [line for line in output.splitlines() if line.strip()][-5:]
+    return any(LIMIT_TEXT.search(line) for line in tail)
+
+
 def over_ceiling(key, fetch, label):
     """Real % of an account before using it: warns past the alert line, and True when it is at or above
     the router's ceiling (routing.usage_skip_percent), so the account is skipped instead of failing."""
@@ -311,7 +345,7 @@ def run_with_key_retry(tool, argv, env_var, label):
         remember_limit(account, output if code != 0 else '')
         if code == 0:
             break
-        if LIMIT_TEXT.search(output[-3000:]):
+        if tail_hit_limit(output):
             mark_rate_limited(account)
     for name, key, origin in config_tool.stored_keys(tool):
         account = key_account(tool, name)
@@ -320,7 +354,7 @@ def run_with_key_retry(tool, argv, env_var, label):
         say(f'{YELLOW}🔑 {label}: tentando com a chave {name}{NC}')
         code, output = run(argv, dict(os.environ, **{env_var: key}))
         remember_limit(account, output if code != 0 else '')
-        if code != 0 and LIMIT_TEXT.search(output[-3000:]):
+        if code != 0 and tail_hit_limit(output):
             mark_rate_limited(account)
     log_usage(tool, 'N/A', 'success' if code == 0 else 'error')
     return code
@@ -1133,7 +1167,7 @@ def main(argv):
         elif arg in ('--status', '-s'):
             show_status()
             return 0
-        elif arg in ('--doctor', 'doctor'):
+        elif arg == '--doctor' or (arg == 'doctor' and len(argv) == 1):
             return doctor()
         elif arg in ('--version', '-v'):
             say(ai_version())

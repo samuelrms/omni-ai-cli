@@ -1392,10 +1392,20 @@ def main(argv=None):
                         display(f"{message['role']} · {message.get('provider', '')}\n{message['content']}\n")
                 elif command in ('/print', '/export'):
                     from . import export as _export
-                    if not session.data['messages']:
+                    # Copy under the lock the queue worker holds while it appends turns, so the
+                    # export sees a consistent snapshot instead of a list mutating mid-read.
+                    with SAVE_LOCK:
+                        snapshot = {
+                            'id': session.id,
+                            'title': session.data.get('title'),
+                            'cwd': session.data.get('cwd', ''),
+                            'created': session.data.get('created'),
+                            'messages': [dict(m) for m in session.data['messages']],
+                        }
+                    if not snapshot['messages']:
                         display('A conversa está vazia; nada para exportar.')
                         continue
-                    conv = _export.normalize(session.data)
+                    conv = _export.normalize(snapshot)
                     if command == '/print':
                         out = os.path.abspath(_export.default_name(conv, 'pdf'))
                         _export.to_pdf(conv, out)

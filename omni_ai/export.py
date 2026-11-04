@@ -64,7 +64,7 @@ def _when(created):
 def default_name(conv, ext):
     """Nome de arquivo estável e legível: omni-<slug>-<data>.<ext>."""
     slug = re.sub(r'[^a-z0-9]+', '-', (conv.get('title') or 'conversa').lower()).strip('-')[:40] or 'conversa'
-    stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M')
+    stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
     return f'omni-{slug}-{stamp}.{ext}'
 
 
@@ -225,6 +225,22 @@ def _content_stream(page_rows):
 def to_pdf(conv, out_path):
     """Escreve a conversa como PDF em ``out_path``. Retorna o caminho."""
     pages = _paginate(_layout(conv))
+
+    # As fontes base-14 só cobrem Latin-1 (cp1252); qualquer coisa fora disso
+    # (emoji, CJK, cirílico…) vira "?" no PDF. Avisa sem interromper.
+    lost = set()
+    for page_rows in pages:
+        for text, _ in page_rows:
+            for char in text:
+                try:
+                    char.encode('cp1252')
+                except UnicodeEncodeError:
+                    lost.add(char)
+    if lost:
+        print(f'Aviso: {len(lost)} caractere(s) fora do Latin-1 viraram "?" no PDF '
+              f'(as fontes padrão do PDF não os cobrem). Use --export para o texto completo.',
+              file=sys.stderr)
+
     objects = []            # bytes de cada objeto, na ordem dos números
 
     def obj(data):
