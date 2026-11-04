@@ -259,9 +259,39 @@ class OmniChatView {
       if (msg.type === 'send') this.send(msg.text, { tool: msg.tool, mode: msg.mode });
       else if (msg.type === 'cancel') this.cancel();
       else if (msg.type === 'attach') this.attachFiles();
+      else if (msg.type === 'doctor') this.runDoctor();
+      else if (msg.type === 'openFile') this.openFile(msg.path);
       else if (msg.type === 'command') vscode.commands.executeCommand(msg.id);
       else if (msg.type === 'ready') { this.sendDefaults(); this.loadLast(); }
     });
+  }
+
+  // Open a file referenced in the chat (cmd/ctrl+click). Resolves relative to the workspace.
+  async openFile(p) {
+    if (!p) return;
+    const path = require('path');
+    const abs = path.isAbsolute(p) ? p : path.join(workspaceCwd(), p);
+    try {
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(abs));
+      await vscode.window.showTextDocument(doc, { preview: true });
+    } catch (e) {
+      vscode.window.showWarningMessage('Omni AI: could not open ' + p);
+    }
+  }
+
+  // Run the health check and stream it into the chat (not a terminal).
+  runDoctor() {
+    if (this.child) return;
+    const bin = config().get('binPath', 'ai');
+    this.post({ type: 'start', prompt: 'doctor' });
+    let child;
+    try { child = spawn(bin, ['--doctor'], { cwd: workspaceCwd(), env: { ...process.env, NO_COLOR: '1' } }); }
+    catch (e) { this.post({ type: 'out', stream: 'err', text: String(e) }); this.post({ type: 'done', code: 1 }); return; }
+    this.child = child;
+    child.stdout.on('data', (d) => this.post({ type: 'out', stream: 'out', text: d.toString() }));
+    child.stderr.on('data', (d) => this.post({ type: 'out', stream: 'err', text: d.toString() }));
+    child.on('error', (e) => this.post({ type: 'out', stream: 'err', text: String(e.message || e) }));
+    child.on('close', (code) => { this.child = null; this.post({ type: 'done', code }); });
   }
 
   resolveWebviewView(view) {
@@ -424,6 +454,8 @@ class OmniChatView {
   .turn .body code { background: var(--vscode-textCodeBlock-background, rgba(127,127,127,.18)); padding: 1px 4px; border-radius: 4px; font-family: var(--vscode-editor-font-family, monospace); font-size: .92em; }
   .turn .body pre { background: var(--vscode-textCodeBlock-background, rgba(127,127,127,.14)); padding: 10px 12px; border-radius: 8px; overflow-x: auto; }
   .turn .body pre code { background: none; padding: 0; }
+  .turn .body code.file { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
+  .turn .body code.file:hover { color: var(--brand2); }
   .dot { width: 14px; height: 14px; border-radius: 50%; background: linear-gradient(135deg, var(--brand1), var(--brand2)); display: inline-block; }
   .err { color: var(--vscode-errorForeground); opacity: .85; }
   #barwrap { padding: 8px 12px 10px; border-top: 1px solid var(--vscode-panel-border); position: relative; }
@@ -445,18 +477,27 @@ class OmniChatView {
   #menu .mi { padding: 6px 10px; cursor: pointer; display: flex; gap: 8px; font-size: 12px; }
   #menu .mi:hover, #menu .mi.sel { background: var(--vscode-list-hoverBackground); }
   #menu .mi b { color: var(--brand2); }
+  #plusmenu { position: absolute; left: 12px; bottom: 100%; margin-bottom: 4px; background: var(--vscode-editorWidget-background, #252526); border: 1px solid var(--vscode-panel-border); border-radius: 8px; overflow: hidden; min-width: 240px; }
+  #plusmenu .mi { padding: 8px 12px; cursor: pointer; font-size: 12px; }
+  #plusmenu .mi:hover { background: var(--vscode-list-hoverBackground); }
 </style></head><body>
 <div id="log">
-  <div id="welcome">
-    ${LOGO}
-    <h1>Omni AI</h1>
-    <div class="tag">Claude · Codex · Cursor · Antigravity · Grok · DeepSeek · OpenRouter — one chat, automatic routing.</div>
-    <div class="hint">Ask anything. Enter sends · Shift+Enter new line · / for commands.</div>
+  <div id="thread" class="col">
+    <div id="welcome">
+      ${LOGO}
+      <h1>Omni AI</h1>
+      <div class="tag">Claude · Codex · Cursor · Antigravity · Grok · DeepSeek · OpenRouter — one chat, automatic routing.</div>
+      <div class="hint">Ask anything. Enter sends · Shift+Enter new line · / for commands.</div>
+    </div>
   </div>
 </div>
 <div id="barwrap">
   <div class="col">
     <div id="menu"></div>
+    <div id="plusmenu" style="display:none">
+      <div class="mi" id="pm-attach">📎 Attach files as context</div>
+      <div class="mi" id="pm-voice">🎙 Voice input (dictate)</div>
+    </div>
     <div id="chips"></div>
     <div id="bar">
       <button id="attach" class="icon-btn" title="Attach files as context">+</button>
@@ -494,6 +535,7 @@ class OmniChatView {
     { cmd: '/default', desc: 'Set mode: default' }
   ];
   var F = String.fromCharCode(96);
+  function isPath(t){ return /\\.(ts|tsx|js|jsx|py|go|rs|java|rb|json|md|ya?ml|sh|css|scss|html|sql|toml|txt)$/i.test(t) || (/\\//.test(t) && /\\.[a-z0-9]+$/i.test(t)); }
   function esc(t){ return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function md(s){
     var codes = [];
@@ -502,7 +544,9 @@ class OmniChatView {
     s = s.replace(/^### (.*)$/gm,'<h3>$1</h3>').replace(/^## (.*)$/gm,'<h2>$1</h2>').replace(/^# (.*)$/gm,'<h1>$1</h1>');
     s = s.replace(/^\\s*[-*] (.*)$/gm,'<li>$1</li>');
     s = s.replace(/(<li>[\\s\\S]*?<\\/li>)/g, function(m){ return '<ul>'+m+'</ul>'; });
-    s = s.replace(new RegExp(F+'([^'+F+']+)'+F,'g'),'<code>$1</code>');
+    s = s.replace(new RegExp(F+'([^'+F+']+)'+F,'g'), function(_, c){
+      return isPath(c) ? '<code class="file" title="Open file" data-p="' + c.replace(/"/g,'&quot;') + '">' + c + '</code>' : '<code>' + c + '</code>';
+    });
     s = s.replace(/\\*\\*([^*]+)\\*\\*/g,'<b>$1</b>').replace(/\\*([^*]+)\\*/g,'<i>$1</i>');
     s = s.replace(/\\[([^\\]]+)\\]\\((https?:[^)]+)\\)/g,'<span class="link">$1</span>');
     s = s.replace(/\\n/g,'<br>');
@@ -512,10 +556,14 @@ class OmniChatView {
   var hhmm = function(d){ return new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
   var dur = function(ms){ return ms >= 60000 ? Math.floor(ms/60000)+'m'+Math.round(ms%60000/1000)+'s' : (ms/1000).toFixed(1)+'s'; };
   function clearWelcome(){ if (welcome && welcome.parentNode) welcome.remove(); }
+  var thread = document.getElementById('thread');
+  thread.addEventListener('click', function(e){
+    var el = e.target;
+    if (el && el.classList && el.classList.contains('file')) { vs.postMessage({ type: 'openFile', path: el.getAttribute('data-p') }); }
+  });
   function turn(role, text, time){
     clearWelcome();
     var d = document.createElement('div'); d.className = 'turn ' + role;
-    var inner = document.createElement('div'); inner.className = 'col';
     var who = document.createElement('div'); who.className = 'who';
     if (role === 'assistant'){ var dot = document.createElement('span'); dot.className = 'dot'; who.appendChild(dot); who.appendChild(document.createTextNode('Omni')); }
     else { who.textContent = 'You'; }
@@ -524,10 +572,10 @@ class OmniChatView {
     who.appendChild(meta);
     var body = document.createElement('div'); body.className = 'body'; body._raw = text || '';
     body.innerHTML = md(body._raw);
-    inner.appendChild(who); inner.appendChild(body); d.appendChild(inner); log.appendChild(d); log.scrollTop = log.scrollHeight;
+    d.appendChild(who); d.appendChild(body); thread.appendChild(d); log.scrollTop = log.scrollHeight;
     return { body: body, meta: meta };
   }
-  function act(text){ clearWelcome(); var d = document.createElement('div'); d.className = 'act col'; d.textContent = text; log.appendChild(d); log.scrollTop = log.scrollHeight; }
+  function act(text){ clearWelcome(); var d = document.createElement('div'); d.className = 'act'; d.textContent = text; thread.appendChild(d); log.scrollTop = log.scrollHeight; }
   function autosize(){ q.style.height = 'auto'; q.style.height = Math.min(q.scrollHeight, 160) + 'px'; }
   function send(){
     var text = q.value.trim(); if (!text) return;
@@ -538,12 +586,26 @@ class OmniChatView {
   }
   function runCommand(cmd){
     q.value = ''; hideMenu(); autosize();
-    if (cmd === '/clear'){ log.innerHTML = ''; }
-    else if (cmd === '/doctor'){ vs.postMessage({ type: 'command', id: 'omni-ai.doctor' }); }
+    if (cmd === '/clear'){ thread.innerHTML = ''; }
+    else if (cmd === '/doctor'){
+      turn('user', '/doctor', Date.now());
+      answer = null; header = null; sendTime = Date.now(); firstOut = 0;
+      sendBtn.disabled = true; stopBtn.disabled = false;
+      vs.postMessage({ type: 'doctor' });
+    }
     else if (cmd === '/history'){ vs.postMessage({ type: 'command', id: 'omni-ai.history.focus' }); }
     else if (cmd === '/plan'){ modeSel.value = 'plan'; }
     else if (cmd === '/edits'){ modeSel.value = 'edits'; }
     else if (cmd === '/default'){ modeSel.value = 'default'; }
+  }
+  function startVoice(){
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR){ act('Voice input is not available in this webview.'); return; }
+    var r = new SR(); r.lang = navigator.language || 'en-US'; r.interimResults = true; r.continuous = false;
+    var base = q.value;
+    r.onresult = function(ev){ var t = ''; for (var i = 0; i < ev.results.length; i++) t += ev.results[i][0].transcript; q.value = (base ? base + ' ' : '') + t; autosize(); };
+    r.onerror = function(){ act('Voice input error (check mic permission).'); };
+    try { r.start(); act('🎙 listening…'); } catch (e) { act('Voice input could not start.'); }
   }
   function matches(){ var v = q.value.trim().toLowerCase(); return COMMANDS.filter(function(c){ return c.cmd.indexOf(v) === 0; }); }
   function showMenu(){
@@ -559,7 +621,11 @@ class OmniChatView {
     menu.style.display = 'block';
   }
   function hideMenu(){ menu.style.display = 'none'; menuIdx = 0; }
-  attachBtn.onclick = function(){ vs.postMessage({ type: 'attach' }); };
+  var plusmenu = document.getElementById('plusmenu');
+  attachBtn.onclick = function(){ plusmenu.style.display = plusmenu.style.display === 'none' ? 'block' : 'none'; };
+  document.getElementById('pm-attach').onclick = function(){ plusmenu.style.display = 'none'; vs.postMessage({ type: 'attach' }); };
+  document.getElementById('pm-voice').onclick = function(){ plusmenu.style.display = 'none'; startVoice(); };
+  document.addEventListener('click', function(e){ if (!plusmenu.contains(e.target) && e.target !== attachBtn) plusmenu.style.display = 'none'; });
   sendBtn.onclick = send;
   stopBtn.onclick = function(){ vs.postMessage({ type: 'cancel' }); };
   q.addEventListener('input', function(){ autosize(); showMenu(); });
