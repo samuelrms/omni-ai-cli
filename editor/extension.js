@@ -217,6 +217,11 @@ function safeJson(text, fallback) {
   try { return JSON.parse(text); } catch (e) { return fallback; }
 }
 
+function firstLine(s) {
+  const line = String(s).split('\n')[0].trim();
+  return line.length > 80 ? line.slice(0, 79) + '…' : line;
+}
+
 /** Sidebar chat: spawns `ai` per prompt and streams its output into a webview. */
 function workspaceCwd() {
   return (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0])
@@ -236,9 +241,9 @@ class OmniChatView {
     webview.options = { enableScripts: true };
     webview.html = this.html();
     webview.onDidReceiveMessage((msg) => {
-      if (msg.type === 'send') this.send(msg.text);
+      if (msg.type === 'send') this.send(msg.text, { tool: msg.tool, mode: msg.mode });
       else if (msg.type === 'cancel') this.cancel();
-      else if (msg.type === 'ready') this.loadLast();
+      else if (msg.type === 'ready') { this.sendDefaults(); this.loadLast(); }
     });
   }
 
@@ -278,25 +283,89 @@ class OmniChatView {
     }
   }
 
-  send(text) {
+  // Tell the webview the configured defaults so the mode/tool pickers start in sync.
+  sendDefaults() {
+    const cfg = config();
+    this.post({ type: 'defaults', tool: cfg.get('tool', 'auto'), mode: cfg.get('mode', 'default') });
+  }
+
+  send(text, opts) {
     if (!text || !text.trim()) return;
     if (this.child) return; // one request at a time
+    opts = opts || {};
     const cfg = config();
     const bin = cfg.get('binPath', 'ai');
+    const tool = opts.tool || cfg.get('tool', 'auto');
+    const mode = opts.mode || cfg.get('mode', 'default');
+    const args = [];
+    if (tool && tool !== 'auto') args.push('--' + tool);
+    if (mode && mode !== 'default') args.push('--mode', mode);
+    args.push('--', text);
     this.post({ type: 'start', prompt: text });
     let child;
     try {
-      child = spawn(bin, [...baseArgs(), text], { cwd: workspaceCwd(), env: { ...process.env, NO_COLOR: '1' } });
+      // SMART_AI_EVENTS makes the router emit JSON events (route, provider, actions, answer),
+      // so the panel can show the thinking/activity like the other tools.
+      child = spawn(bin, args, { cwd: workspaceCwd(), env: { ...process.env, NO_COLOR: '1', SMART_AI_EVENTS: '1' } });
     } catch (e) {
       this.post({ type: 'out', stream: 'err', text: String(e) });
       this.post({ type: 'done', code: 1 });
       return;
     }
     this.child = child;
-    child.stdout.on('data', (d) => this.post({ type: 'out', stream: 'out', text: d.toString() }));
+    let buf = '';
+    const feed = (chunk) => {
+      buf += chunk;
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+        this._event(line);
+      }
+    };
+    child.stdout.on('data', (d) => feed(d.toString()));
     child.stderr.on('data', (d) => this.post({ type: 'out', stream: 'err', text: d.toString() }));
     child.on('error', (e) => this.post({ type: 'out', stream: 'err', text: String(e.message || e) }));
-    child.on('close', (code) => { this.child = null; this.post({ type: 'done', code }); });
+    child.on('close', (code) => { if (buf.trim()) this._event(buf); this.child = null; this.post({ type: 'done', code }); });
+  }
+
+  // Map one router event line to a webview update: activity ('act') or answer text ('out').
+  _event(line) {
+    line = line.trim();
+    if (!line) return;
+    let ev;
+    try { ev = JSON.parse(line); } catch (e) {
+      // non-JSON line = plain answer text (e.g. a tool that does not emit events)
+      this.post({ type: 'out', stream: 'out', text: line + '\n' });
+      return;
+    }
+    const kind = ev.type;
+    const act = (text) => this.post({ type: 'act', text });
+    const answer = (text) => { if (text) this.post({ type: 'out', stream: 'out', text }); };
+    if (kind === 'smart.route') {
+      act((ev.label === 'complex' ? '⤷ complex task → Claude' : '⤷ simple → alternative') + (ev.by ? ' · ' + ev.by : ''));
+    } else if (kind === 'smart.provider') {
+      act('● ' + ev.provider + (ev.profile ? ' · ' + ev.profile : ''));
+    } else if (kind === 'smart.delta') {
+      answer(ev.text || '');
+    } else if (kind === 'smart.answer') {
+      answer(ev.content || '');
+    } else if (kind === 'item.started' || kind === 'item.completed') {
+      const it = ev.item || {}; const done = kind === 'item.completed';
+      if (it.type === 'agent_message' && done) answer(it.text || '');
+      else if (it.type === 'command_execution') act((done ? '✓ ran' : '● running') + ' ' + firstLine(it.command || ''));
+      else if (it.type === 'file_change' && done) act('✎ edited ' + (it.changes || []).map((c) => c.path).join(', '));
+      else if (it.type === 'mcp_tool_call' && !done) act('⚙ ' + (it.server || '') + ' · ' + (it.tool || ''));
+      else if (it.type === 'web_search' && !done) act('🔎 ' + firstLine(it.query || ''));
+    } else if (kind === 'assistant') {
+      for (const b of ((ev.message || {}).content || [])) {
+        if (b.type === 'text') answer(b.text || '');
+        else if (b.type === 'thinking') act('… ' + firstLine(b.thinking || b.text || 'thinking'));
+        else if (b.type === 'tool_use') act('⚙ ' + (b.name || 'tool'));
+      }
+    } else if (kind === 'result') {
+      if (ev.is_error) this.post({ type: 'out', stream: 'err', text: String(ev.result || 'error') });
+      else answer(ev.result || '');
+    }
   }
 
   html() {
@@ -333,7 +402,10 @@ class OmniChatView {
   #send { background: linear-gradient(135deg, var(--brand1), var(--brand2)); }
   #stop { background: var(--vscode-button-secondaryBackground, #444); }
   .icon-btn:disabled { opacity: .4; cursor: default; }
-  .foot { font-size: 11px; opacity: .5; margin-top: 6px; text-align: center; }
+  .act { font-size: 12px; opacity: .6; margin: 4px 0; font-style: italic; }
+  .controls { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+  .controls label { font-size: 11px; opacity: .6; }
+  .controls select { background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, #3a3a3a); border-radius: 6px; padding: 2px 6px; font: inherit; font-size: 11px; }
 </style></head><body>
 <div id="log">
   <div id="welcome">
@@ -349,31 +421,49 @@ class OmniChatView {
     <button id="stop" class="icon-btn" title="Stop" disabled>◼</button>
     <button id="send" class="icon-btn" title="Send">↑</button>
   </div>
-  <div class="foot">omni · routes to the best tool</div>
+  <div class="controls">
+    <label>tool</label>
+    <select id="tool">
+      <option value="auto">auto</option><option>claude</option><option>codex</option><option>cursor</option>
+      <option value="agy">antigravity</option><option>openrouter</option><option>grok</option><option>deepseek</option>
+    </select>
+    <label>mode</label>
+    <select id="mode">
+      <option value="default">default</option><option>plan</option><option>edits</option><option>auto</option><option>yolo</option>
+    </select>
+  </div>
 </div>
 <script>
   const vs = acquireVsCodeApi();
   const log = document.getElementById('log'), q = document.getElementById('q');
   const sendBtn = document.getElementById('send'), stopBtn = document.getElementById('stop');
+  const toolSel = document.getElementById('tool'), modeSel = document.getElementById('mode');
   const welcome = document.getElementById('welcome');
-  let answer = null;
+  let answer = null, header = null, sendTime = 0, firstOut = 0;
+  const hhmm = (d) => new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const dur = (ms) => ms >= 60000 ? Math.floor(ms / 60000) + 'm' + Math.round(ms % 60000 / 1000) + 's' : (ms / 1000).toFixed(1) + 's';
   function clearWelcome() { if (welcome && welcome.parentNode) welcome.remove(); }
-  function turn(role, text) {
+  function turn(role, text, time) {
     clearWelcome();
     const d = document.createElement('div'); d.className = 'turn ' + role;
     const who = document.createElement('div'); who.className = 'who';
     if (role === 'assistant') { const dot = document.createElement('span'); dot.className = 'dot'; who.appendChild(dot); who.appendChild(document.createTextNode('Omni')); }
     else { who.textContent = 'You'; }
+    const meta = document.createElement('span'); meta.className = 'act'; meta.style.marginLeft = '8px'; meta.style.fontStyle = 'normal';
+    if (time) meta.textContent = hhmm(time);
+    who.appendChild(meta);
     const body = document.createElement('div'); body.textContent = text || '';
     d.appendChild(who); d.appendChild(body); log.appendChild(d); log.scrollTop = log.scrollHeight;
-    return body;
+    return { body, meta };
   }
+  function act(text) { clearWelcome(); const d = document.createElement('div'); d.className = 'act'; d.textContent = text; log.appendChild(d); log.scrollTop = log.scrollHeight; }
   function autosize() { q.style.height = 'auto'; q.style.height = Math.min(q.scrollHeight, 160) + 'px'; }
   function send() {
     const text = q.value.trim(); if (!text) return;
-    turn('user', text); q.value = ''; autosize(); answer = turn('assistant', '');
+    turn('user', text, Date.now()); q.value = ''; autosize();
+    answer = null; header = null; sendTime = Date.now(); firstOut = 0;
     sendBtn.disabled = true; stopBtn.disabled = false;
-    vs.postMessage({ type: 'send', text });
+    vs.postMessage({ type: 'send', text, tool: toolSel.value, mode: modeSel.value });
   }
   sendBtn.onclick = send;
   stopBtn.onclick = () => vs.postMessage({ type: 'cancel' });
@@ -384,14 +474,24 @@ class OmniChatView {
     if (m.type === 'history') {
       for (const msg of (m.messages || [])) turn(msg.role === 'assistant' ? 'assistant' : 'user', msg.content);
       answer = null;
+    } else if (m.type === 'defaults') {
+      if (m.tool) toolSel.value = m.tool; if (m.mode) modeSel.value = m.mode;
     } else if (m.type === 'seed') {
       q.value = m.text; autosize(); q.focus();
+    } else if (m.type === 'act') {
+      act(m.text);
     } else if (m.type === 'out') {
-      if (m.stream === 'err') { const e2 = turn('assistant', ''); e2.className = 'err'; e2.textContent = m.text; }
-      else { if (!answer) answer = turn('assistant', ''); answer.textContent += m.text; }
+      if (m.stream === 'err') { act('✗ ' + m.text); }
+      else {
+        if (!answer) { const t = turn('assistant', ''); answer = t.body; header = t.meta; }
+        if (!firstOut) { firstOut = Date.now(); if (header) header.textContent = 'thought ' + dur(firstOut - sendTime); }
+        answer.textContent += m.text;
+      }
       log.scrollTop = log.scrollHeight;
     } else if (m.type === 'done') {
-      sendBtn.disabled = false; stopBtn.disabled = true; answer = null;
+      sendBtn.disabled = false; stopBtn.disabled = true;
+      if (header && sendTime) header.textContent = (firstOut ? 'thought ' + dur(firstOut - sendTime) + ' · ' : '') + 'done ' + hhmm(Date.now()) + ' · ' + dur(Date.now() - sendTime);
+      answer = null; header = null;
     }
   });
   vs.postMessage({ type: 'ready' });
