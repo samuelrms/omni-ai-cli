@@ -37,7 +37,9 @@ function gitRoot(cwd) {
 function changedSnapshot(cwd) {
   const root = gitRoot(cwd);
   const map = {};
-  gitStatusPaths(cwd).forEach((p) => { try { map[p] = fs.statSync(path.join(root, p)).mtimeMs; } catch (e) { map[p] = -1; } });
+  gitStatusPaths(cwd).forEach((p) => {
+    try { const st = fs.statSync(path.join(root, p)); map[p] = st.mtimeMs + ':' + st.size; } catch (e) { /* skip unstattable */ }
+  });
   return map;
 }
 
@@ -556,7 +558,8 @@ class OmniChatView {
       const files = new Set(this._changed || []);
       const after = changedSnapshot(workspaceCwd());
       const before = this._gitBefore || {};
-      Object.keys(after).forEach((p) => { if (!(p in before) || after[p] > before[p] || after[p] === -1) files.add(p); });
+      // A file counts as touched this turn only if it is newly dirty, or its signature changed.
+      Object.keys(after).forEach((p) => { if (!(p in before) || after[p] !== before[p]) files.add(p); });
       if (files.size) this.post({ type: 'changes', files: Array.from(files) });
       this.post({ type: 'done', code });
     });
