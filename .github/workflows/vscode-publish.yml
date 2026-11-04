@@ -24,6 +24,21 @@ jobs:
       - name: Match the released version
         if: github.event_name == 'release'
         run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+      # Keep the store's "Changes" tab fresh from the GitHub releases.
+      - name: Refresh changelog from releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "# Changelog"
+            echo
+            echo "History of the Omni AI CLI editor extension (shares its version with the npm package)."
+            echo
+            gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName --jq '.[].tagName' | while read -r tag; do
+              gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json body --jq .body
+              echo
+            done
+          } > CHANGELOG.md
       - name: Package
         run: vsce package --no-dependencies -o omni-ai-cli.vsix
       # Open VSX (Cursor) first and on its own, so a Marketplace hiccup never blocks it.

@@ -4,6 +4,18 @@ All notable changes to the Omni AI CLI editor extension are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/). The
 extension shares its version with the `omni-ai-cli` package.
 
+## 1.12.0 — 2026-11-04
+
+### Added
+- `/print` — export the current conversation to a PDF, to archive or send to the analysis team. Generated locally with no external dependencies, with correct accents and pagination.
+- `/export [model]` — generate a handoff summary of the conversation (history plus a continuity instruction) to keep going in another assistant/LLM; copied to the clipboard when available. An optional model name tailors the preamble.
+- Both commands work in the terminal chat and in the editor extension.
+
+## 1.11.1 — 2026-11-04
+
+### Fixed
+- The extension package now bundles a changelog, so the store's "Changes" tab shows the version history instead of "No changelog available".
+
 ## 1.11.0 — 2026-11-04
 
 ### Added
