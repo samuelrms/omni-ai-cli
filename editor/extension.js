@@ -241,14 +241,14 @@ class OmniChatView {
 
   convKey() { return 'omni.conv.' + workspaceCwd(); }
   loadConv() { try { return this.context.workspaceState.get(this.convKey(), []); } catch (e) { return []; } }
-  saveTurn(user, assistant) {
+  pushHistory() {
     try {
       const hist = this.loadConv();
-      hist.push({ role: 'user', content: user });
-      hist.push({ role: 'assistant', content: assistant });
+      for (let i = 0; i < arguments.length; i++) hist.push(arguments[i]);
       this.context.workspaceState.update(this.convKey(), hist.slice(-200));
     } catch (e) { /* ignore */ }
   }
+  saveTurn(user, assistant) { this.pushHistory({ role: 'user', content: user }, { role: 'assistant', content: assistant }); }
   clearConv() { try { this.context.workspaceState.update(this.convKey(), []); } catch (e) {} }
 
   async attachFiles() {
@@ -274,8 +274,8 @@ class OmniChatView {
       if (msg.type === 'send') this.send(msg.text, { tool: msg.tool, mode: msg.mode });
       else if (msg.type === 'cancel') this.cancel();
       else if (msg.type === 'attach') this.attachFiles();
-      else if (msg.type === 'doctor') this.runCli(['--doctor']);
-      else if (msg.type === 'cli') this.runCli(msg.args);
+      else if (msg.type === 'doctor') this.runCli(['--doctor'], '/doctor');
+      else if (msg.type === 'cli') this.runCli(msg.args, msg.label);
       else if (msg.type === 'openFile') this.openFile(msg.path);
       else if (msg.type === 'setDefault') { try { config().update(msg.key, msg.value, true); } catch (e) {} }
       else if (msg.type === 'newConversation') this.clearConv();
@@ -311,19 +311,25 @@ class OmniChatView {
   }
 
   // Run a CLI subcommand (e.g. --usage, --status, --doctor) and stream it into the chat as preformatted text.
-  runCli(args) {
+  runCli(args, label) {
     if (this.child) return;
     if (!Array.isArray(args) || !args.length) { this.post({ type: 'done', code: 0 }); return; }
     const bin = config().get('binPath', 'ai');
-    this.post({ type: 'start' });
+    label = label || ('/' + args.join(' ').replace(/^--/, ''));
+    let acc = '';
+    this.post({ type: 'cliBegin', label });
     let child;
     try { child = spawn(bin, args, { cwd: workspaceCwd(), env: { ...process.env, NO_COLOR: '1' } }); }
     catch (e) { this.post({ type: 'out', stream: 'err', text: String(e) }); this.post({ type: 'done', code: 1 }); return; }
     this.child = child;
-    child.stdout.on('data', (d) => this.post({ type: 'out', stream: 'out', pre: true, text: d.toString() }));
+    child.stdout.on('data', (d) => { const t = d.toString(); acc += t; this.post({ type: 'out', stream: 'out', pre: true, text: t }); });
     child.stderr.on('data', (d) => this.post({ type: 'out', stream: 'err', text: d.toString() }));
     child.on('error', (e) => this.post({ type: 'out', stream: 'err', text: String(e.message || e) }));
-    child.on('close', (code) => { this.child = null; this.post({ type: 'done', code }); });
+    child.on('close', (code) => {
+      this.child = null;
+      if (acc.trim()) this.pushHistory({ role: 'user', content: label }, { role: 'cli', label, content: acc });
+      this.post({ type: 'done', code });
+    });
   }
 
   resolveWebviewView(view) {
@@ -543,6 +549,10 @@ class OmniChatView {
   .tool .tout { font-size: 12px; opacity: .85; white-space: pre-wrap; background: var(--vscode-textCodeBlock-background, rgba(127,127,127,.12)); padding: 6px 8px; border-radius: 6px; margin-top: 4px; max-height: 320px; overflow: auto; font-family: var(--vscode-editor-font-family, monospace); }
   .tool.fail > summary { color: var(--vscode-errorForeground); }
   .mermaid { background: var(--vscode-textCodeBlock-background, rgba(127,127,127,.08)); border-radius: 8px; padding: 8px; margin: 6px 0; text-align: center; }
+  .clicard { align-self: stretch; border: 1px solid var(--vscode-panel-border); border-radius: 10px; overflow: hidden; margin: 2px 0; }
+  .clihead { font-size: 11px; padding: 4px 10px; background: rgba(124,92,255,.14); font-family: var(--vscode-editor-font-family, monospace); opacity: .85; border-bottom: 1px solid var(--vscode-panel-border); }
+  .clicard .body { padding: 0; }
+  .clicard .body pre { margin: 0; border-radius: 0; background: transparent; font-size: 12px; padding: 8px 10px; }
   .turn .body { word-break: break-word; }
   .turn .body p { margin: 6px 0; }
   .turn .body h1,.turn .body h2,.turn .body h3 { margin: 10px 0 4px; }
@@ -730,6 +740,31 @@ class OmniChatView {
     return cur;
   }
   function ensureAssistant(){ if (!cur) startAssistant(); return cur; }
+  // A CLI command result (e.g. /usage): a bordered card with a command header and monospace body.
+  function startCliCard(label){
+    clearWelcome();
+    var d = document.createElement('div'); d.className = 'turn assistant';
+    var who = document.createElement('div'); who.className = 'who'; var dot = document.createElement('span'); dot.className = 'dot'; who.appendChild(dot); who.appendChild(document.createTextNode('Omni'));
+    var card = document.createElement('div'); card.className = 'clicard';
+    var head = document.createElement('div'); head.className = 'clihead'; head.textContent = '⚙ ' + (label || 'command');
+    var body = document.createElement('div'); body.className = 'body'; body._raw = '';
+    card.appendChild(head); card.appendChild(body);
+    var foot = document.createElement('div'); foot.className = 'foot'; foot.textContent = '';
+    d.appendChild(who); d.appendChild(card); d.appendChild(foot);
+    thread.appendChild(d); scroll();
+    cur = { el: d, steps: null, think: null, thinkBody: null, body: body, foot: foot, start: Date.now(), firstOut: 0, pre: true, cli: true };
+    return cur;
+  }
+  function cliStatic(label, content){
+    clearWelcome();
+    var d = document.createElement('div'); d.className = 'turn assistant';
+    var who = document.createElement('div'); who.className = 'who'; var dot = document.createElement('span'); dot.className = 'dot'; who.appendChild(dot); who.appendChild(document.createTextNode('Omni'));
+    var card = document.createElement('div'); card.className = 'clicard';
+    var head = document.createElement('div'); head.className = 'clihead'; head.textContent = '⚙ ' + (label || 'command');
+    var body = document.createElement('div'); body.className = 'body'; body.innerHTML = '<pre>' + esc(content || '') + '</pre>';
+    card.appendChild(head); card.appendChild(body);
+    d.appendChild(who); d.appendChild(card); thread.appendChild(d); scroll();
+  }
   function stepLine(text){ var c = ensureAssistant(); var l = document.createElement('div'); l.className = 'line'; l.textContent = text; c.steps.appendChild(l); scroll(); }
   function toolStart(label, cmd){ var c = ensureAssistant(); var d = document.createElement('details'); d.className = 'tool'; var s = document.createElement('summary'); s.textContent = (label || '$') + ' ' + (cmd || ''); var pre = document.createElement('pre'); pre.className = 'tout'; pre.textContent = '…'; d.appendChild(s); d.appendChild(pre); c.steps.appendChild(d); c.tool = d; c.toolPre = pre; scroll(); }
   function toolDone(output, failed){ var c = cur; if (!c || !c.toolPre){ return; } c.toolPre.textContent = (output && output.trim()) ? output : '(no output)'; if (failed) c.tool.classList.add('fail'); c.tool = null; c.toolPre = null; scroll(); }
@@ -737,10 +772,8 @@ class OmniChatView {
   function outAppend(text, pre){ var c = ensureAssistant(); if (!c.firstOut){ c.firstOut = Date.now(); c.pre = !!pre; } c.body._raw += text; c.body.innerHTML = c.pre ? ('<pre>' + esc(c.body._raw) + '</pre>') : md(c.body._raw); scroll(); }
   function finishTurn(){
     if (!cur) return;
-    cur.steps.classList.remove('live');
-    cur.steps.querySelector('summary').textContent = 'Steps';
-    cur.steps.open = false;
-    if (!cur.think.querySelector('.r').textContent) cur.think.style.display = 'none'; else cur.think.open = false;
+    if (cur.steps){ cur.steps.classList.remove('live'); cur.steps.querySelector('summary').textContent = 'Steps'; cur.steps.open = false; }
+    if (cur.think){ if (!cur.think.querySelector('.r').textContent) cur.think.style.display = 'none'; else cur.think.open = false; }
     var end = Date.now();
     var parts = [];
     if (cur.firstOut) parts.push('thought ' + dur(cur.firstOut - cur.start));
@@ -841,7 +874,7 @@ class OmniChatView {
   window.addEventListener('message', function(e){
     var m = e.data;
     if (m.type === 'history'){
-      (m.messages || []).forEach(function(msg){ if (msg.role === 'assistant') assistantStatic(msg.content); else userTurn(msg.content); });
+      (m.messages || []).forEach(function(msg){ if (msg.role === 'cli') cliStatic(msg.label, msg.content); else if (msg.role === 'assistant') assistantStatic(msg.content); else userTurn(msg.content); });
       cur = null;
     } else if (m.type === 'defaults'){
       if (m.tool) toolSel.value = m.tool; if (m.mode) modeSel.value = m.mode;
@@ -856,6 +889,8 @@ class OmniChatView {
       q.value = m.text; autosize(); q.focus();
     } else if (m.type === 'start'){
       cur = null;
+    } else if (m.type === 'cliBegin'){
+      startCliCard(m.label);
     } else if (m.type === 'act'){
       stepLine(m.text);
     } else if (m.type === 'tool'){
