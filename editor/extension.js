@@ -573,11 +573,17 @@ class OmniChatView {
       if (this._saving) { if (this._acc.trim()) this.saveTurn(this._user, this._acc.trim()); this._saving = false; }
       const root = gitRoot(workspaceCwd());
       const norm = (p) => { let q = p; if (path.isAbsolute(q)) { const rel = path.relative(root, q); if (rel && !rel.startsWith('..')) q = rel; } return q; };
-      const files = new Set(Array.from(this._changed || []).map(norm));
-      const after = changedSnapshot(workspaceCwd());
-      const before = this._gitBefore || {};
-      // A file counts as touched this turn only if it is newly dirty, or its signature changed.
-      Object.keys(after).forEach((p) => { if (!(p in before) || after[p] !== before[p]) files.add(norm(p)); });
+      let files;
+      if (this._changed && this._changed.size) {
+        // The tool reported exactly which files it edited — use only those.
+        files = new Set(Array.from(this._changed).map(norm));
+      } else {
+        // Tool emitted no file events: fall back to git, limited to files touched this turn.
+        files = new Set();
+        const after = changedSnapshot(workspaceCwd());
+        const before = this._gitBefore || {};
+        Object.keys(after).forEach((p) => { if (!(p in before) || after[p] !== before[p]) files.add(norm(p)); });
+      }
       if (files.size) { const arr = Array.from(files); this.pushHistory({ role: 'changes', files: arr, ts: Date.now() }); this.post({ type: 'changes', files: arr }); }
       this.post({ type: 'done', code });
     });
