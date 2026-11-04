@@ -73,6 +73,22 @@ jobs:
         run: npm install -g @vscode/vsce@latest ovsx@latest
       - name: Set version
         run: npm version "${{ needs.release.outputs.version }}" --no-git-tag-version --allow-same-version
+      # Always rebuild the changelog from the GitHub releases so the store's "Changes"
+      # tab is never stale, no matter if someone forgot to edit the file by hand.
+      - name: Refresh changelog from releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "# Changelog"
+            echo
+            echo "History of the Omni AI CLI editor extension (shares its version with the npm package)."
+            echo
+            gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName --jq '.[].tagName' | while read -r tag; do
+              gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json body --jq .body
+              echo
+            done
+          } > CHANGELOG.md
       - name: Package
         run: vsce package --no-dependencies -o omni-ai-cli.vsix
       - name: Check Open VSX token
