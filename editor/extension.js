@@ -462,15 +462,33 @@ class OmniChatView {
     } else if (kind === 'item.started' || kind === 'item.completed') {
       const it = ev.item || {}; const done = kind === 'item.completed';
       if (it.type === 'agent_message' && done) answer(it.text || '');
-      else if (it.type === 'command_execution') act((done ? '✓ ran' : '● running') + ' ' + firstLine(it.command || ''));
+      else if (it.type === 'command_execution') {
+        if (!done) this.post({ type: 'tool', label: '$', cmd: it.command || '' });
+        else this.post({ type: 'toolDone', output: it.aggregated_output || '', failed: it.exit_code != null && it.exit_code !== 0 });
+      }
       else if (it.type === 'file_change' && done) act('✎ edited ' + (it.changes || []).map((c) => c.path).join(', '));
-      else if (it.type === 'mcp_tool_call' && !done) act('⚙ ' + (it.server || '') + ' · ' + (it.tool || ''));
+      else if (it.type === 'mcp_tool_call') {
+        if (!done) this.post({ type: 'tool', label: '⚙', cmd: (it.server || '') + ' · ' + (it.tool || '') });
+        else this.post({ type: 'toolDone', output: JSON.stringify(it.result || it.error || '', null, 2), failed: it.status === 'failed' });
+      }
       else if (it.type === 'web_search' && !done) act('🔎 ' + firstLine(it.query || ''));
     } else if (kind === 'assistant') {
       for (const b of ((ev.message || {}).content || [])) {
         if (b.type === 'text') answer(b.text || '');
         else if (b.type === 'thinking') this.post({ type: 'think', text: b.thinking || b.text || '' });
-        else if (b.type === 'tool_use') act('⚙ ' + (b.name || 'tool'));
+        else if (b.type === 'tool_use') {
+          const inp = b.input || {};
+          const cmd = inp.command || inp.cmd || inp.file_path || inp.path || inp.query || JSON.stringify(inp);
+          this.post({ type: 'tool', label: b.name === 'Bash' ? '$' : '⚙', cmd: (b.name && b.name !== 'Bash' ? b.name + ' ' : '') + String(cmd || '') });
+        }
+      }
+    } else if (kind === 'user') {
+      for (const b of ((ev.message || {}).content || [])) {
+        if (b.type === 'tool_result') {
+          let c = b.content;
+          if (Array.isArray(c)) c = c.map((x) => (x && x.text) || '').join('\n');
+          this.post({ type: 'toolDone', output: String(c || ''), failed: !!b.is_error });
+        }
       }
     } else if (kind === 'result') {
       if (ev.is_error) this.post({ type: 'out', stream: 'err', text: String(ev.result || 'error') });
@@ -517,6 +535,14 @@ class OmniChatView {
   .think { align-self: stretch; margin: 2px 0 6px; }
   .think summary { font-size: 12px; opacity: .7; cursor: pointer; }
   .think .r { font-size: 12.5px; opacity: .75; white-space: pre-wrap; border-left: 2px solid var(--brand2); padding-left: 10px; margin-top: 4px; }
+  .tool { align-self: stretch; margin: 3px 0 3px 6px; }
+  .tool > summary { font-size: 12px; opacity: .75; cursor: pointer; font-family: var(--vscode-editor-font-family, monospace); white-space: pre-wrap; list-style: none; }
+  .tool > summary::-webkit-details-marker { display: none; }
+  .tool > summary::before { content: '▸ '; opacity: .6; }
+  .tool[open] > summary::before { content: '▾ '; }
+  .tool .tout { font-size: 12px; opacity: .85; white-space: pre-wrap; background: var(--vscode-textCodeBlock-background, rgba(127,127,127,.12)); padding: 6px 8px; border-radius: 6px; margin-top: 4px; max-height: 320px; overflow: auto; font-family: var(--vscode-editor-font-family, monospace); }
+  .tool.fail > summary { color: var(--vscode-errorForeground); }
+  .mermaid { background: var(--vscode-textCodeBlock-background, rgba(127,127,127,.08)); border-radius: 8px; padding: 8px; margin: 6px 0; text-align: center; }
   .turn .body { word-break: break-word; }
   .turn .body p { margin: 6px 0; }
   .turn .body h1,.turn .body h2,.turn .body h3 { margin: 10px 0 4px; }
@@ -588,8 +614,10 @@ class OmniChatView {
     </div>
   </div>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.3/dist/mermaid.min.js"></script>
 <script>
   var vs = acquireVsCodeApi();
+  try { if (window.mermaid) window.mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'default' }); } catch (e) {}
   var log = document.getElementById('log'), q = document.getElementById('q');
   var sendBtn = document.getElementById('send'), stopBtn = document.getElementById('stop'), attachBtn = document.getElementById('attach');
   var toolSel = document.getElementById('tool'), modeSel = document.getElementById('mode');
@@ -646,12 +674,28 @@ class OmniChatView {
     s = s.replace(/\\*\\*([^*]+)\\*\\*/g,'<b>$1</b>').replace(/\\*([^*]+)\\*/g,'<i>$1</i>');
     s = s.replace(/\\[([^\\]]+)\\]\\((https?:[^)]+)\\)/g,'<span class="link">$1</span>');
     s = s.replace(/\\n/g,'<br>');
-    s = s.replace(/\\u0000(\\d+)\\u0000/g, function(_,i){ return '<pre><code>'+esc(codes[i])+'</code></pre>'; });
+    s = s.replace(/\\u0000(\\d+)\\u0000/g, function(_, i){
+      var raw = codes[i];
+      var first = raw.match(/^([^\\n]*)\\n([\\s\\S]*)$/);
+      var lang = '', body = raw;
+      if (first && /^[a-zA-Z0-9_+#-]{1,15}$/.test(first[1].trim())){ lang = first[1].trim().toLowerCase(); body = first[2]; }
+      if (lang === 'mermaid'){ return '<div class="mermaid" data-code="' + encodeURIComponent(body) + '"></div>'; }
+      return '<pre><code>' + esc(lang ? body : raw) + '</code></pre>';
+    });
     return s;
   }
   var hhmm = function(d){ return new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
   var dur = function(ms){ return ms >= 60000 ? Math.floor(ms/60000)+'m'+Math.round(ms%60000/1000)+'s' : (ms/1000).toFixed(1)+'s'; };
   function clearWelcome(){ if (welcome && welcome.parentNode) welcome.remove(); }
+  function renderMermaid(){
+    if (!window.mermaid) return;
+    var els = thread.querySelectorAll('.mermaid:not([data-done])');
+    Array.prototype.forEach.call(els, function(el){
+      el.setAttribute('data-done', '1');
+      try { el.textContent = decodeURIComponent(el.getAttribute('data-code') || ''); } catch (e) { el.textContent = el.getAttribute('data-code') || ''; }
+      try { window.mermaid.run({ nodes: [el] }); } catch (e) { /* leave as text on parse error */ }
+    });
+  }
   var thread = document.getElementById('thread');
   thread.addEventListener('click', function(e){
     var el = e.target;
@@ -687,6 +731,8 @@ class OmniChatView {
   }
   function ensureAssistant(){ if (!cur) startAssistant(); return cur; }
   function stepLine(text){ var c = ensureAssistant(); var l = document.createElement('div'); l.className = 'line'; l.textContent = text; c.steps.appendChild(l); scroll(); }
+  function toolStart(label, cmd){ var c = ensureAssistant(); var d = document.createElement('details'); d.className = 'tool'; var s = document.createElement('summary'); s.textContent = (label || '$') + ' ' + (cmd || ''); var pre = document.createElement('pre'); pre.className = 'tout'; pre.textContent = '…'; d.appendChild(s); d.appendChild(pre); c.steps.appendChild(d); c.tool = d; c.toolPre = pre; scroll(); }
+  function toolDone(output, failed){ var c = cur; if (!c || !c.toolPre){ return; } c.toolPre.textContent = (output && output.trim()) ? output : '(no output)'; if (failed) c.tool.classList.add('fail'); c.tool = null; c.toolPre = null; scroll(); }
   function thinkAppend(text){ var c = ensureAssistant(); c.think.style.display = ''; c.thinkBody.textContent += text; scroll(); }
   function outAppend(text, pre){ var c = ensureAssistant(); if (!c.firstOut){ c.firstOut = Date.now(); c.pre = !!pre; } c.body._raw += text; c.body.innerHTML = c.pre ? ('<pre>' + esc(c.body._raw) + '</pre>') : md(c.body._raw); scroll(); }
   function finishTurn(){
@@ -701,6 +747,7 @@ class OmniChatView {
     parts.push('done ' + hhmm(end)); parts.push(dur(end - cur.start));
     cur.foot.textContent = parts.join(' · ');
     cur = null;
+    renderMermaid();
   }
   function autosize(){ q.style.height = 'auto'; q.style.height = Math.min(q.scrollHeight, 160) + 'px'; }
   function notify(text){ clearWelcome(); var d = document.createElement('div'); d.className = 'act'; d.textContent = text; thread.appendChild(d); scroll(); }
@@ -710,7 +757,7 @@ class OmniChatView {
     var who = document.createElement('div'); who.className = 'who';
     var dot = document.createElement('span'); dot.className = 'dot'; who.appendChild(dot); who.appendChild(document.createTextNode('Omni'));
     var body = document.createElement('div'); body.className = 'body'; body.innerHTML = md(text || '');
-    d.appendChild(who); d.appendChild(body); thread.appendChild(d); scroll();
+    d.appendChild(who); d.appendChild(body); thread.appendChild(d); scroll(); renderMermaid();
   }
   function send(){
     var text = q.value.trim(); if (!text) return;
@@ -811,6 +858,10 @@ class OmniChatView {
       cur = null;
     } else if (m.type === 'act'){
       stepLine(m.text);
+    } else if (m.type === 'tool'){
+      toolStart(m.label, m.cmd);
+    } else if (m.type === 'toolDone'){
+      toolDone(m.output, m.failed);
     } else if (m.type === 'think'){
       thinkAppend(m.text);
     } else if (m.type === 'out'){
