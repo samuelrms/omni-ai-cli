@@ -33,6 +33,7 @@ se configuram de dentro do próprio chat.
 - [Como funciona](#como-funciona)
 - [Instalação](#instalação)
 - [Como usar](#como-usar)
+- [Extensão do editor](#extensão-do-editor)
 - [Comandos do chat](#comandos-do-chat)
 - [Modelos](#modelos)
 - [Contas Claude](#contas-claude)
@@ -183,6 +184,26 @@ Ao sair, ele mostra o comando para voltar à mesma conversa:
 ```text
 Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 ```
+
+---
+
+## Extensão do editor
+
+**Omni AI CLI** — a mesma experiência de chat dentro do VS Code e do Cursor (barra lateral e aba do editor), rodando por cima do `ai`.
+
+Instalar pela CLI:
+
+```bash
+# Cursor
+cursor --install-extension samuelrms.omni-ai-cli
+
+# VS Code
+code --install-extension samuelrms.omni-ai-cli
+```
+
+Instalar pelo navegador: [Open VSX](https://open-vsx.org/extension/samuelrms/omni-ai-cli) · [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=samuelrms.omni-ai-cli)
+
+Na primeira execução a extensão instala o CLI `ai` por baixo se ele não existir e abre um tutorial de configuração.
 
 ---
 

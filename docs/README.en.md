@@ -33,6 +33,7 @@ configured from inside the chat itself.
 - [How it works](#how-it-works)
 - [Installation](#installation)
 - [How to use](#how-to-use)
+- [Editor extension](#editor-extension)
 - [Chat commands](#chat-commands)
 - [Models](#models)
 - [Claude accounts](#claude-accounts)
@@ -183,6 +184,26 @@ On exit, it shows the command to return to the same conversation:
 ```text
 Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 ```
+
+---
+
+## Editor extension
+
+**Omni AI CLI** — the same chat experience inside VS Code and Cursor (sidebar and editor tab), running on top of `ai`.
+
+Install from the CLI:
+
+```bash
+# Cursor
+cursor --install-extension samuelrms.omni-ai-cli
+
+# VS Code
+code --install-extension samuelrms.omni-ai-cli
+```
+
+Install from the browser: [Open VSX](https://open-vsx.org/extension/samuelrms/omni-ai-cli) · [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=samuelrms.omni-ai-cli)
+
+On first run the extension installs the `ai` CLI underneath if missing and opens a setup walkthrough.
 
 ---
 
