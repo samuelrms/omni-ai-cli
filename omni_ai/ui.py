@@ -272,12 +272,13 @@ def replay(messages, limit=40):
     if len(messages) > limit:
         out(dim('  ' + t('older', n=len(messages) - limit)))
     for message in messages[-limit:]:
+        content = str(message.get('content') or '')  # a saved message may carry None or a non-str
         if message.get('role') == 'user':
-            lines = message.get('content', '').split('\n')
+            lines = content.split('\n')
             out('\n' + rgb((232, 96, 76), '❯') + ' ' + lines[0] + ''.join('\n  ' + l for l in lines[1:]))
         else:
             view = View()
-            view.answer(message.get('content', ''))
+            view.answer(content)
             if message.get('provider'):
                 view.note(message['provider'])
     out('')

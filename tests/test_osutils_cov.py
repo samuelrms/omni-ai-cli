@@ -168,6 +168,8 @@ class LinkTests(unittest.TestCase):
             fake_path = MagicMock()
             fake_path.symlink_to.side_effect = OSError()
             fake_path.is_dir.return_value = False
+            fake_path.exists.return_value = False
+            fake_path.is_symlink.return_value = False
             with patch('omni_ai.osutils.WINDOWS', True), \
                  patch('omni_ai.osutils.Path', side_effect=lambda p: fake_path), \
                  patch('omni_ai.osutils.shutil.copy2') as copy2:
@@ -178,12 +180,26 @@ class LinkTests(unittest.TestCase):
         src_path = MagicMock()
         src_path.symlink_to.side_effect = OSError()
         src_path.is_dir.return_value = True
+        src_path.exists.return_value = False
+        src_path.is_symlink.return_value = False
         fake_winapi = MagicMock()
         with patch('omni_ai.osutils.WINDOWS', True), \
              patch('omni_ai.osutils.Path', side_effect=lambda p: src_path), \
              patch.dict(sys.modules, {'_winapi': fake_winapi}):
             osutils.link('t', 's')
         fake_winapi.CreateJunction.assert_called_once()
+
+    def test_windows_fallback_never_clobbers_existing_target(self):
+        fake_path = MagicMock()
+        fake_path.symlink_to.side_effect = OSError()
+        fake_path.is_dir.return_value = False
+        fake_path.exists.return_value = True  # a real user file already sits at the target
+        with patch('omni_ai.osutils.WINDOWS', True), \
+             patch('omni_ai.osutils.Path', side_effect=lambda p: fake_path), \
+             patch('omni_ai.osutils.shutil.copy2') as copy2:
+            with self.assertRaises(OSError):
+                osutils.link('t', 's')
+        copy2.assert_not_called()
 
 
 class EnableAnsiTests(unittest.TestCase):

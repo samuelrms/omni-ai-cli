@@ -39,8 +39,15 @@ def read_json(path):
         return {}
 
 
+def _servers(mapping):
+    """The 'mcpServers'/'mcp_servers' block as a dict, tolerating a malformed config shape."""
+    return mapping if isinstance(mapping, dict) else {}
+
+
 def normalize(raw):
     """Common shape: {'url', 'headers'} for http, {'command', 'args', 'env'} for stdio."""
+    if not isinstance(raw, dict):
+        return None
     url = raw.get('url') or raw.get('serverUrl')
     if url:
         return {'url': url, 'headers': raw.get('headers') or raw.get('http_headers') or {}}
@@ -50,17 +57,17 @@ def normalize(raw):
 
 
 def servers_claude():
-    return {name: normalize(conf) for name, conf in read_json(HOME / '.claude.json').get('mcpServers', {}).items()}
+    return {name: normalize(conf) for name, conf in _servers(read_json(HOME / '.claude.json').get('mcpServers', {})).items()}
 
 
 def servers_codex():
     # config.toml only: `codex mcp list` also shows plugin-bundled servers that don't work outside Codex
     import tomllib
     try:
-        data = tomllib.loads((HOME / '.codex' / 'config.toml').read_text())
+        data = tomllib.loads((HOME / '.codex' / 'config.toml').read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return {}
-    return {name: normalize(conf) for name, conf in data.get('mcp_servers', {}).items()}
+    return {name: normalize(conf) for name, conf in _servers(data.get('mcp_servers', {})).items()}
 
 
 RUNNERS = {'npx', 'uvx', 'bunx', 'pipx', 'pnpx', 'docker', 'node', 'python', 'python3', 'uv'}
@@ -85,7 +92,7 @@ def app_internal(conf):
 
 def servers_agy():
     return {name: normalize(conf) for name, conf in
-            read_json(HOME / '.gemini' / 'config' / 'mcp_config.json').get('mcpServers', {}).items()}
+            _servers(read_json(HOME / '.gemini' / 'config' / 'mcp_config.json').get('mcpServers', {})).items()}
 
 
 READERS = {'claude': servers_claude, 'codex': servers_codex, 'agy': servers_agy}
@@ -177,7 +184,13 @@ def main(argv):
             return 0
     failures = 0
     for tool, name, _, argv in mcp_actions:
-        result = subprocess.run([resolve_bin(argv[0]) or argv[0]] + argv[1:], capture_output=True, text=True)
+        try:
+            result = subprocess.run([resolve_bin(argv[0]) or argv[0]] + argv[1:],
+                                    capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            failures += 1
+            print(f'  ✗ MCP {name} em {tool}: {error}')
+            continue
         ok = result.returncode == 0
         failures += not ok
         print(f"  {'✓' if ok else '✗'} MCP {name} em {tool}" + ('' if ok else f': {(result.stderr or result.stdout).strip()[:200]}'))
@@ -190,7 +203,10 @@ def main(argv):
             failures += 1
             print(f'  ✗ skill {name} em {tool}: {error}')
     # Extra Claude accounts read their own folder; refresh them with the new servers and skills
-    subprocess.run(module_cmd('config') + ['account', 'sync-all'], env=module_env())
+    try:
+        subprocess.run(module_cmd('config') + ['account', 'sync-all'], env=module_env(), timeout=120)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        print(f'  ⚠ não foi possível atualizar as contas extras do Claude: {error}')
     print('Reinicie sessões abertas dos CLIs para carregar o que foi adicionado.')
     return 1 if failures else 0
 

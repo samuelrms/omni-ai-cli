@@ -6,7 +6,8 @@ import io
 import unittest
 from unittest.mock import patch
 
-from omni_ai import cli, export
+from omni_ai import cli, export, skills
+from omni_ai.pii import PIIMasker
 
 
 class TailHitLimit(unittest.TestCase):
@@ -63,6 +64,31 @@ class PdfLatinWarning(unittest.TestCase):
         with patch('sys.stderr', err):
             export.to_pdf(conv, out)
         self.assertEqual(err.getvalue(), '')
+
+
+class PiiIpMasking(unittest.TestCase):
+    def test_public_ips_are_masked(self):
+        m = PIIMasker()
+        for ip in ('10.0.0.1', '8.8.8.8', '1.2.3.4', '192.168.1.1'):
+            masked, _ = m.mask(f'host {ip} here')
+            self.assertNotIn(ip, masked, ip)
+
+    def test_localhost_is_kept(self):
+        masked, _ = PIIMasker().mask('bind 127.0.0.1 now')
+        self.assertIn('127.0.0.1', masked)
+
+    def test_report_keeps_full_category(self):
+        report = PIIMasker().get_report('mail a@b.com')
+        self.assertIn('EMAIL', report['categories'])
+
+
+class SkillsArgSubstitution(unittest.TestCase):
+    def test_ten_plus_args_not_mangled(self):
+        entry = {'codex': ('command', __file__, 'usuário')}
+        with patch.object(skills.Path, 'read_text', return_value='run $10 and $1'):
+            text, _ = skills.build_prompt('x', ' '.join(str(i) for i in range(1, 12)), 'codex', entry)
+        # $10 -> the 10th arg ("10"), not arg1 + "0"
+        self.assertIn('run 10 and 1', text)
 
 
 if __name__ == '__main__':

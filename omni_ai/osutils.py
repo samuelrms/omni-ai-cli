@@ -72,6 +72,9 @@ def link(target, source):
     except OSError:
         if not WINDOWS:
             raise
+        # Never let the copy/junction fallback clobber an existing file at the target.
+        if target.exists() or target.is_symlink():
+            raise
     if source.is_dir():
         import _winapi
         _winapi.CreateJunction(str(source), str(target))

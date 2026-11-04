@@ -73,12 +73,25 @@ def codex_status(env=None, timeout=15):
                 reply = json.loads(line)
             except ValueError:
                 continue
+            if not isinstance(reply, dict):
+                continue
             if reply.get('id') in (2, 3):
-                answers[reply['id']] = reply.get('result') or {}
+                result = reply.get('result')
+                answers[reply['id']] = result if isinstance(result, dict) else {}
     except OSError:
         pass
     finally:
         proc.kill()
+        try:
+            proc.wait(timeout=5)  # reap the child and let the pipes close instead of leaking fds
+        except (OSError, subprocess.TimeoutExpired, AttributeError):
+            pass
+        for pipe in (getattr(proc, 'stdin', None), getattr(proc, 'stdout', None)):
+            try:
+                if pipe:
+                    pipe.close()
+            except (OSError, AttributeError):
+                pass
     if not answers:
         return None
     account = (answers.get(2) or {}).get('account') or {}

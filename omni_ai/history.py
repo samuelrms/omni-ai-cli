@@ -31,9 +31,17 @@ def _omni_dir():
     return Path(env).expanduser() if env else _dir('SMART_AI_DATA', '~/.local/share/smart-ai') / 'sessions'
 
 
+def _num(value, default):
+    """A usable epoch number; hand-edited or wrong-typed values fall back instead of crashing the sort."""
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else default
+
+
 def _omni_messages(data):
     out = []
-    for m in data.get('messages', []):
+    items = data.get('messages', []) if isinstance(data, dict) else []
+    for m in items if isinstance(items, list) else []:
+        if not isinstance(m, dict):
+            continue
         role = 'assistant' if m.get('role') == 'assistant' else 'user'
         content = m.get('content')
         if isinstance(content, str) and content.strip():
@@ -44,15 +52,18 @@ def _omni_messages(data):
 def _read_omni():
     for path in glob.glob(str(_omni_dir() / '*.json')):
         try:
-            data = json.loads(Path(path).read_text())
+            data = json.loads(Path(path).read_text(encoding='utf-8', errors='replace'))
         except (OSError, ValueError):
+            continue
+        if not isinstance(data, dict):
             continue
         messages = _omni_messages(data)
         if not messages:
             continue
-        yield {'id': 'omni:' + data.get('id', Path(path).stem), 'source': 'omni',
-               'title': _first_line(messages[0]['content']), 'updated': data.get('updated') or os.path.getmtime(path),
-               'cwd': data.get('cwd', ''), 'messages': messages}
+        yield {'id': 'omni:' + str(data.get('id') or Path(path).stem), 'source': 'omni',
+               'title': _first_line(messages[0]['content']),
+               'updated': _num(data.get('updated'), os.path.getmtime(path)),
+               'cwd': data.get('cwd', '') if isinstance(data.get('cwd'), str) else '', 'messages': messages}
 
 
 # ─── Claude Code ─────────────────────────────────────────────────
@@ -76,6 +87,8 @@ def _read_claude():
                 try:
                     obj = json.loads(raw)
                 except ValueError:
+                    continue
+                if not isinstance(obj, dict):
                     continue
                 cwd = obj.get('cwd', cwd)
                 if obj.get('type') in ('user', 'assistant') and isinstance(obj.get('message'), dict):
@@ -118,7 +131,11 @@ def _read_codex():
                     obj = json.loads(raw)
                 except ValueError:
                     continue
+                if not isinstance(obj, dict):
+                    continue
                 payload = obj.get('payload', obj)
+                if not isinstance(payload, dict):
+                    continue
                 if obj.get('type') == 'session_meta' or payload.get('type') == 'session_meta':
                     cwd = payload.get('cwd', cwd)
                 role = payload.get('role')
@@ -174,12 +191,15 @@ def _cursor_sessions():
                 d = json.loads(value)
             except ValueError:
                 continue
+            if not isinstance(d, dict):
+                continue
             heads = d.get('fullConversationHeadersOnly') or []
             name = d.get('name') or (d.get('text') or '').strip()
             if not name or not heads:
                 continue
-            yield {'id': 'cursor:' + d.get('composerId', ''), 'source': 'cursor',
-                   'title': _first_line(name), 'updated': (d.get('lastUpdatedAt') or d.get('createdAt') or 0) / 1000,
+            yield {'id': 'cursor:' + str(d.get('composerId', '')), 'source': 'cursor',
+                   'title': _first_line(name),
+                   'updated': _num(d.get('lastUpdatedAt') or d.get('createdAt'), 0) / 1000,
                    'cwd': '', 'count': len(heads)}
     finally:
         con.close()
@@ -195,8 +215,12 @@ def _cursor_load(conv_id):
         if not row:
             return None
         d = json.loads(row[0])
+        if not isinstance(d, dict):
+            return None
         messages = []
         for head in d.get('fullConversationHeadersOnly') or []:
+            if not isinstance(head, dict):
+                continue
             bid = head.get('bubbleId')
             br = con.execute("SELECT value FROM cursorDiskKV WHERE key=?", (f'bubbleId:{cid}:{bid}',)).fetchone()
             if not br:
@@ -211,7 +235,7 @@ def _cursor_load(conv_id):
         if not messages:
             return None
         return {'id': conv_id, 'source': 'cursor', 'title': _first_line(d.get('name') or messages[0]['content']),
-                'updated': (d.get('lastUpdatedAt') or d.get('createdAt') or 0) / 1000, 'cwd': '', 'messages': messages}
+                'updated': _num(d.get('lastUpdatedAt') or d.get('createdAt'), 0) / 1000, 'cwd': '', 'messages': messages}
     finally:
         con.close()
 
@@ -237,7 +261,7 @@ def sessions(sources=None):
                 items += list(LAZY[name][0]())
         except Exception:  # a broken tool store must not sink the rest
             continue
-    items.sort(key=lambda c: c.get('updated') or 0, reverse=True)
+    items.sort(key=lambda c: _num(c.get('updated'), 0), reverse=True)
     return items
 
 

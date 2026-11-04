@@ -90,11 +90,15 @@ class JsonHelperTests(ConfigBase):
         cfg.write_json(target, {'a': 1, 'ç': 'ã'})
         self.assertEqual(cfg.read_json(target, None), {'a': 1, 'ç': 'ã'})
 
-    def test_read_json_default_on_missing_or_bad(self):
+    def test_read_json_default_on_missing(self):
         self.assertEqual(cfg.read_json(self.root / 'nope.json', {'d': 1}), {'d': 1})
+
+    def test_read_json_corrupt_raises_not_overwrites(self):
+        # A corrupt file must NOT read as the default (which would let the next write erase it).
         bad = self.config_dir / 'bad.json'
         bad.write_text('{not json')
-        self.assertEqual(cfg.read_json(bad, 'fallback'), 'fallback')
+        with self.assertRaises(SystemExit):
+            cfg.read_json(bad, 'fallback')
 
 
 class ProfilesPathTests(ConfigBase):

@@ -28,12 +28,15 @@ def discover(cwd):
         if not folder.is_dir():
             continue
         scope = 'projeto' if str(folder).startswith(str(Path(cwd))) and Path(cwd) != HOME else 'usuário'
-        if kind == 'command':
-            entries = [(p.relative_to(folder).with_suffix('').as_posix().replace('/', ':'), p)
-                       for p in folder.rglob('*.md')]
-        else:
-            entries = [(p.name, p / 'SKILL.md') for p in folder.iterdir()
-                       if not p.name.startswith('.') and (p / 'SKILL.md').is_file()]
+        try:
+            if kind == 'command':
+                entries = [(p.relative_to(folder).with_suffix('').as_posix().replace('/', ':'), p)
+                           for p in folder.rglob('*.md')]
+            else:
+                entries = [(p.name, p / 'SKILL.md') for p in folder.iterdir()
+                           if not p.name.startswith('.') and (p / 'SKILL.md').is_file()]
+        except OSError:
+            continue  # an unreadable folder must not abort discovery for every other tool
         for name, path in entries:
             found.setdefault(name, {}).setdefault(tool, (kind, path, scope))
     return found
@@ -67,15 +70,25 @@ def build_prompt(name, args, tool, entry):
     kind, path, _ = entry[tool]
     if tool == 'claude':
         return f'/{name} {args}'.strip(), True
-    text = Path(path).read_text(errors='replace')
+    try:
+        text = Path(path).read_text(encoding='utf-8', errors='replace')
+    except OSError:
+        return (f'Não foi possível ler a skill/comando "{name}" em {path}.'), False
     if kind == 'command':
         text = re.sub(r'^---.*?---\s*', '', text, flags=re.S)
+        had_arguments = '$ARGUMENTS' in text
         parts = args.split()
-        text = text.replace('$ARGUMENTS', args)
-        for i, part in enumerate(parts, 1):
-            text = text.replace(f'${i}', part)
-        return text + ('' if '$ARGUMENTS' in Path(path).read_text(errors='replace') or not args
-                       else f'\n\nArgumentos: {args}'), False
+
+        def _sub(match):
+            token = match.group(1)
+            if token == 'ARGUMENTS':
+                return args
+            idx = int(token)
+            return parts[idx - 1] if 1 <= idx <= len(parts) else match.group(0)
+
+        # One pass so $10 isn't mangled by the $1 replacement and substituted text isn't re-substituted
+        text = re.sub(r'\$(ARGUMENTS|\d+)', _sub, text)
+        return text + ('' if had_arguments or not args else f'\n\nArgumentos: {args}'), False
     return (f'Use a skill "{name}" definida em {path}. Leia esse arquivo e siga as instruções dele.'
             + (f'\n\nPedido: {args}' if args else '')), False
 
