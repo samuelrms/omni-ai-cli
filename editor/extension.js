@@ -285,7 +285,10 @@ class OmniChatView {
     } catch (e) { /* ignore */ }
   }
   saveTurn(user, assistant) { const ts = Date.now(); this.pushHistory({ role: 'user', content: user, ts }, { role: 'assistant', content: assistant, ts }); }
-  clearConv() { try { this.context.workspaceState.update(this.convKey(), []); } catch (e) {} }
+  clearConv() { try { this.context.workspaceState.update(this.convKey(), []); this.context.workspaceState.update(this.decKey(), {}); } catch (e) {} }
+  decKey() { return 'omni.dec.' + workspaceCwd(); }
+  loadDec() { try { return this.context.workspaceState.get(this.decKey(), {}); } catch (e) { return {}; } }
+  saveDec(map) { try { this.context.workspaceState.update(this.decKey(), map); } catch (e) {} }
 
   async attachFiles() {
     const picks = await vscode.window.showOpenDialog({ canSelectMany: true, openLabel: 'Attach as context' });
@@ -340,22 +343,31 @@ class OmniChatView {
   // Produce the git diff for a file and send it to the chat to render inline.
   getDiff(p) {
     const root = gitRoot(workspaceCwd());
-    const run = (args, cb) => {
-      let out = '';
+    const run = (args) => new Promise((resolve) => {
+      let out = '', err = '';
       let c;
-      try { c = spawn('git', args, { cwd: root }); } catch (e) { cb(''); return; }
+      try { c = spawn('git', args, { cwd: root }); } catch (e) { resolve({ out: '', err: String(e) }); return; }
       c.stdout.on('data', (d) => { out += d.toString(); });
-      c.stderr.on('data', () => {});
-      c.on('error', () => cb(''));
-      c.on('close', () => cb(out));
-    };
-    run(['diff', '--', p], (d) => {
-      if (d.trim()) { this.post({ type: 'diffText', path: p, text: d }); return; }
-      run(['diff', '--staged', '--', p], (d2) => {
-        if (d2.trim()) { this.post({ type: 'diffText', path: p, text: d2 }); return; }
-        run(['diff', '--no-index', '--', '/dev/null', p], (d3) => { this.post({ type: 'diffText', path: p, text: d3 || '(no diff available)' }); });
-      });
+      c.stderr.on('data', (d) => { err += d.toString(); });
+      c.on('error', (e) => resolve({ out: '', err: String(e.message || e) }));
+      c.on('close', () => resolve({ out, err }));
     });
+    (async () => {
+      try {
+        let r = await run(['diff', '--', p]);
+        if (!r.out.trim()) { const s = await run(['diff', '--staged', '--', p]); if (s.out.trim()) r = s; }
+        if (!r.out.trim()) { const n = await run(['diff', '--no-index', '--', '/dev/null', p]); if (n.out.trim()) r = n; }
+        let text = r.out;
+        if (!text.trim()) {
+          // No git diff (e.g. not a repo / no changes): fall back to showing the file content.
+          try { text = fs.readFileSync(path.isAbsolute(p) ? p : path.join(root, p), 'utf8'); }
+          catch (e) { text = '(no diff available' + (r.err ? ': ' + r.err.trim() : '') + ')'; }
+        }
+        this.post({ type: 'diffText', path: p, text });
+      } catch (e) {
+        this.post({ type: 'diffText', path: p, text: '(diff failed: ' + String(e.message || e) + ')' });
+      }
+    })();
   }
 
   // Open the git diff (working tree vs HEAD) for a changed file so the user can review it.
@@ -374,8 +386,11 @@ class OmniChatView {
     try { child = spawn('git', ['checkout', '--', abs], { cwd: workspaceCwd() }); }
     catch (e) { vscode.window.showWarningMessage('Omni AI: git not available'); return; }
     child.on('close', (code) => {
-      if (code === 0) { this.post({ type: 'act', text: '↩ reverted ' + p }); vscode.window.showInformationMessage('Reverted ' + p); }
-      else vscode.window.showWarningMessage('Omni AI: could not revert ' + p + ' (new or untracked file?)');
+      if (code === 0) {
+        const dec = this.loadDec(); dec[p] = 'reverted'; this.saveDec(dec);
+        this.post({ type: 'decision', path: p, state: 'reverted' });
+        vscode.window.showInformationMessage('Reverted ' + p);
+      } else vscode.window.showWarningMessage('Omni AI: could not revert ' + p + ' (new or untracked file?)');
     });
   }
 
@@ -458,7 +473,7 @@ class OmniChatView {
   async loadLast() {
     // Prefer this extension's own saved conversation for the workspace.
     const saved = this.loadConv();
-    if (saved && saved.length) { this.post({ type: 'history', messages: saved }); return; }
+    if (saved && saved.length) { this.post({ type: 'history', messages: saved, decisions: this.loadDec() }); return; }
     // Fall back to the CLI's omni history.
     const raw = await runCapture(['history', '--json', '--source', 'omni']);
     const items = safeJson(raw, []);
@@ -560,7 +575,7 @@ class OmniChatView {
       const before = this._gitBefore || {};
       // A file counts as touched this turn only if it is newly dirty, or its signature changed.
       Object.keys(after).forEach((p) => { if (!(p in before) || after[p] !== before[p]) files.add(p); });
-      if (files.size) this.post({ type: 'changes', files: Array.from(files) });
+      if (files.size) { const arr = Array.from(files); this.pushHistory({ role: 'changes', files: arr, ts: Date.now() }); this.post({ type: 'changes', files: arr }); }
       this.post({ type: 'done', code });
     });
   }
@@ -782,7 +797,7 @@ class OmniChatView {
   var toolSel = document.getElementById('tool'), modeSel = document.getElementById('mode');
   var chips = document.getElementById('chips'), menu = document.getElementById('menu');
   var welcome = document.getElementById('welcome');
-  var cur = null, menuIdx = 0;
+  var cur = null, menuIdx = 0, DECISIONS = {};
   // CLI-backed commands: run the CLI with these flags and show the output (synced with the terminal).
   var CLI_MAP = {
     '/usage': ['--usage'], '/limits': ['--usage'], '/status': ['--status'], '/doctor': ['--doctor'],
@@ -888,7 +903,8 @@ class OmniChatView {
     var h = document.createElement('div'); h.className = 'ch-h'; h.textContent = 'Changed files — review (' + files.length + ')';
     d.appendChild(h);
     files.forEach(function(f){
-      var row = document.createElement('div'); row.className = 'ch-row';
+      var row = document.createElement('div'); row.className = 'ch-row'; row.setAttribute('data-p', f);
+      if (DECISIONS[f] === 'reverted') row.classList.add('reverted');
       var name = document.createElement('span'); name.className = 'ch-name'; name.textContent = f; name.onclick = function(){ vs.postMessage({ type: 'diffInline', path: f }); };
       var diffb = document.createElement('button'); diffb.className = 'ch-btn'; diffb.textContent = 'Diff'; diffb.onclick = function(){ vs.postMessage({ type: 'diffInline', path: f }); };
       var openb = document.createElement('button'); openb.className = 'ch-btn'; openb.textContent = 'Open'; openb.onclick = function(){ vs.postMessage({ type: 'diff', path: f }); };
@@ -1087,7 +1103,8 @@ class OmniChatView {
   window.addEventListener('message', function(e){
     var m = e.data;
     if (m.type === 'history'){
-      (m.messages || []).forEach(function(msg){ if (msg.role === 'cli') cliStatic(msg.label, msg.content, msg.ts); else if (msg.role === 'assistant') assistantStatic(msg.content, msg.ts); else userTurn(msg.content, msg.ts); });
+      DECISIONS = m.decisions || {};
+      (m.messages || []).forEach(function(msg){ if (msg.role === 'changes') renderChanges(msg.files); else if (msg.role === 'cli') cliStatic(msg.label, msg.content, msg.ts); else if (msg.role === 'assistant') assistantStatic(msg.content, msg.ts); else userTurn(msg.content, msg.ts); });
       cur = null;
     } else if (m.type === 'defaults'){
       if (m.tool) toolSel.value = m.tool; if (m.mode) modeSel.value = m.mode;
@@ -1119,6 +1136,10 @@ class OmniChatView {
       renderChanges(m.files);
     } else if (m.type === 'diffText'){
       appendDiffBlock(m.path, m.text);
+    } else if (m.type === 'decision'){
+      DECISIONS[m.path] = m.state;
+      var rows = thread.querySelectorAll('.ch-row[data-p="' + (m.path || '').replace(/"/g, '\\\\"') + '"]');
+      Array.prototype.forEach.call(rows, function(r){ if (m.state === 'reverted') r.classList.add('reverted'); });
     } else if (m.type === 'done'){
       sendBtn.disabled = false; stopBtn.disabled = true;
       finishTurn();
