@@ -34,6 +34,7 @@ et les modèles comme les comptes se configurent depuis le chat lui-même.
 - [Comment ça marche](#comment-ça-marche)
 - [Installation](#installation)
 - [Utilisation](#utilisation)
+- [Extension de l'éditeur](#extension-de-léditeur)
 - [Commandes du chat](#commandes-du-chat)
 - [Modèles](#modèles)
 - [Comptes Claude](#comptes-claude)
@@ -186,6 +187,26 @@ indicateur « Au travail… » avec la durée. Au démarrage, un écran d'accuei
 ```text
 Sessão salva. Retome com: ai --resume 1f3a9c2b7d40
 ```
+
+---
+
+## Extension de l'éditeur
+
+**Omni AI CLI** — la même expérience de chat dans VS Code et Cursor (barre latérale et onglet de l'éditeur), au-dessus de `ai`.
+
+Installer via la CLI :
+
+```bash
+# Cursor
+cursor --install-extension samuelrms.omni-ai-cli
+
+# VS Code
+code --install-extension samuelrms.omni-ai-cli
+```
+
+Installer via le navigateur : [Open VSX](https://open-vsx.org/extension/samuelrms/omni-ai-cli) · [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=samuelrms.omni-ai-cli)
+
+Au premier lancement, l'extension installe le CLI `ai` en dessous s'il manque et ouvre un tutoriel de configuration.
 
 ---
 
