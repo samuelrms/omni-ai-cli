@@ -577,7 +577,7 @@ class OmniChatView {
   #barwrap { padding: 8px 12px 10px; border-top: 1px solid var(--vscode-panel-border); position: relative; }
   #chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
   .chip { font-size: 11px; background: rgba(124,92,255,.18); border: 1px solid var(--brand2); border-radius: 10px; padding: 1px 8px; }
-  #bar { display: flex; align-items: center; gap: 6px; border: 1px solid var(--vscode-input-border, #3a3a3a); border-radius: 12px; padding: 4px 6px 4px 10px; background: var(--vscode-input-background); }
+  #bar { position: relative; display: flex; align-items: center; gap: 6px; border: 1px solid var(--vscode-input-border, #3a3a3a); border-radius: 12px; padding: 4px 6px 4px 10px; background: var(--vscode-input-background); }
   #bar:focus-within { border-color: var(--brand2); }
   #q { flex: 1; resize: none; background: transparent; color: var(--vscode-input-foreground); border: none; outline: none; font: inherit; line-height: 1.4; min-height: 22px; max-height: 160px; padding: 2px 0; }
   .icon-btn { border: none; border-radius: 8px; width: 28px; height: 28px; cursor: pointer; color: #fff; display: grid; place-items: center; font-size: 15px; flex: none; }
@@ -593,7 +593,7 @@ class OmniChatView {
   #menu .mi { padding: 6px 10px; cursor: pointer; display: flex; gap: 8px; font-size: 12px; }
   #menu .mi:hover, #menu .mi.sel { background: var(--vscode-list-hoverBackground); }
   #menu .mi b { color: var(--brand2); }
-  #plusmenu { position: absolute; left: 12px; bottom: 100%; margin-bottom: 4px; background: var(--vscode-editorWidget-background, #252526); border: 1px solid var(--vscode-panel-border); border-radius: 8px; overflow: hidden; min-width: 240px; }
+  #plusmenu { position: absolute; left: 0; bottom: calc(100% + 6px); background: var(--vscode-editorWidget-background, #252526); border: 1px solid var(--vscode-panel-border); border-radius: 8px; overflow: hidden; min-width: 240px; z-index: 5; box-shadow: 0 4px 16px rgba(0,0,0,.35); }
   #plusmenu .mi { padding: 8px 12px; cursor: pointer; font-size: 12px; }
   #plusmenu .mi:hover { background: var(--vscode-list-hoverBackground); }
 </style></head><body>
@@ -610,12 +610,12 @@ class OmniChatView {
 <div id="barwrap">
   <div class="col">
     <div id="menu"></div>
-    <div id="plusmenu" style="display:none">
-      <div class="mi" id="pm-attach">📎 Attach files as context</div>
-      <div class="mi" id="pm-voice">🎙 Voice input (dictate)</div>
-    </div>
     <div id="chips"></div>
     <div id="bar">
+      <div id="plusmenu" style="display:none">
+        <div class="mi" id="pm-attach">📎 Attach files as context</div>
+        <div class="mi" id="pm-voice">🎙 Voice input (dictate)</div>
+      </div>
       <button id="attach" class="icon-btn" title="Attach files as context">+</button>
       <textarea id="q" rows="1" placeholder="Ask anything…  (/ for commands)"></textarea>
       <button id="stop" class="icon-btn" title="Stop" disabled>◼</button>
