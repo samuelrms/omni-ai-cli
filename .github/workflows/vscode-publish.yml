@@ -64,5 +64,5 @@ jobs:
             vsce publish --no-dependencies --packagePath omni-ai-cli.vsix -p "$VSCE_PAT"
           else
             echo "::warning::VSCE_PAT not set; trying OIDC trusted publishing."
-            vsce publish --no-dependencies --packagePath omni-ai-cli.vsix
+            vsce publish --no-dependencies --packagePath omni-ai-cli.vsix --oidc
           fi
