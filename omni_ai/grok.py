@@ -8,6 +8,7 @@ Uso:
     python -m omni_ai.grok --model grok-4-fast-non-reasoning "Olá mundo"
 """
 
+import http.client
 import json
 import os
 import sys
@@ -36,15 +37,17 @@ def request(endpoint, key, data=None, timeout=60, base=XAI_BASE, name="xAI"):
             reason = ""
         e.close()
         raise RuntimeError(f"{name} HTTP {e.code}" + (f": {reason}" if reason else "")) from None
-    except (ValueError, TimeoutError):
-        raise RuntimeError(f"Resposta inválida ou timeout da {name}") from None
     except urllib.error.URLError:
         raise RuntimeError(f"Falha de rede ao acessar a {name}") from None
+    except (ValueError, TimeoutError, http.client.HTTPException, OSError):
+        # includes a connection reset or IncompleteRead mid-body
+        raise RuntimeError(f"Resposta inválida ou timeout da {name}") from None
 
 
 def pick_model(key):
     """No model configured: the fastest non-reasoning Grok the account can use."""
-    ids = sorted((m["id"] for m in request("/models", key).get("data", [])), reverse=True)
+    data = request("/models", key).get("data", [])
+    ids = sorted((m.get("id", "") for m in data if isinstance(m, dict) and m.get("id")), reverse=True)
     for wanted in (lambda i: "fast" in i and "non-reasoning" in i, lambda i: "fast" in i, lambda i: True):
         found = [i for i in ids if i.startswith("grok") and wanted(i)]
         if found:

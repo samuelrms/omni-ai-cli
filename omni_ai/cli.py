@@ -1131,7 +1131,10 @@ def main(argv):
         return 0
     if head in ('--update', '--upgrade'):
         return update()
-    if head in ('history', '--history'):
+    # `--history` is always the command; bare `history` only when it really looks like one
+    # (alone, a known subcommand/flag, or a single id), so `ai history of Brazil` stays a prompt.
+    if head == '--history' or (head == 'history' and (
+            len(argv) == 1 or argv[1] in ('list', '--json', '--source') or len(argv) == 2)):
         return history_command(argv[1:])
     if head == '--sync':
         from . import sync

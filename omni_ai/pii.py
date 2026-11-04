@@ -171,7 +171,9 @@ class PIIMasker:
         # IPs locais/comuns
         if category in ("IPV4",):
             for fp in self.FALSE_POSITIVE_PATTERNS:
-                if fp.match(match_text):
+                # fullmatch so the 3-octet version pattern can't match a real IPv4 prefix
+                # (e.g. "10.0.0.1"), which used to leave such IPs unmasked.
+                if fp.fullmatch(match_text):
                     return True
         # CEPs que parecem mais versões ou números genéricos
         if category == "CEP" and len(match_text.replace("-", "").replace(".", "")) < 8:
@@ -223,7 +225,10 @@ class PIIMasker:
         _, mapping = self.mask(text)
         report = {"total_found": len(mapping), "categories": {}}
         for placeholder in mapping:
-            category = placeholder.split("_")[0].strip("[")
+            # Placeholder is [CATEGORY_namespace_counter]; CATEGORY itself may contain '_'
+            # (e.g. URL_WITH_CREDS), so strip only the trailing _namespace_counter.
+            found = re.match(r"\[(.+)_[^_]+_\d+\]$", placeholder)
+            category = found.group(1) if found else placeholder.split("_")[0].strip("[")
             report["categories"][category] = report["categories"].get(category, 0) + 1
         return report
 
@@ -255,7 +260,7 @@ def main():
         masked, mapping = masker.mask(text)
         print(masked, end="")
         if args.map_out:
-            with open(args.map_out, "w") as f:
+            with open(args.map_out, "w", encoding="utf-8") as f:
                 json.dump(mapping, f, indent=2, ensure_ascii=False)
             print(f"\n[PII Map saved to {args.map_out}]", file=sys.stderr)
         if args.report:
@@ -264,8 +269,12 @@ def main():
 
     elif args.command == "unmask":
         text = sys.stdin.read()
-        with open(args.map, "r") as f:
-            mapping = json.load(f)
+        try:
+            with open(args.map, "r", encoding="utf-8") as f:
+                mapping = json.load(f)
+        except (OSError, ValueError) as error:
+            print(f"Não foi possível ler o mapa: {error}", file=sys.stderr)
+            sys.exit(1)
         print(masker.unmask(text, mapping), end="")
 
     elif args.command == "report":

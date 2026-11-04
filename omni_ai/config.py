@@ -52,9 +52,17 @@ NAME = re.compile(r'[a-z0-9][a-z0-9_-]{0,31}')
 
 
 def read_json(path, default):
+    path = Path(path)
     try:
-        return json.loads(Path(path).read_text())
-    except (OSError, ValueError):
+        return json.loads(path.read_text(encoding='utf-8'))
+    except FileNotFoundError:
+        return default
+    except (ValueError, UnicodeDecodeError) as error:
+        # A corrupt file must not look empty: returning the default here would make the next
+        # write overwrite it and silently erase whatever was still in it.
+        raise SystemExit(f'Arquivo de configuração corrompido: {path} ({error}). '
+                         f'Corrija ou remova o arquivo e tente de novo.')
+    except OSError:
         return default
 
 
@@ -62,10 +70,17 @@ def write_json(path, data):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(dir=path.parent, prefix='.tmp-')
-    with os.fdopen(fd, 'w') as stream:
-        json.dump(data, stream, ensure_ascii=False, indent=2)
-        stream.write('\n')
-    os.replace(name, path)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+            json.dump(data, stream, ensure_ascii=False, indent=2)
+            stream.write('\n')
+        os.replace(name, path)
+    except BaseException:
+        try:
+            os.unlink(name)  # don't leave a .tmp-* behind when the write fails
+        except OSError:
+            pass
+        raise
 
 
 def model_values():
@@ -269,12 +284,19 @@ def cmd_account(args):
         del data['profiles'][name]
         write_json(profiles_path(), data)
         folder = profile.get('config_dir')
-        if folder and Path(folder).expanduser().is_dir():
+        resolved = Path(folder).expanduser() if folder else None
+        if resolved and resolved.is_dir() and resolved.is_relative_to(ACCOUNTS_DIR):
             # Log out first: on macOS the login lives in the Keychain, not only in the folder
-            subprocess.run([resolve_bin(os.environ.get('CLAUDE_BIN', 'claude')) or 'claude', 'auth', 'logout'],
-                           env=dict(os.environ, CLAUDE_CONFIG_DIR=str(Path(folder).expanduser())),
-                           capture_output=True, timeout=30)
-            shutil.rmtree(Path(folder).expanduser())
+            try:
+                subprocess.run([resolve_bin(os.environ.get('CLAUDE_BIN', 'claude')) or 'claude', 'auth', 'logout'],
+                               env=dict(os.environ, CLAUDE_CONFIG_DIR=str(resolved)),
+                               capture_output=True, timeout=30)
+            except (OSError, subprocess.TimeoutExpired):
+                pass  # remove the folder regardless, so the account isn't left half-removed
+            shutil.rmtree(resolved, ignore_errors=True)
+        elif resolved and resolved.is_dir():
+            # A hand-edited config_dir outside the managed folder (e.g. ~/.claude) is never deleted
+            print(f'  ⚠ pasta fora de {ACCOUNTS_DIR} não removida por segurança: {resolved}')
         print(f'✓ Conta "{name}" removida.')
     else:
         raise SystemExit('Ação inválida: list, add, login, sync, enable, disable, remove')
@@ -395,13 +417,18 @@ def stored_keys(provider):
     env = os.environ.get(KEYS[provider][0])
     if env:
         found.append(('env', env, 'env'))
+    def _read(path):
+        try:
+            return path.read_text(encoding='utf-8').strip()
+        except (OSError, ValueError):
+            return ''  # an unreadable/garbled key file must not break every lookup
     for path in (key_path(provider), LEGACY_OPENROUTER if provider == 'openrouter' else None):
-        if path and path.is_file() and path.read_text().strip():
-            found.append(('principal', path.read_text().strip(), 'salva'))
+        if path and path.is_file() and _read(path):
+            found.append(('principal', _read(path), 'salva'))
             break
     extras = sorted(KEYS_DIR.glob(provider + '.*'), key=lambda p: (len(p.name), p.name)) if KEYS_DIR.is_dir() else []
     for path in extras:
-        value = path.read_text().strip()
+        value = _read(path)
         if value:
             found.append((path.name[len(provider) + 1:], value, 'salva'))
     return found
@@ -434,10 +461,20 @@ def ask_key(provider, inline):
 def save_key(path, value):
     KEYS_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(KEYS_DIR, 0o700)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, 'w') as stream:
-        stream.write(value)
-    os.chmod(path, 0o600)
+    # Write to a fresh 0600 temp file and swap it in, so overwriting an existing key never
+    # leaves the secret in a file that kept an older, world-readable mode.
+    fd, tmp = tempfile.mkstemp(dir=KEYS_DIR, prefix='.tmp-')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+            stream.write(value)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def next_key_name(provider):
