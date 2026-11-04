@@ -815,6 +815,7 @@ class OmniChatView {
   var chips = document.getElementById('chips'), menu = document.getElementById('menu');
   var welcome = document.getElementById('welcome');
   var cur = null, menuIdx = 0, DECISIONS = {};
+  var SENT = [], sentIdx = 0, draft = '';
   // CLI-backed commands: run the CLI with these flags and show the output (synced with the terminal).
   var CLI_MAP = {
     '/usage': ['--usage'], '/limits': ['--usage'], '/status': ['--status'], '/doctor': ['--doctor'],
@@ -1069,6 +1070,7 @@ class OmniChatView {
   }
   function send(){
     var text = q.value.trim(); if (!text) return;
+    SENT.push(text); sentIdx = SENT.length; draft = '';
     if (text.charAt(0) === '/'){ runSlash(text); return; }
     userTurn(text, Date.now()); q.value = ''; autosize(); hideMenu();
     cur = null; sendBtn.disabled = true; stopBtn.disabled = false;
@@ -1145,13 +1147,21 @@ class OmniChatView {
       if (e.key === 'Enter'){ e.preventDefault(); if (list[menuIdx]) menuPick(list[menuIdx]); return; }
       if (e.key === 'Escape'){ hideMenu(); return; }
     }
-    if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); }
+    if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); return; }
+    // Recall previously-sent messages with Up/Down (when caret is at the first/last line).
+    if (e.key === 'ArrowUp' && q.value.lastIndexOf('\\n', q.selectionStart - 1) === -1){
+      if (sentIdx > 0){ if (sentIdx === SENT.length) draft = q.value; sentIdx--; q.value = SENT[sentIdx]; autosize(); try { q.setSelectionRange(q.value.length, q.value.length); } catch (x) {} e.preventDefault(); }
+    } else if (e.key === 'ArrowDown' && q.value.indexOf('\\n', q.selectionStart) === -1){
+      if (sentIdx < SENT.length){ sentIdx++; q.value = sentIdx === SENT.length ? draft : SENT[sentIdx]; autosize(); try { q.setSelectionRange(q.value.length, q.value.length); } catch (x) {} e.preventDefault(); }
+    }
   });
   window.addEventListener('message', function(e){
     var m = e.data;
     if (m.type === 'history'){
       DECISIONS = m.decisions || {};
       (m.messages || []).forEach(function(msg){ if (msg.role === 'changes') renderChanges(msg.files); else if (msg.role === 'cli') cliStatic(msg.label, msg.content, msg.ts); else if (msg.role === 'assistant') assistantStatic(msg.content, msg.ts); else userTurn(msg.content, msg.ts); });
+      SENT = (m.messages || []).filter(function(msg){ return msg.role === 'user' || msg.role === 'cli'; }).map(function(msg){ return msg.role === 'cli' ? msg.label : msg.content; });
+      sentIdx = SENT.length;
       cur = null;
     } else if (m.type === 'defaults'){
       if (m.tool) toolSel.value = m.tool; if (m.mode) modeSel.value = m.mode;
