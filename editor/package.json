@@ -36,7 +36,13 @@
       { "command": "omni-ai.explainSelection", "title": "Explain selection", "category": "Omni AI" },
       { "command": "omni-ai.runOnSelection", "title": "Run prompt on selection", "category": "Omni AI" },
       { "command": "omni-ai.openChat", "title": "Open chat", "category": "Omni AI" },
+      { "command": "omni-ai.openChatPanel", "title": "Open chat in editor", "category": "Omni AI" },
+      { "command": "omni-ai.openChatTerminal", "title": "Open chat in terminal", "category": "Omni AI" },
       { "command": "omni-ai.doctor", "title": "Doctor (health check)", "category": "Omni AI" }
+    ],
+    "keybindings": [
+      { "command": "omni-ai.openChat", "key": "ctrl+shift+a", "mac": "cmd+shift+a" },
+      { "command": "omni-ai.openChatPanel", "key": "ctrl+alt+a", "mac": "cmd+alt+a" }
     ],
     "menus": {
       "editor/context": [
