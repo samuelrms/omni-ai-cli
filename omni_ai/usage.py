@@ -10,6 +10,7 @@ Anything that fails returns None and /usage falls back to what the tool last sai
 """
 from datetime import datetime
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path
@@ -99,8 +100,8 @@ def codex_status(env=None, timeout=15):
     windows = []
     for key in ('primary', 'secondary'):
         window = limits.get(key)
-        if window and window.get('usedPercent') is not None:
-            windows.append({'minutes': window.get('windowDurationMins') or 0, 'used': float(window['usedPercent']),
+        if isinstance(window, dict) and window.get('usedPercent') is not None:
+            windows.append({'minutes': window.get('windowDurationMins') or 0, 'used': _f(window.get('usedPercent')),
                             'resets': window.get('resetsAt')})
     return {'email': account.get('email') or '', 'plan': plan_name(account.get('planType') or limits.get('planType')),
             'windows': windows, 'blocked': bool(limits.get('rateLimitReachedType'))}
@@ -112,9 +113,11 @@ def openrouter_credits(key, timeout=10):
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             data = json.loads(response.read()).get('data') or {}
-    except (OSError, ValueError):
+        if not isinstance(data, dict):
+            return None
+        return {'used': _f(data.get('usage')), 'limit': data.get('limit'), 'free': bool(data.get('is_free_tier'))}
+    except (OSError, ValueError, http.client.HTTPException):
         return None
-    return {'used': float(data.get('usage') or 0), 'limit': data.get('limit'), 'free': bool(data.get('is_free_tier'))}
 
 
 def window_label(minutes, label=None):
@@ -165,12 +168,12 @@ def claude_token(conf):
                                  capture_output=True, text=True, timeout=10).stdout.strip()
         except (OSError, subprocess.TimeoutExpired):
             raw = ''
-    if not raw:
-        path = (folder or Path('~/.claude').expanduser()) / '.credentials.json'
-        raw = path.read_text() if path.is_file() else ''
     try:
+        if not raw:
+            path = (folder or Path('~/.claude').expanduser()) / '.credentials.json'
+            raw = path.read_text(encoding='utf-8') if path.is_file() else ''
         return (json.loads(raw).get('claudeAiOauth') or {}).get('accessToken') or None
-    except ValueError:
+    except (OSError, ValueError, AttributeError):
         return None
 
 
@@ -206,9 +209,9 @@ def claude_windows(data):
         if window.get('resets_at'):
             try:
                 resets = datetime.fromisoformat(window['resets_at'].replace('Z', '+00:00')).timestamp()
-            except ValueError:
+            except (ValueError, TypeError, AttributeError):
                 pass
-        windows.append({'minutes': minutes, 'used': float(window['utilization']), 'resets': resets,
+        windows.append({'minutes': minutes, 'used': _f(window.get('utilization')), 'resets': resets,
                         'label': 'opus' if key == 'seven_day_opus' else None})
     return windows
 
@@ -219,11 +222,19 @@ CACHE_FILE = config_tool.CONFIG_DIR / 'usage-cache.json'
 FRESH = {'claude': 120, 'codex': 300}  # seconds a reading stays good for the router
 
 
+def _f(value, default=0.0):
+    """A float from a maybe-string/maybe-bad API value, never raising."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def thresholds():
     """routing.usage_skip_percent: the router skips an account at or above it (default 100).
     routing.usage_alert_percent: warn once per window when an account passes it (default 80)."""
     routing = config_tool.profiles().get('routing', {})
-    return float(routing.get('usage_skip_percent', 100)), float(routing.get('usage_alert_percent', 80))
+    return _f(routing.get('usage_skip_percent', 100), 100.0), _f(routing.get('usage_alert_percent', 80), 80.0)
 
 
 def load_cache():
@@ -231,9 +242,9 @@ def load_cache():
 
 
 def store(key, reading):
-    data = load_cache()
-    data.setdefault('readings', {})[key] = dict(reading, at=int(time.time()))
-    config_tool.write_json(CACHE_FILE, data)
+    def _mutate(data):
+        data.setdefault('readings', {})[key] = dict(reading, at=int(time.time()))
+    config_tool.update_json(CACHE_FILE, _mutate)
 
 
 def peak(windows):
@@ -260,26 +271,30 @@ def read(key, fetch, max_age=None):
         store(key, reading)
         return reading
     if reading and reading.get('retry'):
-        data = load_cache()
-        data.setdefault('backoff', {})[key] = int(now + reading['retry'])
-        config_tool.write_json(CACHE_FILE, data)
+        config_tool.update_json(CACHE_FILE,
+                                lambda data: data.setdefault('backoff', {}).__setitem__(key, int(now + reading['retry'])))
     return stale
 
 
 def alerts(key, reading, label):
     """Warning lines for windows past the alert threshold, each said once per reset."""
     _, alert = thresholds()
-    data = load_cache()
-    said = data.setdefault('alerted', {})
+    windows = (reading or {}).get('windows', [])
+    if not windows:
+        return []
     lines = []
-    for window in (reading or {}).get('windows', []):
-        mark = f"{key}:{window['minutes']}:{window.get('label') or ''}:{int(window.get('resets') or 0)}"
-        if window['used'] >= alert and mark not in said:
-            said[mark] = int(time.time())
-            reset = f", reseta em {resets_in(window['resets'])}" if window.get('resets') else ''
-            lines.append(f"{label}: {window['used']:.0f}% da janela {window_label(window['minutes'], window.get('label'))} usada{reset}")
-    if lines:
-        config_tool.write_json(CACHE_FILE, data)
+
+    def _mutate(data):
+        said = data.setdefault('alerted', {})
+        for window in windows:
+            mark = f"{key}:{window['minutes']}:{window.get('label') or ''}:{int(window.get('resets') or 0)}"
+            if window['used'] >= alert and mark not in said:
+                said[mark] = int(time.time())
+                reset = f", reseta em {resets_in(window['resets'])}" if window.get('resets') else ''
+                lines.append(f"{label}: {window['used']:.0f}% da janela "
+                             f"{window_label(window['minutes'], window.get('label'))} usada{reset}")
+
+    config_tool.update_json(CACHE_FILE, _mutate)
     return lines
 
 
@@ -307,7 +322,13 @@ def snapshot(claude_profiles, codex_accounts, openrouter_keys):
             jobs[('codex', name)] = pool.submit(read, f'codex:{name}', lambda env=env: codex_reading(env), 30)
         for name, key, _ in openrouter_keys or []:
             jobs[('openrouter', name)] = pool.submit(openrouter_credits, key)
-        return {k: f.result() for k, f in jobs.items()}
+
+        def _result(future):
+            try:
+                return future.result()
+            except Exception:
+                return None  # one bad account must not blank the whole /usage screen
+        return {k: _result(f) for k, f in jobs.items()}
 
 
 def clock(epoch):
