@@ -23,6 +23,7 @@ import json
 import re
 import os
 import sys
+import http.client
 import urllib.request
 import urllib.error
 from typing import Optional
@@ -100,10 +101,10 @@ class OpenRouterClient:
                 reason = ''
             e.close()
             raise RuntimeError(f"OpenRouter HTTP {e.code}" + (f": {reason}" if reason else '')) from None
-        except (ValueError, TimeoutError):
-            raise RuntimeError("Resposta inválida ou timeout do OpenRouter") from None
         except urllib.error.URLError as e:
             raise RuntimeError("Falha de rede ao acessar OpenRouter") from None
+        except (ValueError, TimeoutError, http.client.HTTPException, OSError):
+            raise RuntimeError("Resposta inválida ou timeout do OpenRouter") from None
 
     def _stream_request(self, data: dict):
         """POST /chat/completions with stream=True, yielding ('delta', text) per token and a final
@@ -134,9 +135,16 @@ class OpenRouterClient:
                         chunk = json.loads(payload)
                     except ValueError:
                         continue
+                    if not isinstance(chunk, dict):
+                        continue
+                    if chunk.get("error"):
+                        reason = (chunk["error"].get("message") if isinstance(chunk["error"], dict) else str(chunk["error"]))
+                        raise RuntimeError("OpenRouter: " + (reason or "erro no stream"))
                     model = chunk.get("model") or model
                     usage = chunk.get("usage") or usage
-                    for choice in chunk.get("choices", []):
+                    for choice in (chunk.get("choices") or []):
+                        if not isinstance(choice, dict):
+                            continue
                         piece = (choice.get("delta") or {}).get("content") or ""
                         if piece:
                             content.append(piece)
@@ -148,10 +156,10 @@ class OpenRouterClient:
                 reason = ""
             e.close()
             raise RuntimeError(f"OpenRouter HTTP {e.code}" + (f": {reason}" if reason else "")) from None
-        except (ValueError, TimeoutError):
-            raise RuntimeError("Resposta inválida ou timeout do OpenRouter") from None
         except urllib.error.URLError:
             raise RuntimeError("Falha de rede ao acessar OpenRouter") from None
+        except (ValueError, TimeoutError, http.client.HTTPException, OSError):
+            raise RuntimeError("Resposta inválida ou timeout do OpenRouter") from None
         yield ("final", {"content": "".join(content), "model": model, "usage": usage})
 
     def list_free_models(self) -> list:
@@ -228,6 +236,7 @@ class OpenRouterClient:
         candidates = list(dict.fromkeys(([self.model] if self.model != DEFAULT_MODEL else []) + models + [DEFAULT_MODEL]))
         groups = [candidates[i:i + MAX_MODELS] for i in range(0, len(candidates), MAX_MODELS)]
         resp, last_error = None, None
+        streamed_any = False
         for group in groups:
             data = {"models": group, "messages": messages, "temperature": temperature, "max_tokens": max_tokens,
                     "usage": {"include": True}}  # the reply then carries what it cost
@@ -239,12 +248,17 @@ class OpenRouterClient:
                     # Stream the tokens as they arrive; a chunk may still be a masked placeholder, so
                     # unmask each piece best-effort and unmask the whole answer again at the end.
                     final = None
-                    for kind, payload in self._stream_request(data):
-                        if kind == "delta":
-                            piece = self.masker.unmask(payload, self._pii_map) if (self.masker and self._pii_map) else payload
-                            on_delta(piece)
-                        else:
-                            final = payload
+                    gen = self._stream_request(data)
+                    try:
+                        for kind, payload in gen:
+                            if kind == "delta":
+                                streamed_any = True
+                                piece = self.masker.unmask(payload, self._pii_map) if (self.masker and self._pii_map) else payload
+                                on_delta(piece)
+                            else:
+                                final = payload
+                    finally:
+                        gen.close()  # close the HTTP response if the consumer stops early (e.g. BrokenPipe)
                     if final and final["content"].strip():
                         resp = {"choices": [{"message": {"content": final["content"]}}],
                                 "model": final["model"], "usage": final["usage"]}
@@ -257,6 +271,10 @@ class OpenRouterClient:
                     last_error = RuntimeError("OpenRouter não retornou uma resposta válida")
             except RuntimeError as error:
                 last_error = error
+                # Already streamed part of an answer before failing: trying another model would
+                # splice two different answers in the output, so stop here instead of retrying.
+                if streamed_any:
+                    raise
                 # Bad key or no credit: another model won't help
                 if re.search(r"HTTP (401|402|403)\b", str(error)):
                     raise
@@ -358,7 +376,11 @@ def main():
         parser.error(str(error))
 
     if args.list_models:
-        models = client.list_free_models()
+        try:
+            models = client.list_free_models()
+        except RuntimeError as e:
+            print(f"❌ Erro: {e}", file=sys.stderr)
+            sys.exit(1)
         print(f"\n🆓 Modelos gratuitos disponíveis ({len(models)}):\n")
         for m in models:
             ctx = m.get("context_length", "?")
