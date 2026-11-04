@@ -6,7 +6,10 @@ import io
 import unittest
 from unittest.mock import patch
 
-from omni_ai import cli, export, skills
+import tempfile
+from pathlib import Path
+
+from omni_ai import cli, config, export, skills, usage
 from omni_ai.pii import PIIMasker
 
 
@@ -89,6 +92,37 @@ class SkillsArgSubstitution(unittest.TestCase):
             text, _ = skills.build_prompt('x', ' '.join(str(i) for i in range(1, 12)), 'codex', entry)
         # $10 -> the 10th arg ("10"), not arg1 + "0"
         self.assertIn('run 10 and 1', text)
+
+
+class UpdateJsonLocked(unittest.TestCase):
+    def test_read_modify_write(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / 'state.json'
+            config.update_json(p, lambda data: data.setdefault('a', {}).__setitem__('x', 1))
+            config.update_json(p, lambda data: data.setdefault('a', {}).__setitem__('y', 2))
+            self.assertEqual(config.read_json(p, {}), {'a': {'x': 1, 'y': 2}})
+
+    def test_concurrent_writers_keep_all(self):
+        import threading
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / 's.json'
+            config.write_json(p, {'n': {}})
+
+            def worker(i):
+                config.update_json(p, lambda data: data['n'].__setitem__(str(i), i))
+            threads = [threading.Thread(target=worker, args=(i,)) for i in range(20)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+            self.assertEqual(len(config.read_json(p, {})['n']), 20)
+
+
+class UsageNumberCoercion(unittest.TestCase):
+    def test_f_tolerates_bad_values(self):
+        self.assertEqual(usage._f('50'), 50.0)
+        self.assertEqual(usage._f(None), 0.0)
+        self.assertEqual(usage._f('abc', 9.0), 9.0)
 
 
 if __name__ == '__main__':

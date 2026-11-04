@@ -88,7 +88,7 @@ def logged_in(tool):
             # exits 0 either way; only the text says whether it is logged in
             done = subprocess.run([resolve_bin(TOOLS[tool].bin), 'status'], capture_output=True, text=True, timeout=15)
             return done.returncode == 0 and 'not logged in' not in (done.stdout + done.stderr).lower()
-    except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+    except (OSError, ValueError, TypeError, AttributeError, subprocess.TimeoutExpired):
         return False
     files = {'agy': '~/.gemini/jetski-standalone-oauth-token', 'grok': '~/.grok/auth.json'}
     return Path(files[tool]).expanduser().is_file()
@@ -161,7 +161,10 @@ def install(lang='pt', ask=True, names=None):
             # attached to this terminal: some installers ask questions or show progress
             argv = ['powershell', '-NoProfile', '-Command', command] if windows else ['bash', '-c', command]
             subprocess.call(argv)
-        except (OSError, KeyboardInterrupt):
+        except KeyboardInterrupt:
+            print(ui.dim('  Instalação interrompida.'))
+            break  # Ctrl-C stops the whole run instead of jumping to the next installer
+        except OSError:
             pass
         if resolve_bin(tool.bin):
             installed.append(name)
@@ -175,16 +178,19 @@ def first_run():
     """True only the first time; later launches skip the guide."""
     if MARKER.exists():
         return False
-    MARKER.parent.mkdir(parents=True, exist_ok=True)
-    MARKER.write_text('1')
+    try:
+        MARKER.parent.mkdir(parents=True, exist_ok=True)
+        MARKER.write_text('1')
+    except OSError:
+        pass  # can't persist the marker (read-only home): still guide, just don't crash the launch
     return True
 
 
 def main(install_missing=False):
     lang = (os.environ.get('LANG', 'pt')[:2])
     try:
-        lang = Path('~/.config/smart-ai/lang').expanduser().read_text().strip() or lang
-    except OSError:
+        lang = Path('~/.config/smart-ai/lang').expanduser().read_text(encoding='utf-8').strip() or lang
+    except (OSError, ValueError):
         pass
     lang = lang if lang in T['title'] else 'pt'
     if install_missing:

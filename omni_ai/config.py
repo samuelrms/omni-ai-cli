@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 
 from .osutils import link, resolve_bin
 from .tools import TOOLS, keys as tool_keys
@@ -64,6 +65,41 @@ def read_json(path, default):
                          f'Corrija ou remova o arquivo e tente de novo.')
     except OSError:
         return default
+
+
+_FILE_LOCKS = {}
+_FILE_LOCKS_GUARD = threading.Lock()
+
+
+def _file_lock(path):
+    key = str(path)
+    with _FILE_LOCKS_GUARD:
+        return _FILE_LOCKS.setdefault(key, threading.Lock())
+
+
+def update_json(path, mutate, default=None):
+    """Read-modify-write a JSON file atomically: serialized across threads (a per-path lock) and,
+    best effort, across processes (an advisory lock on a sidecar file). `mutate(data)` edits in
+    place (or returns the new data). Prevents concurrent writers from clobbering each other."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _file_lock(path):
+        handle = None
+        try:
+            try:
+                handle = open(path.with_name(path.name + '.lock'), 'w')
+                import fcntl
+                fcntl.flock(handle, fcntl.LOCK_EX)
+            except (ImportError, OSError):
+                pass  # no cross-process lock available; the thread lock still holds
+            data = read_json(path, {} if default is None else default)
+            result = mutate(data)
+            data = data if result is None else result
+            write_json(path, data)
+            return data
+        finally:
+            if handle is not None:
+                handle.close()
 
 
 def write_json(path, data):
@@ -177,6 +213,8 @@ def logged_in(profile):
     try:
         status = json.loads(result.stdout)
     except ValueError:
+        status = None
+    if not isinstance(status, dict):
         return result.returncode == 0 and 'not logged' not in (result.stdout + result.stderr).lower()
     # "authMethod": "none" means no login, even though the command itself succeeds
     return bool(status.get('loggedIn', status.get('authMethod') not in (None, '', 'none')))
@@ -208,7 +246,11 @@ def login(name, profile):
     print(f'Abrindo login do Claude para a conta "{name}" (pasta isolada {config_dir}).')
     print('Sua conta principal não é afetada.')
     env = dict(os.environ, CLAUDE_CONFIG_DIR=str(config_dir))
-    code = subprocess.call([resolve_bin(os.environ.get('CLAUDE_BIN', 'claude')) or 'claude', 'auth', 'login'], env=env)
+    try:
+        code = subprocess.call([resolve_bin(os.environ.get('CLAUDE_BIN', 'claude')) or 'claude', 'auth', 'login'], env=env)
+    except OSError as error:
+        print(f'✗ Não foi possível iniciar o login do Claude: {error}', file=sys.stderr)
+        return 1
     if code == 0:
         share_claude_setup(config_dir)
         print('Skills, plugins, CLAUDE.md, settings e MCPs compartilhados com a conta principal.')
@@ -352,7 +394,11 @@ def tool_login(tool, name, conf):
     print(f'Abrindo login do {tool} para a conta "{name}" (pasta isolada {folder}).')
     print('Sua conta principal não é afetada.' + (' Faça o login com o Google e saia com Ctrl-C.' if tool == 'agy' else ''))
     command = TOOL_HOMES[tool][3]
-    return subprocess.call([resolve_bin(command[0]) or command[0]] + command[1:], env=dict(os.environ, **tool_env(tool, conf)))
+    try:
+        return subprocess.call([resolve_bin(command[0]) or command[0]] + command[1:], env=dict(os.environ, **tool_env(tool, conf)))
+    except OSError as error:
+        print(f'✗ Não foi possível iniciar o login do {tool}: {error}', file=sys.stderr)
+        return 1
 
 
 def cmd_tool_account(tool, action, args):
@@ -393,10 +439,13 @@ def cmd_tool_account(tool, action, args):
         write_json(profiles_path(), data)
         folder = Path(conf['config_dir']).expanduser()
         if tool in ('codex', 'grok') and folder.is_dir():
-            subprocess.run([resolve_bin(tool) or tool, 'logout'], env=dict(os.environ, **tool_env(tool, conf)),
-                           capture_output=True, timeout=30)
+            try:
+                subprocess.run([resolve_bin(tool) or tool, 'logout'], env=dict(os.environ, **tool_env(tool, conf)),
+                               capture_output=True, timeout=30)
+            except (OSError, subprocess.TimeoutExpired):
+                pass  # remove the folder regardless
         if folder.is_dir() and folder.is_relative_to(TOOL_ACCOUNTS_DIR):
-            shutil.rmtree(folder)
+            shutil.rmtree(folder, ignore_errors=True)
         print(f'✓ Conta "{name}" do {tool} removida.')
     else:
         raise SystemExit('Ação inválida: list, add, login, enable, disable, remove')
