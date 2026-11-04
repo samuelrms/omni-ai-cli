@@ -7,20 +7,37 @@ const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 
-// Files git sees as changed right now (porcelain), path -> status code.
-function gitStatus(cwd) {
-  const map = {};
+// Paths git sees as changed right now (porcelain, relative to repo root).
+function gitStatusPaths(cwd) {
+  const paths = [];
   try {
     const r = spawnSync('git', ['status', '--porcelain'], { cwd, encoding: 'utf8' });
-    if (r.status !== 0 || !r.stdout) return map;
+    if (r.status !== 0 || !r.stdout) return paths;
     r.stdout.split('\n').forEach((line) => {
       if (!line.trim()) return;
-      const code = line.slice(0, 2);
       let p = line.slice(3);
       if (p.indexOf(' -> ') >= 0) p = p.split(' -> ')[1]; // renames
-      map[p.replace(/^"|"$/g, '')] = code;
+      paths.push(p.replace(/^"|"$/g, ''));
     });
   } catch (e) { /* no git */ }
+  return paths;
+}
+
+// Repo root for a workspace (so relative git paths resolve to real files).
+function gitRoot(cwd) {
+  try {
+    const r = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8' });
+    if (r.status === 0 && r.stdout.trim()) return r.stdout.trim();
+  } catch (e) {}
+  return cwd;
+}
+
+// Snapshot of currently-dirty files with their mtimes, so we can tell what was touched this turn
+// even for files that were already modified before it.
+function changedSnapshot(cwd) {
+  const root = gitRoot(cwd);
+  const map = {};
+  gitStatusPaths(cwd).forEach((p) => { try { map[p] = fs.statSync(path.join(root, p)).mtimeMs; } catch (e) { map[p] = -1; } });
   return map;
 }
 
@@ -485,7 +502,7 @@ class OmniChatView {
     args.push('--', prompt);
     this._saving = true; this._acc = ''; this._user = text;
     this._changed = new Set();
-    this._gitBefore = gitStatus(workspaceCwd());
+    this._gitBefore = changedSnapshot(workspaceCwd());
     this.post({ type: 'start', prompt: text });
     let child;
     try {
@@ -515,9 +532,9 @@ class OmniChatView {
       this.child = null;
       if (this._saving) { if (this._acc.trim()) this.saveTurn(this._user, this._acc.trim()); this._saving = false; }
       const files = new Set(this._changed || []);
-      const after = gitStatus(workspaceCwd());
+      const after = changedSnapshot(workspaceCwd());
       const before = this._gitBefore || {};
-      Object.keys(after).forEach((p) => { if (after[p] !== before[p]) files.add(p); });
+      Object.keys(after).forEach((p) => { if (!(p in before) || after[p] > before[p] || after[p] === -1) files.add(p); });
       if (files.size) this.post({ type: 'changes', files: Array.from(files) });
       this.post({ type: 'done', code });
     });
