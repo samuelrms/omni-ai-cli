@@ -5,7 +5,24 @@ const vscode = require('vscode');
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
+
+// Files git sees as changed right now (porcelain), path -> status code.
+function gitStatus(cwd) {
+  const map = {};
+  try {
+    const r = spawnSync('git', ['status', '--porcelain'], { cwd, encoding: 'utf8' });
+    if (r.status !== 0 || !r.stdout) return map;
+    r.stdout.split('\n').forEach((line) => {
+      if (!line.trim()) return;
+      const code = line.slice(0, 2);
+      let p = line.slice(3);
+      if (p.indexOf(' -> ') >= 0) p = p.split(' -> ')[1]; // renames
+      map[p.replace(/^"|"$/g, '')] = code;
+    });
+  } catch (e) { /* no git */ }
+  return map;
+}
 
 /** Single-quote a string for POSIX shells (the integrated terminal on macOS/Linux). */
 function shq(s) {
@@ -468,6 +485,7 @@ class OmniChatView {
     args.push('--', prompt);
     this._saving = true; this._acc = ''; this._user = text;
     this._changed = new Set();
+    this._gitBefore = gitStatus(workspaceCwd());
     this.post({ type: 'start', prompt: text });
     let child;
     try {
@@ -496,7 +514,11 @@ class OmniChatView {
       if (buf.trim()) this._event(buf);
       this.child = null;
       if (this._saving) { if (this._acc.trim()) this.saveTurn(this._user, this._acc.trim()); this._saving = false; }
-      if (this._changed && this._changed.size) this.post({ type: 'changes', files: Array.from(this._changed) });
+      const files = new Set(this._changed || []);
+      const after = gitStatus(workspaceCwd());
+      const before = this._gitBefore || {};
+      Object.keys(after).forEach((p) => { if (after[p] !== before[p]) files.add(p); });
+      if (files.size) this.post({ type: 'changes', files: Array.from(files) });
       this.post({ type: 'done', code });
     });
   }
