@@ -21,9 +21,19 @@ jobs:
           node-version: 22
       - name: Install tooling
         run: npm install -g @vscode/vsce@latest ovsx@latest
+      # On a release, use its tag; on a manual run, use the latest release tag
+      # so the package never ships the placeholder version from the repo.
       - name: Match the released version
-        if: github.event_name == 'release'
-        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "release" ]; then
+            v="${GITHUB_REF_NAME#v}"
+          else
+            v="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName | sed 's/^v//')"
+          fi
+          echo "Publishing version $v"
+          npm version "$v" --no-git-tag-version --allow-same-version
       # Keep the store's "Changes" tab fresh from the GitHub releases.
       - name: Refresh changelog from releases
         env:
@@ -51,6 +61,7 @@ jobs:
           else echo "::warning::OVSX_PAT not set; skipping Open VSX."; echo "present=false" >> "$GITHUB_OUTPUT"; fi
       - name: Publish to Open VSX
         if: steps.ovsx.outputs.present == 'true'
+        continue-on-error: true   # an "already published" conflict must never block the Marketplace step
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: ovsx publish omni-ai-cli.vsix -p "$OVSX_PAT"
