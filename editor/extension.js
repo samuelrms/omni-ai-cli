@@ -279,9 +279,64 @@ class OmniChatView {
       else if (msg.type === 'openFile') this.openFile(msg.path);
       else if (msg.type === 'setDefault') { try { config().update(msg.key, msg.value, true); } catch (e) {} }
       else if (msg.type === 'newConversation') this.clearConv();
+      else if (msg.type === 'remote') this.remoteControl(msg.name);
+      else if (msg.type === 'diff') this.openDiff(msg.path);
+      else if (msg.type === 'revert') this.revertFile(msg.path);
       else if (msg.type === 'command') vscode.commands.executeCommand(msg.id);
       else if (msg.type === 'ready') { this.sendDefaults(); this.sendMenu(); this.loadLast(); }
     });
+  }
+
+  // Resolve a (possibly relative/basename) path to an absolute file in the workspace.
+  async resolvePath(p) {
+    const path = require('path'), fs = require('fs');
+    const abs = path.isAbsolute(p) ? p : path.join(workspaceCwd(), p);
+    try { fs.accessSync(abs); return abs; } catch (e) {}
+    try {
+      const hits = await vscode.workspace.findFiles('**/' + p.split('/').pop(), '**/node_modules/**', 5);
+      const exact = hits.find((u) => u.fsPath.endsWith(p)) || hits[0];
+      if (exact) return exact.fsPath;
+    } catch (e) {}
+    return abs;
+  }
+
+  // Open the git diff (working tree vs HEAD) for a changed file so the user can review it.
+  async openDiff(p) {
+    const abs = await this.resolvePath(p);
+    try { await vscode.commands.executeCommand('git.openChange', vscode.Uri.file(abs)); return; } catch (e) {}
+    try { await vscode.window.showTextDocument(vscode.Uri.file(abs), { preview: true }); } catch (e) { vscode.window.showWarningMessage('Omni AI: could not open ' + p); }
+  }
+
+  // Reject a change: restore the file from git HEAD.
+  async revertFile(p) {
+    const abs = await this.resolvePath(p);
+    const pick = await vscode.window.showWarningMessage('Revert ' + p + ' to the last committed version?', { modal: true }, 'Revert');
+    if (pick !== 'Revert') return;
+    let child;
+    try { child = spawn('git', ['checkout', '--', abs], { cwd: workspaceCwd() }); }
+    catch (e) { vscode.window.showWarningMessage('Omni AI: git not available'); return; }
+    child.on('close', (code) => {
+      if (code === 0) { this.post({ type: 'act', text: '↩ reverted ' + p }); vscode.window.showInformationMessage('Reverted ' + p); }
+      else vscode.window.showWarningMessage('Omni AI: could not revert ' + p + ' (new or untracked file?)');
+    });
+  }
+
+  // Hand the current conversation off to Claude Remote Control in a terminal (pairing URL shows there).
+  remoteControl(name) {
+    const os = require('os'), fs = require('fs'), path = require('path');
+    const conv = this.loadConv();
+    const tail = conv.slice(-16).map((m) =>
+      (m.role === 'user' ? 'User: ' : m.role === 'assistant' ? 'Assistant: ' : '[' + (m.label || 'cmd') + '] ') + (m.content || '')
+    ).join('\n\n');
+    const ctx = 'Continue this conversation remotely. Context:\n\n' + tail + '\n\nContinue from here.';
+    const f = path.join(os.tmpdir(), 'omni-remote-' + Date.now() + '.txt');
+    let seeded = false;
+    try { fs.writeFileSync(f, ctx); seeded = true; } catch (e) { /* no seed */ }
+    const sess = name || ('omni-' + path.basename(workspaceCwd()));
+    const term = vscode.window.createTerminal({ name: 'Omni · Remote Control', cwd: workspaceCwd() });
+    term.show();
+    const bin = config().get('claudeBin', 'claude');
+    term.sendText(bin + ' --remote-control ' + sess + (seeded ? ' "$(cat \'' + f + '\')"' : ''));
   }
 
   // Open a file referenced in the chat (click). Tries the path, then searches the workspace by basename.
@@ -412,6 +467,7 @@ class OmniChatView {
     }
     args.push('--', prompt);
     this._saving = true; this._acc = ''; this._user = text;
+    this._changed = new Set();
     this.post({ type: 'start', prompt: text });
     let child;
     try {
@@ -440,6 +496,7 @@ class OmniChatView {
       if (buf.trim()) this._event(buf);
       this.child = null;
       if (this._saving) { if (this._acc.trim()) this.saveTurn(this._user, this._acc.trim()); this._saving = false; }
+      if (this._changed && this._changed.size) this.post({ type: 'changes', files: Array.from(this._changed) });
       this.post({ type: 'done', code });
     });
   }
@@ -472,7 +529,7 @@ class OmniChatView {
         if (!done) this.post({ type: 'tool', label: '$', cmd: it.command || '' });
         else this.post({ type: 'toolDone', output: it.aggregated_output || '', failed: it.exit_code != null && it.exit_code !== 0 });
       }
-      else if (it.type === 'file_change' && done) act('✎ edited ' + (it.changes || []).map((c) => c.path).join(', '));
+      else if (it.type === 'file_change' && done) { const ps = (it.changes || []).map((c) => c.path); ps.forEach((p) => this._changed && this._changed.add(p)); act('✎ edited ' + ps.join(', ')); }
       else if (it.type === 'mcp_tool_call') {
         if (!done) this.post({ type: 'tool', label: '⚙', cmd: (it.server || '') + ' · ' + (it.tool || '') });
         else this.post({ type: 'toolDone', output: JSON.stringify(it.result || it.error || '', null, 2), failed: it.status === 'failed' });
@@ -485,6 +542,7 @@ class OmniChatView {
         else if (b.type === 'tool_use') {
           const inp = b.input || {};
           const cmd = inp.command || inp.cmd || inp.file_path || inp.path || inp.query || JSON.stringify(inp);
+          if (/^(edit|write|multiedit|notebookedit|create)/i.test(b.name || '') && (inp.file_path || inp.path)) { if (this._changed) this._changed.add(inp.file_path || inp.path); }
           this.post({ type: 'tool', label: b.name === 'Bash' ? '$' : '⚙', cmd: (b.name && b.name !== 'Bash' ? b.name + ' ' : '') + String(cmd || '') });
         }
       }
@@ -563,6 +621,14 @@ class OmniChatView {
   .cl-bar > span { display: block; height: 100%; background: linear-gradient(90deg, var(--brand1), var(--brand2)); }
   .cl-pct { width: 42px; text-align: right; opacity: .8; }
   .cl-aft { opacity: .6; }
+  .changes { align-self: stretch; border: 1px solid var(--brand2); border-radius: 10px; margin: 8px 0; overflow: hidden; }
+  .ch-h { font-size: 12px; font-weight: 600; padding: 6px 10px; background: rgba(124,92,255,.14); }
+  .ch-row { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-top: 1px solid var(--vscode-panel-border); }
+  .ch-name { flex: 1; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; cursor: pointer; word-break: break-all; }
+  .ch-name:hover { color: var(--brand2); text-decoration: underline; }
+  .ch-row.reverted { opacity: .5; text-decoration: line-through; }
+  .ch-btn { font: inherit; font-size: 11px; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--vscode-panel-border); background: transparent; color: var(--vscode-foreground); cursor: pointer; }
+  .ch-btn.rej:hover { border-color: var(--vscode-errorForeground); color: var(--vscode-errorForeground); }
   .turn .body { word-break: break-word; }
   .turn .body p { margin: 6px 0; }
   .turn .body h1,.turn .body h2,.turn .body h3 { margin: 10px 0 4px; }
@@ -672,6 +738,7 @@ class OmniChatView {
     { cmd: '/tool', desc: 'Set tool (auto|claude|codex|…)', needsArg: true },
     { cmd: '/mode', desc: 'Set mode (default|plan|edits|auto|yolo)', needsArg: true },
     { cmd: '/lang', desc: 'Interface language', needsArg: true },
+    { cmd: '/remote-control', desc: 'Hand off to Claude Remote Control', needsArg: false },
     { cmd: '/history', desc: 'Open history' },
     { cmd: '/sessions', desc: 'Open sessions (history)' },
     { cmd: '/new', desc: 'Start a new conversation' },
@@ -722,6 +789,22 @@ class OmniChatView {
     if (el && el.classList && el.classList.contains('file')) { vs.postMessage({ type: 'openFile', path: el.getAttribute('data-p') }); }
   });
   function scroll(){ log.scrollTop = log.scrollHeight; }
+  // Review block for files changed in a turn (auto/yolo apply directly): open diff or revert each.
+  function renderChanges(files){
+    if (!files || !files.length) return;
+    clearWelcome();
+    var d = document.createElement('div'); d.className = 'changes';
+    var h = document.createElement('div'); h.className = 'ch-h'; h.textContent = 'Changed files — review (' + files.length + ')';
+    d.appendChild(h);
+    files.forEach(function(f){
+      var row = document.createElement('div'); row.className = 'ch-row';
+      var name = document.createElement('span'); name.className = 'ch-name'; name.textContent = f; name.onclick = function(){ vs.postMessage({ type: 'diff', path: f }); };
+      var diffb = document.createElement('button'); diffb.className = 'ch-btn'; diffb.textContent = 'Diff'; diffb.onclick = function(){ vs.postMessage({ type: 'diff', path: f }); };
+      var rev = document.createElement('button'); rev.className = 'ch-btn rej'; rev.textContent = 'Revert'; rev.onclick = function(){ vs.postMessage({ type: 'revert', path: f }); row.classList.add('reverted'); };
+      row.appendChild(name); row.appendChild(diffb); row.appendChild(rev); d.appendChild(row);
+    });
+    thread.appendChild(d); scroll();
+  }
   // A user message: right-aligned bubble with a time footer.
   function userTurn(text, time){
     clearWelcome();
@@ -850,6 +933,7 @@ class OmniChatView {
     if (cmd === '/mode'){ if (rest[0]){ modeSel.value = rest[0]; vs.postMessage({ type: 'setDefault', key: 'mode', value: rest[0] }); notify('mode: ' + rest[0]); } else notify('modes: ' + optsOf(modeSel)); return; }
     if (cmd === '/lang'){ notify('Interface language follows the CLI; set it with the terminal chat.'); return; }
     if (cmd === '/update'){ runCli('/update', ['--update']); vs.postMessage({ type: 'command', id: 'workbench.extensions.action.checkForUpdates' }); notify('Checking for extension updates…'); return; }
+    if (cmd === '/remote-control' || cmd === '/remote-mode' || cmd === '/remote'){ notify('Starting Claude Remote Control in a terminal (pairing URL appears there)…'); vs.postMessage({ type: 'remote', name: rest[0] || '' }); return; }
     if (CLI_MAP[cmd]){ runCli(cmd + (rest.length ? ' ' + rest.join(' ') : ''), CLI_MAP[cmd].concat(rest)); return; }
     if (isSkill(cmd)){ userTurn(line, Date.now()); cur = null; sendBtn.disabled = true; stopBtn.disabled = false; vs.postMessage({ type: 'send', text: line, tool: toolSel.value, mode: modeSel.value }); return; }
     notify('Unknown command: ' + cmd);
@@ -939,6 +1023,8 @@ class OmniChatView {
     } else if (m.type === 'out'){
       if (m.stream === 'err'){ stepLine('✗ ' + m.text); }
       else { outAppend(m.text, m.pre); }
+    } else if (m.type === 'changes'){
+      renderChanges(m.files);
     } else if (m.type === 'done'){
       sendBtn.disabled = false; stopBtn.disabled = true;
       finishTurn();
