@@ -294,7 +294,11 @@ def to_clipboard(text):
 # --------------------------------------------------------------------------- CLI
 
 def _load(from_path):
-    raw = open(from_path, encoding='utf-8').read() if from_path else sys.stdin.read()
+    if from_path:
+        with open(from_path, encoding='utf-8') as handle:
+            raw = handle.read()
+    else:
+        raw = sys.stdin.read()
     return normalize(json.loads(raw))
 
 
@@ -306,10 +310,15 @@ def main(argv):
     i = 0
     while i < len(rest):
         arg = rest[i]
-        if arg == '--from':
-            from_path = rest[i + 1]; i += 2; continue
-        if arg == '--out':
-            out_path = rest[i + 1]; i += 2; continue
+        if arg in ('--from', '--out'):
+            if i + 1 >= len(rest):
+                print(f'{arg} precisa de um valor.', file=sys.stderr)
+                return 2
+            if arg == '--from':
+                from_path = rest[i + 1]
+            else:
+                out_path = rest[i + 1]
+            i += 2; continue
         positional.append(arg); i += 1
     if mode == '--export' and positional:
         model = positional[0]

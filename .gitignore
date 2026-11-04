@@ -27,3 +27,23 @@ node_modules/
 *.tgz
 
 output/*
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Cobertura de testes
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+
+# Exports de conversa (/print, /export)
+omni-*.pdf
+omni-*.md
+omni-conversa-*.pdf
+omni-conversa-*.md
