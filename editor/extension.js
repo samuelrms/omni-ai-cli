@@ -321,6 +321,7 @@ class OmniChatView {
       else if (msg.type === 'remote') this.remoteControl(msg.name);
       else if (msg.type === 'diff') this.openDiff(msg.path);
       else if (msg.type === 'diffInline') this.getDiff(msg.path);
+      else if (msg.type === 'setDecision') { const dec = this.loadDec(); dec[msg.path] = msg.state; this.saveDec(dec); }
       else if (msg.type === 'revert') this.revertFile(msg.path);
       else if (msg.type === 'command') vscode.commands.executeCommand(msg.id);
       else if (msg.type === 'ready') { this.sendDefaults(); this.sendMenu(); this.loadLast(); }
@@ -570,11 +571,13 @@ class OmniChatView {
       if (buf.trim()) this._event(buf);
       this.child = null;
       if (this._saving) { if (this._acc.trim()) this.saveTurn(this._user, this._acc.trim()); this._saving = false; }
-      const files = new Set(this._changed || []);
+      const root = gitRoot(workspaceCwd());
+      const norm = (p) => { let q = p; if (path.isAbsolute(q)) { const rel = path.relative(root, q); if (rel && !rel.startsWith('..')) q = rel; } return q; };
+      const files = new Set(Array.from(this._changed || []).map(norm));
       const after = changedSnapshot(workspaceCwd());
       const before = this._gitBefore || {};
       // A file counts as touched this turn only if it is newly dirty, or its signature changed.
-      Object.keys(after).forEach((p) => { if (!(p in before) || after[p] !== before[p]) files.add(p); });
+      Object.keys(after).forEach((p) => { if (!(p in before) || after[p] !== before[p]) files.add(norm(p)); });
       if (files.size) { const arr = Array.from(files); this.pushHistory({ role: 'changes', files: arr, ts: Date.now() }); this.post({ type: 'changes', files: arr }); }
       this.post({ type: 'done', code });
     });
@@ -700,14 +703,22 @@ class OmniChatView {
   .cl-bar > span { display: block; height: 100%; background: linear-gradient(90deg, var(--brand1), var(--brand2)); }
   .cl-pct { width: 42px; text-align: right; opacity: .8; }
   .cl-aft { opacity: .6; }
-  .changes { align-self: stretch; border: 1px solid var(--brand2); border-radius: 10px; margin: 8px 0; overflow: hidden; }
-  .ch-h { font-size: 12px; font-weight: 600; padding: 6px 10px; background: rgba(124,92,255,.14); }
-  .ch-row { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-top: 1px solid var(--vscode-panel-border); }
-  .ch-name { flex: 1; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; cursor: pointer; word-break: break-all; }
-  .ch-name:hover { color: var(--brand2); text-decoration: underline; }
-  .ch-row.reverted { opacity: .5; text-decoration: line-through; }
-  .ch-btn { font: inherit; font-size: 11px; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--vscode-panel-border); background: transparent; color: var(--vscode-foreground); cursor: pointer; }
-  .ch-btn.rej:hover { border-color: var(--vscode-errorForeground); color: var(--vscode-errorForeground); }
+  .review { align-self: stretch; border: 1px solid var(--brand2); border-radius: 10px; margin: 8px 0; overflow: hidden; }
+  .rv-h { font-size: 12px; font-weight: 600; padding: 6px 10px; background: rgba(124,92,255,.14); }
+  .rv-body { padding: 8px 10px; }
+  .rv-file { font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; opacity: .85; word-break: break-all; margin-bottom: 6px; }
+  .rv-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .rv-btn { font: inherit; font-size: 12px; padding: 4px 12px; border-radius: 6px; border: 1px solid var(--vscode-panel-border); background: transparent; color: var(--vscode-foreground); cursor: pointer; }
+  .rv-btn.ok { border-color: #4ec9b0; color: #4ec9b0; }
+  .rv-btn.ok:hover { background: rgba(78,201,176,.12); }
+  .rv-btn.no { border-color: var(--vscode-errorForeground); color: var(--vscode-errorForeground); }
+  .rv-btn.no:hover { background: rgba(244,135,113,.12); }
+  .rv-sum { display: flex; align-items: center; gap: 10px; padding: 3px 0; }
+  .rv-sum-t { min-width: 90px; font-size: 12px; opacity: .8; }
+  .rv-sum-t.ok { color: #4ec9b0; }
+  .rv-sum-t.rej { color: var(--vscode-errorForeground); }
+  .rv-sum-f { font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; cursor: pointer; word-break: break-all; }
+  .rv-sum-f:hover { color: var(--brand2); text-decoration: underline; }
   .diffblock { align-self: stretch; margin: 6px 0; border: 1px solid var(--vscode-panel-border); border-radius: 8px; overflow: hidden; }
   .diffblock > summary { font-size: 12px; padding: 6px 10px; cursor: pointer; opacity: .8; font-family: var(--vscode-editor-font-family, monospace); }
   .diffpre { margin: 0; padding: 8px 10px; font-size: 12px; overflow-x: auto; white-space: pre; font-family: var(--vscode-editor-font-family, monospace); }
@@ -895,23 +906,53 @@ class OmniChatView {
     if (el && el.classList && el.classList.contains('file')) { vs.postMessage({ type: 'openFile', path: el.getAttribute('data-p') }); }
   });
   function scroll(){ log.scrollTop = log.scrollHeight; }
-  // Review block for files changed in a turn (auto/yolo apply directly): open diff or revert each.
+  // Sequential, file-by-file review: show one diff, approve/reject, auto-advance to the next.
+  var activeReview = null;
   function renderChanges(files){
     if (!files || !files.length) return;
+    files = files.filter(function(f, i){ return files.indexOf(f) === i; }); // dedup
     clearWelcome();
-    var d = document.createElement('div'); d.className = 'changes';
-    var h = document.createElement('div'); h.className = 'ch-h'; h.textContent = 'Changed files — review (' + files.length + ')';
-    d.appendChild(h);
-    files.forEach(function(f){
-      var row = document.createElement('div'); row.className = 'ch-row'; row.setAttribute('data-p', f);
-      if (DECISIONS[f] === 'reverted') row.classList.add('reverted');
-      var name = document.createElement('span'); name.className = 'ch-name'; name.textContent = f; name.onclick = function(){ vs.postMessage({ type: 'diffInline', path: f }); };
-      var diffb = document.createElement('button'); diffb.className = 'ch-btn'; diffb.textContent = 'Diff'; diffb.onclick = function(){ vs.postMessage({ type: 'diffInline', path: f }); };
-      var openb = document.createElement('button'); openb.className = 'ch-btn'; openb.textContent = 'Open'; openb.onclick = function(){ vs.postMessage({ type: 'diff', path: f }); };
-      var rev = document.createElement('button'); rev.className = 'ch-btn rej'; rev.textContent = 'Revert'; rev.onclick = function(){ vs.postMessage({ type: 'revert', path: f }); row.classList.add('reverted'); };
-      row.appendChild(name); row.appendChild(diffb); row.appendChild(openb); row.appendChild(rev); d.appendChild(row);
+    var d = document.createElement('div'); d.className = 'review';
+    var head = document.createElement('div'); head.className = 'rv-h';
+    var body = document.createElement('div'); body.className = 'rv-body';
+    d.appendChild(head); d.appendChild(body); thread.appendChild(d);
+    var state = { files: files, idx: 0, head: head, body: body, diffBox: null, curFile: null };
+    activeReview = state;
+    reviewStep(state);
+  }
+  function reviewStep(state){
+    while (state.idx < state.files.length && DECISIONS[state.files[state.idx]]) state.idx++;
+    if (state.idx >= state.files.length){ renderReviewSummary(state); return; }
+    var f = state.files[state.idx];
+    state.curFile = f;
+    state.head.textContent = 'Review ' + (state.idx + 1) + '/' + state.files.length;
+    state.body.innerHTML = '';
+    var fname = document.createElement('div'); fname.className = 'rv-file'; fname.textContent = f;
+    var diffBox = document.createElement('pre'); diffBox.className = 'diffpre'; diffBox.textContent = 'loading diff…';
+    var actions = document.createElement('div'); actions.className = 'rv-actions';
+    function mk(txt, cls, fn){ var b = document.createElement('button'); b.className = 'rv-btn' + (cls ? ' ' + cls : ''); b.textContent = txt; b.onclick = fn; return b; }
+    actions.appendChild(mk('✓ Approve', 'ok', function(){ DECISIONS[f] = 'kept'; vs.postMessage({ type: 'setDecision', path: f, state: 'kept' }); state.idx++; reviewStep(state); }));
+    actions.appendChild(mk('✗ Reject (revert)', 'no', function(){ DECISIONS[f] = 'reverted'; vs.postMessage({ type: 'revert', path: f }); state.idx++; reviewStep(state); }));
+    actions.appendChild(mk('Open', '', function(){ vs.postMessage({ type: 'diff', path: f }); }));
+    actions.appendChild(mk('Skip', '', function(){ state.idx++; reviewStep(state); }));
+    state.body.appendChild(fname); state.body.appendChild(diffBox); state.body.appendChild(actions);
+    state.diffBox = diffBox;
+    vs.postMessage({ type: 'diffInline', path: f });
+    scroll();
+  }
+  function renderReviewSummary(state){
+    state.head.textContent = 'Review complete';
+    state.body.innerHTML = '';
+    state.files.forEach(function(f){
+      var dec = DECISIONS[f] || 'pending';
+      var row = document.createElement('div'); row.className = 'rv-sum';
+      var t = document.createElement('span'); t.className = 'rv-sum-t ' + (dec === 'reverted' ? 'rej' : dec === 'kept' ? 'ok' : '');
+      t.textContent = dec === 'kept' ? '✓ kept' : dec === 'reverted' ? '↩ reverted' : '• pending';
+      var s = document.createElement('span'); s.className = 'rv-sum-f'; s.textContent = f; s.onclick = function(){ vs.postMessage({ type: 'diffInline', path: f }); };
+      row.appendChild(t); row.appendChild(s); state.body.appendChild(row);
     });
-    thread.appendChild(d); scroll();
+    if (activeReview === state) activeReview = null;
+    scroll();
   }
   // A user message: right-aligned bubble with a time footer.
   function userTurn(text, time){
@@ -1135,11 +1176,10 @@ class OmniChatView {
     } else if (m.type === 'changes'){
       renderChanges(m.files);
     } else if (m.type === 'diffText'){
-      appendDiffBlock(m.path, m.text);
+      if (activeReview && activeReview.diffBox && m.path === activeReview.curFile){ activeReview.diffBox.innerHTML = colorDiff(m.text || '(no diff)'); scroll(); }
+      else appendDiffBlock(m.path, m.text);
     } else if (m.type === 'decision'){
       DECISIONS[m.path] = m.state;
-      var rows = thread.querySelectorAll('.ch-row[data-p="' + (m.path || '').replace(/"/g, '\\\\"') + '"]');
-      Array.prototype.forEach.call(rows, function(r){ if (m.state === 'reverted') r.classList.add('reverted'); });
     } else if (m.type === 'done'){
       sendBtn.disabled = false; stopBtn.disabled = true;
       finishTurn();
