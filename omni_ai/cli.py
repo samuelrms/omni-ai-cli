@@ -1102,6 +1102,16 @@ def main(argv):
     if head == '--sync':
         from . import sync
         return sync.main(argv[1:])
+    if head == '--menu-json':
+        from . import skills as _skills
+        data = {
+            'tools': ['auto'] + list(TOOLS.keys()),
+            'modes': list(MODES),
+            'langs': ['pt', 'en', 'es', 'fr'],
+            'skills': sorted(_skills.discover(os.getcwd()).keys()),
+        }
+        say(json.dumps(data, ensure_ascii=False))
+        return 0
     tool, words, i = 'auto', [], 0
     while i < len(argv):
         arg = argv[i]

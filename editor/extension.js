@@ -234,7 +234,22 @@ class OmniChatView {
     this.child = null;
     this.webview = null;
     this.attachments = [];
+    this._saving = false;
+    this._acc = '';
+    this._user = '';
   }
+
+  convKey() { return 'omni.conv.' + workspaceCwd(); }
+  loadConv() { try { return this.context.workspaceState.get(this.convKey(), []); } catch (e) { return []; } }
+  saveTurn(user, assistant) {
+    try {
+      const hist = this.loadConv();
+      hist.push({ role: 'user', content: user });
+      hist.push({ role: 'assistant', content: assistant });
+      this.context.workspaceState.update(this.convKey(), hist.slice(-200));
+    } catch (e) { /* ignore */ }
+  }
+  clearConv() { try { this.context.workspaceState.update(this.convKey(), []); } catch (e) {} }
 
   async attachFiles() {
     const picks = await vscode.window.showOpenDialog({ canSelectMany: true, openLabel: 'Attach as context' });
@@ -259,36 +274,53 @@ class OmniChatView {
       if (msg.type === 'send') this.send(msg.text, { tool: msg.tool, mode: msg.mode });
       else if (msg.type === 'cancel') this.cancel();
       else if (msg.type === 'attach') this.attachFiles();
-      else if (msg.type === 'doctor') this.runDoctor();
+      else if (msg.type === 'doctor') this.runCli(['--doctor']);
+      else if (msg.type === 'cli') this.runCli(msg.args);
       else if (msg.type === 'openFile') this.openFile(msg.path);
+      else if (msg.type === 'setDefault') { try { config().update(msg.key, msg.value, true); } catch (e) {} }
+      else if (msg.type === 'newConversation') this.clearConv();
       else if (msg.type === 'command') vscode.commands.executeCommand(msg.id);
-      else if (msg.type === 'ready') { this.sendDefaults(); this.loadLast(); }
+      else if (msg.type === 'ready') { this.sendDefaults(); this.sendMenu(); this.loadLast(); }
     });
   }
 
-  // Open a file referenced in the chat (cmd/ctrl+click). Resolves relative to the workspace.
+  // Open a file referenced in the chat (click). Tries the path, then searches the workspace by basename.
   async openFile(p) {
     if (!p) return;
     const path = require('path');
+    const show = async (uri) => { await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(uri), { preview: true }); };
+    // 1) absolute or relative-to-cwd, as given
     const abs = path.isAbsolute(p) ? p : path.join(workspaceCwd(), p);
-    try {
-      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(abs));
-      await vscode.window.showTextDocument(doc, { preview: true });
-    } catch (e) {
-      vscode.window.showWarningMessage('Omni AI: could not open ' + p);
+    try { await show(vscode.Uri.file(abs)); return; } catch (e) { /* fall through to search */ }
+    // 2) search the workspace by the basename
+    const base = p.split('/').pop();
+    let hits = [];
+    try { hits = await vscode.workspace.findFiles('**/' + base, '**/node_modules/**', 20); } catch (e) { hits = []; }
+    // prefer a hit whose path ends with the referenced path
+    const exact = hits.find((u) => u.fsPath.endsWith(p)) || (hits.length === 1 ? hits[0] : null);
+    if (exact) { try { await show(exact); return; } catch (e) {} }
+    if (hits.length > 1) {
+      const pick = await vscode.window.showQuickPick(
+        hits.map((u) => ({ label: path.basename(u.fsPath), description: vscode.workspace.asRelativePath(u), uri: u })),
+        { placeHolder: 'Open which ' + base + '?' }
+      );
+      if (pick) { try { await show(pick.uri); return; } catch (e) {} }
+      else return;
     }
+    vscode.window.showWarningMessage('Omni AI: could not find ' + p + ' in this workspace');
   }
 
-  // Run the health check and stream it into the chat (not a terminal).
-  runDoctor() {
+  // Run a CLI subcommand (e.g. --usage, --status, --doctor) and stream it into the chat as preformatted text.
+  runCli(args) {
     if (this.child) return;
+    if (!Array.isArray(args) || !args.length) { this.post({ type: 'done', code: 0 }); return; }
     const bin = config().get('binPath', 'ai');
-    this.post({ type: 'start', prompt: 'doctor' });
+    this.post({ type: 'start' });
     let child;
-    try { child = spawn(bin, ['--doctor'], { cwd: workspaceCwd(), env: { ...process.env, NO_COLOR: '1' } }); }
+    try { child = spawn(bin, args, { cwd: workspaceCwd(), env: { ...process.env, NO_COLOR: '1' } }); }
     catch (e) { this.post({ type: 'out', stream: 'err', text: String(e) }); this.post({ type: 'done', code: 1 }); return; }
     this.child = child;
-    child.stdout.on('data', (d) => this.post({ type: 'out', stream: 'out', text: d.toString() }));
+    child.stdout.on('data', (d) => this.post({ type: 'out', stream: 'out', pre: true, text: d.toString() }));
     child.stderr.on('data', (d) => this.post({ type: 'out', stream: 'err', text: d.toString() }));
     child.on('error', (e) => this.post({ type: 'out', stream: 'err', text: String(e.message || e) }));
     child.on('close', (code) => { this.child = null; this.post({ type: 'done', code }); });
@@ -305,6 +337,10 @@ class OmniChatView {
 
   // On open, show the last Omni conversation for this project, so you pick up where you left off.
   async loadLast() {
+    // Prefer this extension's own saved conversation for the workspace.
+    const saved = this.loadConv();
+    if (saved && saved.length) { this.post({ type: 'history', messages: saved }); return; }
+    // Fall back to the CLI's omni history.
     const raw = await runCapture(['history', '--json', '--source', 'omni']);
     const items = safeJson(raw, []);
     const cwd = workspaceCwd();
@@ -336,6 +372,20 @@ class OmniChatView {
     this.post({ type: 'defaults', tool: cfg.get('tool', 'auto'), mode: cfg.get('mode', 'default') });
   }
 
+  // Ask the CLI for its live tools/modes/langs/skills so the chat menus match the terminal.
+  sendMenu() {
+    const bin = config().get('binPath', 'ai');
+    let out = '';
+    let child;
+    try { child = spawn(bin, ['--menu-json'], { cwd: workspaceCwd(), env: { ...process.env, NO_COLOR: '1' } }); }
+    catch (e) { return; }
+    child.stdout.on('data', (d) => { out += d.toString(); });
+    child.on('error', () => {});
+    child.on('close', () => {
+      try { this.post({ type: 'menu', menu: JSON.parse(out.trim()) }); } catch (e) { /* ignore */ }
+    });
+  }
+
   send(text, opts) {
     if (!text || !text.trim()) return;
     if (this.child) return; // one request at a time
@@ -355,6 +405,7 @@ class OmniChatView {
       this.post({ type: 'attached', names: [] });
     }
     args.push('--', prompt);
+    this._saving = true; this._acc = ''; this._user = text;
     this.post({ type: 'start', prompt: text });
     let child;
     try {
@@ -379,7 +430,12 @@ class OmniChatView {
     child.stdout.on('data', (d) => feed(d.toString()));
     child.stderr.on('data', (d) => this.post({ type: 'out', stream: 'err', text: d.toString() }));
     child.on('error', (e) => this.post({ type: 'out', stream: 'err', text: String(e.message || e) }));
-    child.on('close', (code) => { if (buf.trim()) this._event(buf); this.child = null; this.post({ type: 'done', code }); });
+    child.on('close', (code) => {
+      if (buf.trim()) this._event(buf);
+      this.child = null;
+      if (this._saving) { if (this._acc.trim()) this.saveTurn(this._user, this._acc.trim()); this._saving = false; }
+      this.post({ type: 'done', code });
+    });
   }
 
   // Map one router event line to a webview update: activity ('act') or answer text ('out').
@@ -394,7 +450,7 @@ class OmniChatView {
     }
     const kind = ev.type;
     const act = (text) => this.post({ type: 'act', text });
-    const answer = (text) => { if (text) this.post({ type: 'out', stream: 'out', text }); };
+    const answer = (text) => { if (text) { this.post({ type: 'out', stream: 'out', text }); if (this._saving) this._acc += text; } };
     if (kind === 'smart.route') {
       act((ev.label === 'complex' ? '⤷ complex task → Claude' : '⤷ simple → alternative') + (ev.by ? ' · ' + ev.by : ''));
     } else if (kind === 'smart.provider') {
@@ -413,7 +469,7 @@ class OmniChatView {
     } else if (kind === 'assistant') {
       for (const b of ((ev.message || {}).content || [])) {
         if (b.type === 'text') answer(b.text || '');
-        else if (b.type === 'thinking') act('… ' + firstLine(b.thinking || b.text || 'thinking'));
+        else if (b.type === 'thinking') this.post({ type: 'think', text: b.thinking || b.text || '' });
         else if (b.type === 'tool_use') act('⚙ ' + (b.name || 'tool'));
       }
     } else if (kind === 'result') {
@@ -444,9 +500,23 @@ class OmniChatView {
   #welcome .tag { font-size: 12px; opacity: .6; max-width: 340px; }
   #welcome .hint { font-size: 12px; opacity: .5; margin-top: 10px; }
   .mark { filter: drop-shadow(0 2px 10px rgba(124,92,255,.35)); }
-  .turn { margin: 16px 0; line-height: 1.55; }
+  .turn { margin: 16px 0; line-height: 1.55; display: flex; flex-direction: column; }
+  .turn.user { align-items: flex-end; }
+  .turn.assistant { align-items: flex-start; }
   .turn .who { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12px; opacity: .85; margin-bottom: 4px; }
   .turn.user .who { color: var(--vscode-textLink-foreground); }
+  .turn.user .body { background: rgba(124,92,255,.14); border: 1px solid rgba(124,92,255,.35); border-radius: 14px 14px 4px 14px; padding: 8px 12px; max-width: 78%; }
+  .turn.assistant .body { max-width: 100%; }
+  .turn .foot { font-size: 11px; opacity: .5; margin-top: 4px; }
+  .steps { align-self: stretch; margin: 2px 0; }
+  .steps summary { font-size: 12px; opacity: .7; cursor: pointer; font-style: italic; list-style: none; }
+  .steps summary::-webkit-details-marker { display: none; }
+  .steps .line { font-size: 12px; opacity: .6; margin: 2px 0 2px 6px; font-style: italic; }
+  .steps.live summary::after { content: ' …'; animation: blink 1.2s infinite; }
+  @keyframes blink { 50% { opacity: .3; } }
+  .think { align-self: stretch; margin: 2px 0 6px; }
+  .think summary { font-size: 12px; opacity: .7; cursor: pointer; }
+  .think .r { font-size: 12.5px; opacity: .75; white-space: pre-wrap; border-left: 2px solid var(--brand2); padding-left: 10px; margin-top: 4px; }
   .turn .body { word-break: break-word; }
   .turn .body p { margin: 6px 0; }
   .turn .body h1,.turn .body h2,.turn .body h3 { margin: 10px 0 4px; }
@@ -525,15 +595,41 @@ class OmniChatView {
   var toolSel = document.getElementById('tool'), modeSel = document.getElementById('mode');
   var chips = document.getElementById('chips'), menu = document.getElementById('menu');
   var welcome = document.getElementById('welcome');
-  var answer = null, header = null, sendTime = 0, firstOut = 0, menuIdx = 0;
+  var cur = null, menuIdx = 0;
+  // CLI-backed commands: run the CLI with these flags and show the output (synced with the terminal).
+  var CLI_MAP = {
+    '/usage': ['--usage'], '/limits': ['--usage'], '/status': ['--status'], '/doctor': ['--doctor'],
+    '/model': ['--model'], '/account': ['--account'], '/key': ['--key'], '/keys': ['--keys'],
+    '/sync': ['--sync'], '/update': ['--update'], '/reset': ['--reset'], '/setup': ['--setup'],
+    '/versions': ['--version'], '/log': ['--log']
+  };
+  // Full command list, mirrored from the terminal chat. needsArg → inserted into the input to type the value.
   var COMMANDS = [
+    { cmd: '/help', desc: 'List commands' },
     { cmd: '/clear', desc: 'Clear this chat' },
-    { cmd: '/doctor', desc: 'Health check (terminal)' },
+    { cmd: '/usage', desc: 'Usage and limits' },
+    { cmd: '/limits', desc: 'Usage and limits' },
+    { cmd: '/status', desc: 'Accounts and keys status' },
+    { cmd: '/doctor', desc: 'Health check' },
+    { cmd: '/model', desc: 'List or set models', needsArg: true },
+    { cmd: '/account', desc: 'Manage accounts (list|add|login|sync|remove)', needsArg: true },
+    { cmd: '/key', desc: 'Set an API key', needsArg: true },
+    { cmd: '/keys', desc: 'List API keys' },
+    { cmd: '/sync', desc: 'Sync MCPs and skills across tools' },
+    { cmd: '/update', desc: 'Update the CLI' },
+    { cmd: '/reset', desc: 'Reset cooldowns' },
+    { cmd: '/setup', desc: 'First-run setup' },
+    { cmd: '/versions', desc: 'Show version' },
+    { cmd: '/log', desc: 'Show usage log' },
+    { cmd: '/tool', desc: 'Set tool (auto|claude|codex|…)', needsArg: true },
+    { cmd: '/mode', desc: 'Set mode (default|plan|edits|auto|yolo)', needsArg: true },
+    { cmd: '/lang', desc: 'Interface language', needsArg: true },
     { cmd: '/history', desc: 'Open history' },
-    { cmd: '/plan', desc: 'Set mode: plan' },
-    { cmd: '/edits', desc: 'Set mode: edits' },
-    { cmd: '/default', desc: 'Set mode: default' }
+    { cmd: '/sessions', desc: 'Open sessions (history)' },
+    { cmd: '/new', desc: 'Start a new conversation' },
+    { cmd: '/resume', desc: 'Resume a conversation (history)' }
   ];
+  var SKILLS = [];
   var F = String.fromCharCode(96);
   function isPath(t){ return /\\.(ts|tsx|js|jsx|py|go|rs|java|rb|json|md|ya?ml|sh|css|scss|html|sql|toml|txt)$/i.test(t) || (/\\//.test(t) && /\\.[a-z0-9]+$/i.test(t)); }
   function esc(t){ return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -561,61 +657,117 @@ class OmniChatView {
     var el = e.target;
     if (el && el.classList && el.classList.contains('file')) { vs.postMessage({ type: 'openFile', path: el.getAttribute('data-p') }); }
   });
-  function turn(role, text, time){
+  function scroll(){ log.scrollTop = log.scrollHeight; }
+  // A user message: right-aligned bubble with a time footer.
+  function userTurn(text, time){
     clearWelcome();
-    var d = document.createElement('div'); d.className = 'turn ' + role;
-    var who = document.createElement('div'); who.className = 'who';
-    if (role === 'assistant'){ var dot = document.createElement('span'); dot.className = 'dot'; who.appendChild(dot); who.appendChild(document.createTextNode('Omni')); }
-    else { who.textContent = 'You'; }
-    var meta = document.createElement('span'); meta.className = 'act'; meta.style.marginLeft = '8px'; meta.style.fontStyle = 'normal';
-    if (time) meta.textContent = hhmm(time);
-    who.appendChild(meta);
-    var body = document.createElement('div'); body.className = 'body'; body._raw = text || '';
-    body.innerHTML = md(body._raw);
-    d.appendChild(who); d.appendChild(body); thread.appendChild(d); log.scrollTop = log.scrollHeight;
-    return { body: body, meta: meta };
+    var d = document.createElement('div'); d.className = 'turn user';
+    var who = document.createElement('div'); who.className = 'who'; who.textContent = 'You';
+    var body = document.createElement('div'); body.className = 'body'; body._raw = text || ''; body.innerHTML = md(body._raw);
+    var foot = document.createElement('div'); foot.className = 'foot'; foot.textContent = hhmm(time || Date.now());
+    d.appendChild(who); d.appendChild(body); d.appendChild(foot); thread.appendChild(d); scroll();
   }
-  function act(text){ clearWelcome(); var d = document.createElement('div'); d.className = 'act'; d.textContent = text; thread.appendChild(d); log.scrollTop = log.scrollHeight; }
+  // The assistant exchange: steps (tool activity) + thinking + answer + footer with timings.
+  function startAssistant(){
+    clearWelcome();
+    var d = document.createElement('div'); d.className = 'turn assistant';
+    var who = document.createElement('div'); who.className = 'who';
+    var dot = document.createElement('span'); dot.className = 'dot'; who.appendChild(dot); who.appendChild(document.createTextNode('Omni'));
+    var steps = document.createElement('details'); steps.className = 'steps live'; steps.open = true;
+    var ss = document.createElement('summary'); ss.textContent = 'Working'; steps.appendChild(ss);
+    var think = document.createElement('details'); think.className = 'think'; think.style.display = 'none';
+    var ts = document.createElement('summary'); ts.textContent = 'Thinking'; var tr = document.createElement('div'); tr.className = 'r'; tr.textContent = '';
+    think.appendChild(ts); think.appendChild(tr);
+    var body = document.createElement('div'); body.className = 'body'; body._raw = '';
+    var foot = document.createElement('div'); foot.className = 'foot'; foot.textContent = '';
+    d.appendChild(who); d.appendChild(steps); d.appendChild(think); d.appendChild(body); d.appendChild(foot);
+    thread.appendChild(d); scroll();
+    cur = { el: d, steps: steps, think: think, thinkBody: tr, body: body, foot: foot, start: Date.now(), firstOut: 0 };
+    return cur;
+  }
+  function ensureAssistant(){ if (!cur) startAssistant(); return cur; }
+  function stepLine(text){ var c = ensureAssistant(); var l = document.createElement('div'); l.className = 'line'; l.textContent = text; c.steps.appendChild(l); scroll(); }
+  function thinkAppend(text){ var c = ensureAssistant(); c.think.style.display = ''; c.thinkBody.textContent += text; scroll(); }
+  function outAppend(text, pre){ var c = ensureAssistant(); if (!c.firstOut){ c.firstOut = Date.now(); c.pre = !!pre; } c.body._raw += text; c.body.innerHTML = c.pre ? ('<pre>' + esc(c.body._raw) + '</pre>') : md(c.body._raw); scroll(); }
+  function finishTurn(){
+    if (!cur) return;
+    cur.steps.classList.remove('live');
+    cur.steps.querySelector('summary').textContent = 'Steps';
+    cur.steps.open = false;
+    if (!cur.think.querySelector('.r').textContent) cur.think.style.display = 'none'; else cur.think.open = false;
+    var end = Date.now();
+    var parts = [];
+    if (cur.firstOut) parts.push('thought ' + dur(cur.firstOut - cur.start));
+    parts.push('done ' + hhmm(end)); parts.push(dur(end - cur.start));
+    cur.foot.textContent = parts.join(' · ');
+    cur = null;
+  }
   function autosize(){ q.style.height = 'auto'; q.style.height = Math.min(q.scrollHeight, 160) + 'px'; }
+  function notify(text){ clearWelcome(); var d = document.createElement('div'); d.className = 'act'; d.textContent = text; thread.appendChild(d); scroll(); }
+  function assistantStatic(text){
+    clearWelcome();
+    var d = document.createElement('div'); d.className = 'turn assistant';
+    var who = document.createElement('div'); who.className = 'who';
+    var dot = document.createElement('span'); dot.className = 'dot'; who.appendChild(dot); who.appendChild(document.createTextNode('Omni'));
+    var body = document.createElement('div'); body.className = 'body'; body.innerHTML = md(text || '');
+    d.appendChild(who); d.appendChild(body); thread.appendChild(d); scroll();
+  }
   function send(){
     var text = q.value.trim(); if (!text) return;
-    turn('user', text, Date.now()); q.value = ''; autosize(); hideMenu();
-    answer = null; header = null; sendTime = Date.now(); firstOut = 0;
-    sendBtn.disabled = true; stopBtn.disabled = false;
+    if (text.charAt(0) === '/'){ runSlash(text); return; }
+    userTurn(text, Date.now()); q.value = ''; autosize(); hideMenu();
+    cur = null; sendBtn.disabled = true; stopBtn.disabled = false;
     vs.postMessage({ type: 'send', text: text, tool: toolSel.value, mode: modeSel.value });
   }
-  function runCommand(cmd){
-    q.value = ''; hideMenu(); autosize();
-    if (cmd === '/clear'){ thread.innerHTML = ''; }
-    else if (cmd === '/doctor'){
-      turn('user', '/doctor', Date.now());
-      answer = null; header = null; sendTime = Date.now(); firstOut = 0;
-      sendBtn.disabled = true; stopBtn.disabled = false;
-      vs.postMessage({ type: 'doctor' });
-    }
-    else if (cmd === '/history'){ vs.postMessage({ type: 'command', id: 'omni-ai.history.focus' }); }
-    else if (cmd === '/plan'){ modeSel.value = 'plan'; }
-    else if (cmd === '/edits'){ modeSel.value = 'edits'; }
-    else if (cmd === '/default'){ modeSel.value = 'default'; }
+  function isSkill(cmd){ return SKILLS.some(function(s){ return s.cmd === cmd; }); }
+  // Run any terminal-style slash command.
+  function runSlash(line){
+    hideMenu();
+    var parts = line.trim().split(/\\s+/); var cmd = parts[0].toLowerCase(); var rest = parts.slice(1);
+    q.value = ''; autosize();
+    if (cmd === '/clear'){ thread.innerHTML = ''; cur = null; return; }
+    if (cmd === '/help'){ assistantStatic(helpText()); return; }
+    if (cmd === '/history' || cmd === '/sessions' || cmd === '/resume'){ vs.postMessage({ type: 'command', id: 'omni-ai.history.focus' }); return; }
+    if (cmd === '/new'){ thread.innerHTML = ''; cur = null; vs.postMessage({ type: 'newConversation' }); notify('new conversation'); return; }
+    if (cmd === '/tool'){ if (rest[0]){ toolSel.value = rest[0]; vs.postMessage({ type: 'setDefault', key: 'tool', value: rest[0] }); notify('tool: ' + rest[0]); } else notify('tools: ' + optsOf(toolSel)); return; }
+    if (cmd === '/mode'){ if (rest[0]){ modeSel.value = rest[0]; vs.postMessage({ type: 'setDefault', key: 'mode', value: rest[0] }); notify('mode: ' + rest[0]); } else notify('modes: ' + optsOf(modeSel)); return; }
+    if (cmd === '/lang'){ notify('Interface language follows the CLI; set it with the terminal chat.'); return; }
+    if (cmd === '/update'){ runCli('/update', ['--update']); vs.postMessage({ type: 'command', id: 'workbench.extensions.action.checkForUpdates' }); notify('Checking for extension updates…'); return; }
+    if (CLI_MAP[cmd]){ runCli(cmd + (rest.length ? ' ' + rest.join(' ') : ''), CLI_MAP[cmd].concat(rest)); return; }
+    if (isSkill(cmd)){ userTurn(line, Date.now()); cur = null; sendBtn.disabled = true; stopBtn.disabled = false; vs.postMessage({ type: 'send', text: line, tool: toolSel.value, mode: modeSel.value }); return; }
+    notify('Unknown command: ' + cmd);
+  }
+  function optsOf(sel){ return Array.prototype.map.call(sel.options, function(o){ return o.value; }).join(', '); }
+  function helpText(){
+    var lines = ['## Commands'];
+    COMMANDS.forEach(function(c){ lines.push('- ' + F + c.cmd + F + ' — ' + c.desc); });
+    if (SKILLS.length){ lines.push('## Skills'); SKILLS.forEach(function(s){ lines.push('- ' + F + s.cmd + F + ' — ' + s.desc); }); }
+    return lines.join('\\n');
   }
   function startVoice(){
     var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR){ act('Voice input is not available in this webview.'); return; }
+    if (!SR){ notify('Voice input is not available in this webview.'); return; }
     var r = new SR(); r.lang = navigator.language || 'en-US'; r.interimResults = true; r.continuous = false;
     var base = q.value;
     r.onresult = function(ev){ var t = ''; for (var i = 0; i < ev.results.length; i++) t += ev.results[i][0].transcript; q.value = (base ? base + ' ' : '') + t; autosize(); };
-    r.onerror = function(){ act('Voice input error (check mic permission).'); };
-    try { r.start(); act('🎙 listening…'); } catch (e) { act('Voice input could not start.'); }
+    r.onerror = function(){ notify('Voice input error (check mic permission).'); };
+    try { r.start(); notify('🎙 listening…'); } catch (e) { notify('Voice input could not start.'); }
   }
-  function matches(){ var v = q.value.trim().toLowerCase(); return COMMANDS.filter(function(c){ return c.cmd.indexOf(v) === 0; }); }
+  function runCli(label, args){
+    userTurn(label, Date.now());
+    cur = null; sendBtn.disabled = true; stopBtn.disabled = false;
+    vs.postMessage({ type: 'cli', args: args });
+  }
+  function matches(){ var v = q.value.trim().toLowerCase().split(/\\s+/)[0]; return COMMANDS.concat(SKILLS).filter(function(c){ return c.cmd.indexOf(v) === 0; }); }
+  function menuPick(c){ if (c.needsArg){ q.value = c.cmd + ' '; hideMenu(); q.focus(); autosize(); } else { runSlash(c.cmd); } }
   function showMenu(){
-    var list = matches(); if (!q.value.startsWith('/') || !list.length){ hideMenu(); return; }
+    var list = matches(); if (q.value.charAt(0) !== '/' || !list.length){ hideMenu(); return; }
     menuIdx = Math.min(menuIdx, list.length - 1);
     menu.innerHTML = '';
-    list.forEach(function(c, i){
+    list.slice(0, 12).forEach(function(c, i){
       var el = document.createElement('div'); el.className = 'mi' + (i === menuIdx ? ' sel' : '');
       el.innerHTML = '<b>' + c.cmd + '</b><span style="opacity:.6">' + c.desc + '</span>';
-      el.onclick = function(){ runCommand(c.cmd); };
+      el.onclick = function(){ menuPick(c); };
       menu.appendChild(el);
     });
     menu.style.display = 'block';
@@ -634,7 +786,7 @@ class OmniChatView {
       var list = matches();
       if (e.key === 'ArrowDown'){ e.preventDefault(); menuIdx = (menuIdx + 1) % list.length; showMenu(); return; }
       if (e.key === 'ArrowUp'){ e.preventDefault(); menuIdx = (menuIdx - 1 + list.length) % list.length; showMenu(); return; }
-      if (e.key === 'Enter'){ e.preventDefault(); if (list[menuIdx]) runCommand(list[menuIdx].cmd); return; }
+      if (e.key === 'Enter'){ e.preventDefault(); if (list[menuIdx]) menuPick(list[menuIdx]); return; }
       if (e.key === 'Escape'){ hideMenu(); return; }
     }
     if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); }
@@ -642,28 +794,31 @@ class OmniChatView {
   window.addEventListener('message', function(e){
     var m = e.data;
     if (m.type === 'history'){
-      (m.messages || []).forEach(function(msg){ turn(msg.role === 'assistant' ? 'assistant' : 'user', msg.content); });
-      answer = null;
+      (m.messages || []).forEach(function(msg){ if (msg.role === 'assistant') assistantStatic(msg.content); else userTurn(msg.content); });
+      cur = null;
     } else if (m.type === 'defaults'){
       if (m.tool) toolSel.value = m.tool; if (m.mode) modeSel.value = m.mode;
+    } else if (m.type === 'menu'){
+      var mn = m.menu || {};
+      if (mn.tools && mn.tools.length){ var tv = toolSel.value; toolSel.innerHTML = ''; mn.tools.forEach(function(t){ var o = document.createElement('option'); o.value = t; o.textContent = t === 'agy' ? 'antigravity' : t; toolSel.appendChild(o); }); if (mn.tools.indexOf(tv) >= 0) toolSel.value = tv; }
+      if (mn.modes && mn.modes.length){ var mv = modeSel.value; modeSel.innerHTML = ''; mn.modes.forEach(function(x){ var o = document.createElement('option'); o.value = x; o.textContent = x; modeSel.appendChild(o); }); if (mn.modes.indexOf(mv) >= 0) modeSel.value = mv; }
+      SKILLS = (mn.skills || []).map(function(s){ return { cmd: '/' + s, desc: 'Project skill' }; });
     } else if (m.type === 'attached'){
       chips.innerHTML = ''; (m.names || []).forEach(function(n){ var c = document.createElement('span'); c.className = 'chip'; c.textContent = '📎 ' + n; chips.appendChild(c); });
     } else if (m.type === 'seed'){
       q.value = m.text; autosize(); q.focus();
+    } else if (m.type === 'start'){
+      cur = null;
     } else if (m.type === 'act'){
-      act(m.text);
+      stepLine(m.text);
+    } else if (m.type === 'think'){
+      thinkAppend(m.text);
     } else if (m.type === 'out'){
-      if (m.stream === 'err'){ act('✗ ' + m.text); }
-      else {
-        if (!answer){ var t = turn('assistant', ''); answer = t.body; header = t.meta; }
-        if (!firstOut){ firstOut = Date.now(); if (header) header.textContent = 'thought ' + dur(firstOut - sendTime); }
-        answer._raw += m.text; answer.innerHTML = md(answer._raw);
-      }
-      log.scrollTop = log.scrollHeight;
+      if (m.stream === 'err'){ stepLine('✗ ' + m.text); }
+      else { outAppend(m.text, m.pre); }
     } else if (m.type === 'done'){
       sendBtn.disabled = false; stopBtn.disabled = true;
-      if (header && sendTime) header.textContent = (firstOut ? 'thought ' + dur(firstOut - sendTime) + ' · ' : '') + 'done ' + hhmm(Date.now()) + ' · ' + dur(Date.now() - sendTime);
-      answer = null; header = null;
+      finishTurn();
     }
   });
   vs.postMessage({ type: 'ready' });
