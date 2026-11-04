@@ -248,7 +248,7 @@ class OmniChatView {
       this.context.workspaceState.update(this.convKey(), hist.slice(-200));
     } catch (e) { /* ignore */ }
   }
-  saveTurn(user, assistant) { this.pushHistory({ role: 'user', content: user }, { role: 'assistant', content: assistant }); }
+  saveTurn(user, assistant) { const ts = Date.now(); this.pushHistory({ role: 'user', content: user, ts }, { role: 'assistant', content: assistant, ts }); }
   clearConv() { try { this.context.workspaceState.update(this.convKey(), []); } catch (e) {} }
 
   async attachFiles() {
@@ -327,7 +327,7 @@ class OmniChatView {
     child.on('error', (e) => this.post({ type: 'out', stream: 'err', text: String(e.message || e) }));
     child.on('close', (code) => {
       this.child = null;
-      if (acc.trim()) this.pushHistory({ role: 'user', content: label }, { role: 'cli', label, content: acc });
+      if (acc.trim()) { const ts = Date.now(); this.pushHistory({ role: 'user', content: label, ts }, { role: 'cli', label, content: acc, ts }); }
       this.post({ type: 'done', code });
     });
   }
@@ -551,8 +551,18 @@ class OmniChatView {
   .mermaid { background: var(--vscode-textCodeBlock-background, rgba(127,127,127,.08)); border-radius: 8px; padding: 8px; margin: 6px 0; text-align: center; }
   .clicard { align-self: stretch; border: 1px solid var(--vscode-panel-border); border-radius: 10px; overflow: hidden; margin: 2px 0; }
   .clihead { font-size: 11px; padding: 4px 10px; background: rgba(124,92,255,.14); font-family: var(--vscode-editor-font-family, monospace); opacity: .85; border-bottom: 1px solid var(--vscode-panel-border); }
-  .clicard .body { padding: 0; }
-  .clicard .body pre { margin: 0; border-radius: 0; background: transparent; font-size: 12px; padding: 8px 10px; }
+  .clicard .body { padding: 10px 12px; font-size: 12.5px; }
+  .clicard .body pre { margin: 0; border-radius: 0; background: transparent; font-size: 12px; padding: 0; }
+  .cl-h { font-weight: 600; margin-top: 10px; }
+  .cl-h:first-child { margin-top: 0; }
+  .cl-t { opacity: .85; margin: 1px 0; }
+  .cl-sp { height: 6px; }
+  .cl-r { display: flex; align-items: center; gap: 8px; margin: 2px 0; }
+  .cl-lbl { min-width: 90px; opacity: .85; }
+  .cl-bar { flex: 0 0 150px; height: 8px; border-radius: 4px; background: rgba(127,127,127,.25); overflow: hidden; }
+  .cl-bar > span { display: block; height: 100%; background: linear-gradient(90deg, var(--brand1), var(--brand2)); }
+  .cl-pct { width: 42px; text-align: right; opacity: .8; }
+  .cl-aft { opacity: .6; }
   .turn .body { word-break: break-word; }
   .turn .body p { margin: 6px 0; }
   .turn .body h1,.turn .body h2,.turn .body h3 { margin: 10px 0 4px; }
@@ -752,24 +762,50 @@ class OmniChatView {
     var foot = document.createElement('div'); foot.className = 'foot'; foot.textContent = '';
     d.appendChild(who); d.appendChild(card); d.appendChild(foot);
     thread.appendChild(d); scroll();
-    cur = { el: d, steps: null, think: null, thinkBody: null, body: body, foot: foot, start: Date.now(), firstOut: 0, pre: true, cli: true };
+    cur = { el: d, steps: null, think: null, thinkBody: null, body: body, foot: foot, start: Date.now(), firstOut: 0, pre: true, cli: true, label: label };
     return cur;
   }
-  function cliStatic(label, content){
+  // Turn CLI text (usage/status/…) into a native card: section headers, HTML bars, rows — no terminal glyphs.
+  function renderCli(label, text){
+    var lines = String(text).replace(/\\r/g, '').split('\\n');
+    var html = '';
+    lines.forEach(function(line){
+      if (!line.trim()){ html += '<div class="cl-sp"></div>'; return; }
+      var indent = (line.match(/^\\s*/)[0] || '').length;
+      var barm = line.match(/([█░▓▒#=.-]{4,})\\s*(\\d+)%/);
+      if (barm){
+        var pct = Math.max(0, Math.min(100, parseInt(barm[2], 10)));
+        var bi = line.indexOf(barm[1]);
+        var before = esc(line.slice(0, bi).trim());
+        var after = esc(line.slice(line.indexOf(barm[2], bi) + barm[2].length + 1).trim());
+        html += '<div class="cl-r" style="padding-left:' + (indent * 4) + 'px">'
+          + '<span class="cl-lbl">' + before + '</span>'
+          + '<span class="cl-bar"><span style="width:' + pct + '%"></span></span>'
+          + '<span class="cl-pct">' + pct + '%</span>'
+          + (after ? '<span class="cl-aft">' + after + '</span>' : '')
+          + '</div>';
+      } else {
+        var cls = indent === 0 ? 'cl-h' : 'cl-t';
+        html += '<div class="' + cls + '" style="padding-left:' + (indent * 4) + 'px">' + esc(line.trim()) + '</div>';
+      }
+    });
+    return html;
+  }
+  function cliStatic(label, content, ts){
     clearWelcome();
     var d = document.createElement('div'); d.className = 'turn assistant';
     var who = document.createElement('div'); who.className = 'who'; var dot = document.createElement('span'); dot.className = 'dot'; who.appendChild(dot); who.appendChild(document.createTextNode('Omni'));
     var card = document.createElement('div'); card.className = 'clicard';
-    var head = document.createElement('div'); head.className = 'clihead'; head.textContent = '⚙ ' + (label || 'command');
-    var body = document.createElement('div'); body.className = 'body'; body.innerHTML = '<pre>' + esc(content || '') + '</pre>';
+    var head = document.createElement('div'); head.className = 'clihead'; head.textContent = (label || 'command');
+    var body = document.createElement('div'); body.className = 'body'; body.innerHTML = renderCli(label, content || '');
     card.appendChild(head); card.appendChild(body);
-    d.appendChild(who); d.appendChild(card); thread.appendChild(d); scroll();
+    d.appendChild(who); d.appendChild(card); if (ts) d.appendChild(footEl(ts)); thread.appendChild(d); scroll();
   }
   function stepLine(text){ var c = ensureAssistant(); var l = document.createElement('div'); l.className = 'line'; l.textContent = text; c.steps.appendChild(l); scroll(); }
   function toolStart(label, cmd){ var c = ensureAssistant(); var d = document.createElement('details'); d.className = 'tool'; var s = document.createElement('summary'); s.textContent = (label || '$') + ' ' + (cmd || ''); var pre = document.createElement('pre'); pre.className = 'tout'; pre.textContent = '…'; d.appendChild(s); d.appendChild(pre); c.steps.appendChild(d); c.tool = d; c.toolPre = pre; scroll(); }
   function toolDone(output, failed){ var c = cur; if (!c || !c.toolPre){ return; } c.toolPre.textContent = (output && output.trim()) ? output : '(no output)'; if (failed) c.tool.classList.add('fail'); c.tool = null; c.toolPre = null; scroll(); }
   function thinkAppend(text){ var c = ensureAssistant(); c.think.style.display = ''; c.thinkBody.textContent += text; scroll(); }
-  function outAppend(text, pre){ var c = ensureAssistant(); if (!c.firstOut){ c.firstOut = Date.now(); c.pre = !!pre; } c.body._raw += text; c.body.innerHTML = c.pre ? ('<pre>' + esc(c.body._raw) + '</pre>') : md(c.body._raw); scroll(); }
+  function outAppend(text, pre){ var c = ensureAssistant(); if (!c.firstOut){ c.firstOut = Date.now(); if (!c.cli) c.pre = !!pre; } c.body._raw += text; c.body.innerHTML = c.cli ? renderCli(c.label, c.body._raw) : (c.pre ? ('<pre>' + esc(c.body._raw) + '</pre>') : md(c.body._raw)); scroll(); }
   function finishTurn(){
     if (!cur) return;
     if (cur.steps){ cur.steps.classList.remove('live'); cur.steps.querySelector('summary').textContent = 'Steps'; cur.steps.open = false; }
@@ -784,13 +820,14 @@ class OmniChatView {
   }
   function autosize(){ q.style.height = 'auto'; q.style.height = Math.min(q.scrollHeight, 160) + 'px'; }
   function notify(text){ clearWelcome(); var d = document.createElement('div'); d.className = 'act'; d.textContent = text; thread.appendChild(d); scroll(); }
-  function assistantStatic(text){
+  function footEl(ts){ var f = document.createElement('div'); f.className = 'foot'; if (ts) f.textContent = hhmm(ts); return f; }
+  function assistantStatic(text, ts){
     clearWelcome();
     var d = document.createElement('div'); d.className = 'turn assistant';
     var who = document.createElement('div'); who.className = 'who';
     var dot = document.createElement('span'); dot.className = 'dot'; who.appendChild(dot); who.appendChild(document.createTextNode('Omni'));
     var body = document.createElement('div'); body.className = 'body'; body.innerHTML = md(text || '');
-    d.appendChild(who); d.appendChild(body); thread.appendChild(d); scroll(); renderMermaid();
+    d.appendChild(who); d.appendChild(body); if (ts) d.appendChild(footEl(ts)); thread.appendChild(d); scroll(); renderMermaid();
   }
   function send(){
     var text = q.value.trim(); if (!text) return;
@@ -874,7 +911,7 @@ class OmniChatView {
   window.addEventListener('message', function(e){
     var m = e.data;
     if (m.type === 'history'){
-      (m.messages || []).forEach(function(msg){ if (msg.role === 'cli') cliStatic(msg.label, msg.content); else if (msg.role === 'assistant') assistantStatic(msg.content); else userTurn(msg.content); });
+      (m.messages || []).forEach(function(msg){ if (msg.role === 'cli') cliStatic(msg.label, msg.content, msg.ts); else if (msg.role === 'assistant') assistantStatic(msg.content, msg.ts); else userTurn(msg.content, msg.ts); });
       cur = null;
     } else if (m.type === 'defaults'){
       if (m.tool) toolSel.value = m.tool; if (m.mode) modeSel.value = m.mode;
