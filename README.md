@@ -56,8 +56,8 @@ se configuram de dentro do próprio chat.
 
 ## Como funciona
 
-Da linha digitada até a resposta salva. O chat (`chat.py`) não chama nenhuma IA
-direto: ele dispara o roteador (`cli.py`) como subprocesso e lê os eventos que ele
+Da linha digitada até a resposta salva. O chat (`omni_ai/chat/`) não chama nenhuma IA
+direto: ele dispara o roteador (`omni_ai/cli/`) como subprocesso e lê os eventos que ele
 emite, linha a linha, para mostrar quem está atendendo e o que está fazendo.
 
 ![Fluxo do pedido até a resposta](https://raw.githubusercontent.com/samuelrms/omni-ai-cli/main/docs/diagrams/flow1.pt.png)
@@ -500,16 +500,21 @@ No primeiro início, o servidor cria uma chave e a mostra uma única vez. Só o 
 omni-ai-cli/
 ├── omni_ai/                  # o programa (pacote Python)
 │   ├── tools.py              # cadastro único das ferramentas: nome, cor, CLI, modelo, chave
-│   ├── cli.py                # comando ai: classifica, roteia e executa cada ferramenta
-│   ├── chat.py               # chat: sessões, eventos, Ctrl-C, idiomas
-│   ├── ui.py                 # visual: caixa de entrada, barra de status, ações e respostas
+│   ├── cli/                  # comando ai: classifica, roteia e executa cada ferramenta
+│   ├── chat/                 # chat: sessões, eventos, Ctrl-C, idiomas
+│   ├── ui/                   # visual: caixa de entrada, barra de status, ações e respostas
 │   ├── skills.py             # skills e comandos do projeto, do usuário e nativos
-│   ├── config.py             # modelos, chaves e contas Claude (/model, /key, /account)
+│   ├── config/               # modelos, chaves e contas Claude (/model, /key, /account)
 │   ├── sync.py               # /sync: MCPs e skills entre as três ferramentas
-│   ├── openrouter.py         # cliente OpenRouter: gratuitos, pagos só se autorizados
+│   ├── usage/                # uso e limites de cada ferramenta e conta
+│   ├── export/               # exporta a conversa em PDF ou Markdown
+│   ├── history.py            # conversas de todas as ferramentas (ai history)
+│   ├── onboarding.py         # guia de primeiro acesso (ai --setup)
+│   ├── openrouter/           # cliente OpenRouter: gratuitos, pagos só se autorizados
 │   ├── grok.py               # cliente xAI, reaproveitado pelo DeepSeek
 │   ├── deepseek.py           # cliente DeepSeek com dados pessoais mascarados
-│   ├── pii.py                # mascara e restaura dados pessoais
+│   ├── agy_events.py         # lê os eventos do Antigravity para o chat e o servidor
+│   ├── pii/                  # mascara e restaura dados pessoais
 │   ├── server/               # ai serve: API compatível com a OpenAI
 │   ├── osutils.py            # diferenças entre macOS, Linux e Windows
 │   ├── profiles.json         # modelo inicial; o seu fica em ~/.config/smart-ai
@@ -525,7 +530,7 @@ omni-ai-cli/
 
 O roteador não sabe nada de chat: ele só executa uma pergunta e, com
 `SMART_AI_EVENTS=1`, emite eventos JSON. O chat não sabe nada de credenciais: contas e
-modelos passam pelo `config.py`.
+modelos passam pelo `omni_ai/config/`.
 
 ---
 

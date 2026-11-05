@@ -1,10 +1,10 @@
 flowchart TD
     A["Você digita e tecla Enter<br/>(a caixa nunca trava)"] --> B{"Começa com / ?"}
     B -- sim --> C["Comando interno<br/>/model · /account · /key · /lang · /versions"]
-    C --> C1["config.py grava em<br/>models.json, profiles.json ou keys/"]
+    C --> C1["omni_ai/config/ grava em<br/>models.json, profiles.json ou keys/"]
     B -- não --> FQ["Entra na fila<br/>com a ferramenta do momento do envio"]
 
-    subgraph CHAT ["chat.py — chat"]
+    subgraph CHAT ["omni_ai/chat/ — chat"]
         FQ --> FW{"Esperou na fila e a resposta<br/>anterior já resolve o pedido?"}
         FW -- "sim (classificador grátis)" --> FS["Pulado, avisa na tela"]
         FW -- não --> D["Monta o contexto: últimas mensagens<br/>da sessão até 48 mil caracteres + idioma"]
@@ -13,7 +13,7 @@ flowchart TD
         X["Ctrl-C"] -. "esvazia a fila; SIGTERM no grupo,<br/>após 5 s, SIGKILL" .-> E
     end
 
-    subgraph ROUTER ["cli.py — roteador"]
+    subgraph ROUTER ["omni_ai/cli/ — roteador"]
         E --> G["Carrega modelos:<br/>env > models.json > padrão"]
         G --> H{"Ferramenta fixada<br/>com /tool?"}
         H -- sim --> H1["Só a ferramenta escolhida"]

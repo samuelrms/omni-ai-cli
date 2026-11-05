@@ -1,10 +1,10 @@
 flowchart TD
     A["You type and press Enter<br/>(the box never locks)"] --> B{"Starts with / ?"}
     B -- yes --> C["Internal command<br/>/model · /account · /key · /lang · /versions"]
-    C --> C1["config.py writes to<br/>models.json, profiles.json or keys/"]
+    C --> C1["omni_ai/config/ writes to<br/>models.json, profiles.json or keys/"]
     B -- no --> FQ["Goes into the queue<br/>with the tool selected at send time"]
 
-    subgraph CHAT ["chat.py — chat"]
+    subgraph CHAT ["omni_ai/chat/ — chat"]
         FQ --> FW{"Waited in the queue and the previous<br/>answer already covers the request?"}
         FW -- "yes (free classifier)" --> FS["Skipped, shown on screen"]
         FW -- no --> D["Builds the context: latest messages<br/>of the session up to 48 thousand characters + language"]
@@ -13,7 +13,7 @@ flowchart TD
         X["Ctrl-C"] -. "empties the queue; SIGTERM to the group,<br/>after 5 s, SIGKILL" .-> E
     end
 
-    subgraph ROUTER ["cli.py — router"]
+    subgraph ROUTER ["omni_ai/cli/ — router"]
         E --> G["Loads models:<br/>env > models.json > default"]
         G --> H{"Tool pinned<br/>with /tool?"}
         H -- yes --> H1["Only the chosen tool"]

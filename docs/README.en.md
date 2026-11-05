@@ -56,8 +56,8 @@ configured from inside the chat itself.
 
 ## How it works
 
-From the typed line to the saved answer. The chat (`chat.py`) does not call any AI
-directly: it launches the router (`cli.py`) as a subprocess and reads the events it
+From the typed line to the saved answer. The chat (`omni_ai/chat/`) does not call any AI
+directly: it launches the router (`omni_ai/cli/`) as a subprocess and reads the events it
 emits, line by line, to show who is answering and what they are doing.
 
 ![Request-to-answer flow](https://raw.githubusercontent.com/samuelrms/omni-ai-cli/main/docs/diagrams/flow1.en.png)
@@ -499,16 +499,21 @@ On first start, the server creates a key and shows it once. Only its hash is sto
 omni-ai-cli/
 ├── omni_ai/                  # the program (Python package)
 │   ├── tools.py              # single tool registry: name, color, CLI, model, key
-│   ├── cli.py                # ai command: classifies, routes and runs each tool
-│   ├── chat.py               # chat: sessions, events, Ctrl-C, languages
-│   ├── ui.py                 # look: input box, status bar, actions and answers
+│   ├── cli/                  # ai command: classifies, routes and runs each tool
+│   ├── chat/                 # chat: sessions, events, Ctrl-C, languages
+│   ├── ui/                   # look: input box, status bar, actions and answers
 │   ├── skills.py             # project, user and native skills/commands
-│   ├── config.py             # models, keys and Claude accounts (/model, /key, /account)
+│   ├── config/               # models, keys and Claude accounts (/model, /key, /account)
 │   ├── sync.py               # /sync: MCPs and skills across the three tools
-│   ├── openrouter.py         # OpenRouter client: free, paid only if authorized
+│   ├── usage/                # usage and limits of each tool and account
+│   ├── export/               # exports the conversation as PDF or Markdown
+│   ├── history.py            # conversations from all tools (ai history)
+│   ├── onboarding.py         # first-run guide (ai --setup)
+│   ├── openrouter/           # OpenRouter client: free, paid only if authorized
 │   ├── grok.py               # xAI client, reused by DeepSeek
 │   ├── deepseek.py           # DeepSeek client with personal data masked
-│   ├── pii.py                # masks and restores personal data
+│   ├── agy_events.py         # reads Antigravity events for the chat and the server
+│   ├── pii/                  # masks and restores personal data
 │   ├── server/               # ai serve: OpenAI-compatible API
 │   ├── osutils.py            # differences between macOS, Linux and Windows
 │   ├── profiles.json         # starting template; yours lives in ~/.config/smart-ai
@@ -524,7 +529,7 @@ omni-ai-cli/
 
 The router knows nothing about chat: it only runs a question and, with
 `SMART_AI_EVENTS=1`, emits JSON events. The chat knows nothing about credentials:
-accounts and models go through `config.py`.
+accounts and models go through `omni_ai/config/`.
 
 ---
 
