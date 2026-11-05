@@ -40,6 +40,7 @@ et les modèles comme les comptes se configurent depuis le chat lui-même.
 - [Commandes du chat](#commandes-du-chat)
 - [Modèles](#modèles)
 - [Comptes Claude](#comptes-claude)
+- [Connexion sans navigateur](#connexion-sans-navigateur)
 - [Clés API](#clés-api)
 - [Modes](#modes)
 - [Skills et MCP](#skills-et-mcp)
@@ -298,6 +299,32 @@ principal sont partagés avec chaque compte supplémentaire à la connexion. Seu
 connexion reste séparée. Si vous installez une nouvelle skill ou un nouveau MCP ensuite,
 lancez `/account sync NOM`.
 
+
+---
+
+## Connexion sans navigateur
+
+Sur un serveur, dans un conteneur ou en SSH, ouvrez le lien sur un autre appareil :
+
+```bash
+ai --account login primary     # Claude
+ai --account login codex
+ai --account login grok
+ai --account login cursor
+ai --account login codex NOM   # compte supplémentaire
+```
+
+| Outil | Ce qui se passe sans navigateur |
+| --- | --- |
+| Claude Code | Affiche un lien et demande de coller le code dans le terminal |
+| Codex | Sans navigateur, Omni utilise `--device-auth` : un lien et un code à usage unique. La connexion par défaut dépend de `localhost:1455` |
+| Cursor | Affiche un lien et attend l'autorisation |
+| Grok | Affiche un lien et un code |
+| Antigravity | Non testé. Il n'a pas de commande de connexion : utilisez `GEMINI_API_KEY` |
+
+Omni considère comme « sans navigateur » une session SSH, un conteneur ou Linux sans écran. Définissez `SMART_AI_HEADLESS=1` ou `0` pour choisir manuellement.
+
+Dans un conteneur, la connexion nécessite un terminal interactif (`docker exec -it`). Conservez dans un volume `~/.claude`, `~/.claude.json`, `~/.claude-accounts`, `~/.codex`, `~/.grok`, `~/.cursor`, `~/.config/cursor` et `~/.config/smart-ai`.
 
 ---
 

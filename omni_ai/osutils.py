@@ -31,6 +31,17 @@ def resolve_bin(name):
     return shutil.which(name) or shutil.which(name, path=extra)
 
 
+def headless():
+    """No browser to reach a login's localhost callback: SSH, a container, or Linux without a display.
+    SMART_AI_HEADLESS=1 or 0 overrides the detection."""
+    forced = os.environ.get('SMART_AI_HEADLESS')
+    if forced in ('0', '1'):
+        return forced == '1'
+    if os.environ.get('SSH_CONNECTION') or os.environ.get('SSH_TTY') or Path('/.dockerenv').exists():
+        return True
+    return sys.platform.startswith('linux') and not (os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY'))
+
+
 def group_kwargs():
     """Popen options that put the child in its own process group, so the whole tree can be stopped."""
     if WINDOWS:

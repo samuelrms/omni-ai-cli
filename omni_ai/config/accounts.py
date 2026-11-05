@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from ..osutils import link, resolve_bin
+from ..osutils import headless, link, resolve_bin
 from .store import ACCOUNTS_DIR, CONFIG_DIR, NAME, read_json, write_json, profiles_path
 from .profiles import profiles, ordered
 
@@ -73,8 +73,36 @@ def login(name, profile):
     return code
 
 
+def login_command(tool):
+    """Codex's default login waits on a localhost callback; its device code works from anywhere."""
+    command = list(MAIN_LOGINS[tool])
+    if tool == 'codex' and headless():
+        command.append('--device-auth')
+    return command
+
+
+def main_login(tool):
+    """The tool's normal login, not an extra account: what a new machine or container needs first."""
+    command = login_command(tool)
+    print(f'Abrindo o login principal do {tool}. Sem navegador nesta máquina, abra o link em outro dispositivo.')
+    try:
+        return subprocess.call([resolve_bin(os.environ.get(tool.upper() + '_BIN', command[0])) or command[0]] + command[1:])
+    except OSError as error:
+        print(f'✗ Não foi possível iniciar o login do {tool}: {error}', file=sys.stderr)
+        return 1
+
+
 def cmd_account(args):
     action = args[0] if args else 'list'
+    if action == 'login':
+        if len(args) == 1:
+            raise SystemExit('Informe o que logar: ai --account login primary|codex|grok|cursor (principal) '
+                             'ou ai --account login [codex|grok|agy] NOME (conta extra)')
+        if args[1] == 'primary' or (len(args) == 2 and args[1] in ('claude', 'codex', 'grok', 'cursor')):
+            code = main_login('claude' if args[1] == 'primary' else args[1])
+            if code:
+                raise SystemExit(code)
+            return
     if len(args) > 1 and args[1] in TOOL_HOMES:
         return cmd_tool_account(args[1], action, args[2:])
     if len(args) > 1 and args[1] == 'claude':
@@ -118,9 +146,6 @@ def cmd_account(args):
         raise SystemExit(f'Conta "{name}" não existe. Veja /account list.')
     elif action == 'login':
         if not profile.get('config_dir'):
-            if name == 'primary':
-                print('A conta primary usa o login normal do Claude: rode "claude auth login".')
-                return
             profile['config_dir'] = str(ACCOUNTS_DIR / name)
             profile.pop('credentials_file', None)
         if login(name, profile) == 0:
@@ -169,6 +194,8 @@ TOOL_HOMES = {
     'agy': ('HOME', '~', ('.gitconfig', '.ssh', '.config/gh', '.gemini/config'), ['agy']),
 }
 TOOL_ACCOUNTS_DIR = CONFIG_DIR / 'accounts'
+MAIN_LOGINS = {'claude': ['claude', 'auth', 'login'], 'codex': ['codex', 'login'], 'grok': ['grok', 'login'],
+               'cursor': ['cursor-agent', 'login']}
 
 
 def tool_accounts(tool, enabled_only=False):
@@ -209,7 +236,7 @@ def tool_login(tool, name, conf):
     share_tool_setup(tool, folder)
     print(f'Abrindo login do {tool} para a conta "{name}" (pasta isolada {folder}).')
     print('Sua conta principal não é afetada.' + (' Faça o login com o Google e saia com Ctrl-C.' if tool == 'agy' else ''))
-    command = TOOL_HOMES[tool][3]
+    command = login_command(tool) if tool in MAIN_LOGINS else TOOL_HOMES[tool][3]
     try:
         return subprocess.call([resolve_bin(command[0]) or command[0]] + command[1:], env=dict(os.environ, **tool_env(tool, conf)))
     except OSError as error:

@@ -39,6 +39,7 @@ se configuram de dentro do próprio chat.
 - [Comandos do chat](#comandos-do-chat)
 - [Modelos](#modelos)
 - [Contas Claude](#contas-claude)
+- [Login sem navegador](#login-sem-navegador)
 - [Chaves de API](#chaves-de-api)
 - [Modos](#modos)
 - [Skills e MCP](#skills-e-mcp)
@@ -293,6 +294,32 @@ Skills, plugins, agentes, `CLAUDE.md`, `settings.json` e os servidores MCP da co
 principal são compartilhados com cada conta extra no login. Só o login fica separado.
 Se você instalar uma skill ou um MCP novo depois, rode `/account sync NOME`.
 
+
+---
+
+## Login sem navegador
+
+Em servidor, container ou SSH, abra o link em outro dispositivo:
+
+```bash
+ai --account login primary     # Claude
+ai --account login codex
+ai --account login grok
+ai --account login cursor
+ai --account login codex NOME  # conta extra
+```
+
+| Ferramenta | O que acontece sem navegador |
+| --- | --- |
+| Claude Code | Mostra um link e pede para colar o código no terminal |
+| Codex | Sem navegador, o Omni usa `--device-auth`: link e código de uso único. O login padrão depende de `localhost:1455` |
+| Cursor | Mostra um link e aguarda a autorização |
+| Grok | Mostra um link e um código |
+| Antigravity | Não testado. Ele não tem comando de login, então use `GEMINI_API_KEY` |
+
+O Omni considera "sem navegador" uma sessão SSH, um container ou Linux sem tela. Use `SMART_AI_HEADLESS=1` ou `0` para definir manualmente.
+
+Em container, o login precisa de terminal interativo (`docker exec -it`). Preserve em volume `~/.claude`, `~/.claude.json`, `~/.claude-accounts`, `~/.codex`, `~/.grok`, `~/.cursor`, `~/.config/cursor` e `~/.config/smart-ai`.
 
 ---
 
