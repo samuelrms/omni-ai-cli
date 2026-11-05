@@ -52,10 +52,21 @@ class ConfigBase(unittest.TestCase):
             'ACCOUNTS_DIR': self.root / 'accounts',
             'TOOL_ACCOUNTS_DIR': self.config_dir / 'accounts',
         }
+        # After the split each constant also lives in the submodule that uses it (imported by value),
+        # so patch both the package attribute and the submodule's own binding.
+        targets = {
+            'CONFIG_DIR': (cfg, cfg.store),
+            'MODELS_FILE': (cfg, cfg.models),
+            'KEYS_DIR': (cfg, cfg.keys),
+            'LEGACY_OPENROUTER': (cfg, cfg.keys),
+            'ACCOUNTS_DIR': (cfg, cfg.accounts),
+            'TOOL_ACCOUNTS_DIR': (cfg, cfg.accounts),
+        }
         for name, value in consts.items():
-            p = patch.object(cfg, name, value)
-            p.start()
-            self.addCleanup(p.stop)
+            for mod in targets[name]:
+                p = patch.object(mod, name, value)
+                p.start()
+                self.addCleanup(p.stop)
 
         envp = patch.dict(os.environ, {}, clear=False)
         envp.start()
@@ -109,7 +120,7 @@ class ProfilesPathTests(ConfigBase):
         os.environ.pop('SMART_AI_CONFIG')
         template = self.root / 'template.json'
         template.write_text(json.dumps({'profiles': {}}))
-        with patch.object(cfg, 'TEMPLATE_PROFILES', template):
+        with patch.object(cfg.store, 'TEMPLATE_PROFILES', template):
             path = cfg.profiles_path()
         self.assertEqual(path, self.config_dir / 'profiles.json')
         self.assertTrue(path.exists())
@@ -207,21 +218,21 @@ class LoggedInTests(ConfigBase):
         self.assertFalse(cfg.logged_in({'credentials_file': str(self.root / 'ghost.json')}))
 
     def test_true_from_json_status(self):
-        with patch.object(cfg.subprocess, 'run', return_value=FakeRun(0, '{"loggedIn": true, "email": "a@b"}')):
+        with patch.object(cfg.accounts.subprocess, 'run', return_value=FakeRun(0, '{"loggedIn": true, "email": "a@b"}')):
             self.assertTrue(cfg.logged_in({}))
 
     def test_authmethod_none_is_not_logged_in(self):
-        with patch.object(cfg.subprocess, 'run', return_value=FakeRun(0, '{"authMethod": "none"}')):
+        with patch.object(cfg.accounts.subprocess, 'run', return_value=FakeRun(0, '{"authMethod": "none"}')):
             self.assertFalse(cfg.logged_in({}))
 
     def test_none_when_cli_errors(self):
-        with patch.object(cfg.subprocess, 'run', side_effect=OSError):
+        with patch.object(cfg.accounts.subprocess, 'run', side_effect=OSError):
             self.assertIsNone(cfg.logged_in({}))
 
     def test_fallback_when_output_is_not_json(self):
-        with patch.object(cfg.subprocess, 'run', return_value=FakeRun(0, 'all good')):
+        with patch.object(cfg.accounts.subprocess, 'run', return_value=FakeRun(0, 'all good')):
             self.assertTrue(cfg.logged_in({}))
-        with patch.object(cfg.subprocess, 'run', return_value=FakeRun(1, 'not logged in')):
+        with patch.object(cfg.accounts.subprocess, 'run', return_value=FakeRun(1, 'not logged in')):
             self.assertFalse(cfg.logged_in({}))
 
 
@@ -238,7 +249,7 @@ class ShareSetupTests(ConfigBase):
 
     def test_login_runs_cli_and_shares(self):
         account = self.root / 'accounts' / 'nova'
-        with patch.object(cfg.subprocess, 'call', return_value=0) as call:
+        with patch.object(cfg.accounts.subprocess, 'call', return_value=0) as call:
             code = self.cap(cfg.login, 'nova', {'config_dir': str(account)})
         self.assertEqual(call.call_count, 1)
         self.assertIn('Skills', code)
@@ -246,13 +257,13 @@ class ShareSetupTests(ConfigBase):
 
 class AccountCommandTests(ConfigBase):
     def test_list(self):
-        with patch.object(cfg, 'logged_in', return_value=True):
+        with patch.object(cfg.accounts, 'logged_in', return_value=True):
             out = self.cap(cfg.cmd_account, ['list'])
         self.assertIn('primary', out)
         self.assertIn('backup', out)
 
     def test_add_writes_profile(self):
-        with patch.object(cfg, 'login', return_value=0), patch.object(cfg, 'logged_in', return_value=False):
+        with patch.object(cfg.accounts, 'login', return_value=0), patch.object(cfg.accounts, 'logged_in', return_value=False):
             out = self.cap(cfg.cmd_account, ['add', 'pessoal'])
         self.assertIn('adicionada', out)
         saved = self.read_profiles()['profiles']['pessoal']
@@ -260,13 +271,13 @@ class AccountCommandTests(ConfigBase):
         self.assertEqual(saved['config_dir'], str(self.root / 'accounts' / 'pessoal'))
 
     def test_add_aborts_when_login_fails(self):
-        with patch.object(cfg, 'login', return_value=1), patch.object(cfg, 'logged_in', return_value=False):
+        with patch.object(cfg.accounts, 'login', return_value=1), patch.object(cfg.accounts, 'logged_in', return_value=False):
             with self.assertRaises(SystemExit):
                 cfg.cmd_account(['add', 'pessoal'])
 
     def test_add_existing_logged_in_rejected(self):
         self.write_profiles({'profiles': {'pessoal': {'config_dir': str(self.root / 'x'), 'priority': 1}}})
-        with patch.object(cfg, 'logged_in', return_value=True):
+        with patch.object(cfg.accounts, 'logged_in', return_value=True):
             with self.assertRaises(SystemExit):
                 cfg.cmd_account(['add', 'pessoal'])
 
@@ -282,7 +293,7 @@ class AccountCommandTests(ConfigBase):
             'nova': {'priority': 2, 'config_dir': str(self.root / 'accounts' / 'nova')}}})
         out = self.cap(cfg.cmd_account, ['login', 'primary'])
         self.assertIn('claude auth login', out)
-        with patch.object(cfg, 'login', return_value=0):
+        with patch.object(cfg.accounts, 'login', return_value=0):
             out = self.cap(cfg.cmd_account, ['login', 'nova'])
         self.assertIn('atualizado', out)
 
@@ -296,7 +307,7 @@ class AccountCommandTests(ConfigBase):
             'nova': {'priority': 2, 'config_dir': str(self.root / 'accounts' / 'nova')}}})
         out = self.cap(cfg.cmd_account, ['sync', 'primary'])
         self.assertIn('nada a sincronizar', out)
-        with patch.object(cfg, 'share_claude_setup') as share:
+        with patch.object(cfg.accounts, 'share_claude_setup') as share:
             out = self.cap(cfg.cmd_account, ['sync', 'nova'])
         share.assert_called_once()
         self.assertIn('sincronizada', out)
@@ -313,7 +324,7 @@ class AccountCommandTests(ConfigBase):
         self.write_profiles({'profiles': {
             'primary': {'priority': 1},
             'nova': {'priority': 2, 'config_dir': str(folder)}}})
-        with patch.object(cfg.subprocess, 'run', return_value=FakeRun(0)):
+        with patch.object(cfg.accounts.subprocess, 'run', return_value=FakeRun(0)):
             out = self.cap(cfg.cmd_account, ['remove', 'nova'])
         self.assertIn('removida', out)
         self.assertNotIn('nova', self.read_profiles()['profiles'])
@@ -331,13 +342,13 @@ class AccountCommandTests(ConfigBase):
         folder = self.root / 'accounts' / 'nova'
         folder.mkdir(parents=True)
         self.write_profiles({'profiles': {'nova': {'priority': 1, 'config_dir': str(folder)}}})
-        with patch.object(cfg, 'share_claude_setup') as share:
+        with patch.object(cfg.accounts, 'share_claude_setup') as share:
             out = self.cap(cfg.cmd_account, ['sync-all'])
         share.assert_called_once()
         self.assertIn('atualizada', out)
 
     def test_claude_alias_routes_to_list(self):
-        with patch.object(cfg, 'logged_in', return_value=True):
+        with patch.object(cfg.accounts, 'logged_in', return_value=True):
             out = self.cap(cfg.cmd_account, ['list', 'claude'])
         self.assertIn('primary', out)
 
@@ -358,7 +369,7 @@ class ToolAccountTests(ConfigBase):
         self.assertFalse(cfg.tool_logged_in('codex', {'config_dir': str(self.root / 'ghost')}))
         folder = self.root / 'codexhome'
         folder.mkdir()
-        with patch.object(cfg.subprocess, 'run', return_value=FakeRun(0)):
+        with patch.object(cfg.accounts.subprocess, 'run', return_value=FakeRun(0)):
             self.assertTrue(cfg.tool_logged_in('codex', {'config_dir': str(folder)}))
         grok = self.root / 'grokhome'
         grok.mkdir()
@@ -372,7 +383,7 @@ class ToolAccountTests(ConfigBase):
         (main / 'config.toml').write_text('x')
         homes = dict(cfg.TOOL_HOMES, codex=('CODEX_HOME', str(main), ('config.toml', 'skills'), ['codex', 'login']))
         target = self.root / 'codexacct'
-        with patch.object(cfg, 'TOOL_HOMES', homes):
+        with patch.object(cfg.accounts, 'TOOL_HOMES', homes):
             cfg.share_tool_setup('codex', target)
         self.assertTrue((target / 'config.toml').exists())
         self.assertTrue((target / 'skills').exists())
@@ -381,16 +392,16 @@ class ToolAccountTests(ConfigBase):
         self.write_profiles({'profiles': {}})
         out = self.cap(cfg.cmd_tool_account, 'codex', 'list', [])
         self.assertIn('codex', out)
-        with patch.object(cfg, 'tool_login', return_value=0), \
-                patch.object(cfg, 'tool_logged_in', return_value=True):
+        with patch.object(cfg.accounts, 'tool_login', return_value=0), \
+                patch.object(cfg.accounts, 'tool_logged_in', return_value=True):
             out = self.cap(cfg.cmd_tool_account, 'codex', 'add', ['trabalho'])
         self.assertIn('adicionada', out)
         self.assertIn('trabalho', self.read_profiles()['accounts']['codex'])
-        with patch.object(cfg, 'tool_login', return_value=0):
+        with patch.object(cfg.accounts, 'tool_login', return_value=0):
             self.cap(cfg.cmd_tool_account, 'codex', 'login', ['trabalho'])
         self.cap(cfg.cmd_tool_account, 'codex', 'disable', ['trabalho'])
         self.assertFalse(self.read_profiles()['accounts']['codex']['trabalho']['enabled'])
-        with patch.object(cfg.subprocess, 'run', return_value=FakeRun(0)):
+        with patch.object(cfg.accounts.subprocess, 'run', return_value=FakeRun(0)):
             out = self.cap(cfg.cmd_tool_account, 'codex', 'remove', ['trabalho'])
         self.assertIn('removida', out)
 
@@ -405,8 +416,8 @@ class ToolAccountTests(ConfigBase):
 
     def test_cmd_account_routes_to_tool(self):
         self.write_profiles({'profiles': {}})
-        with patch.object(cfg, 'tool_login', return_value=0), \
-                patch.object(cfg, 'tool_logged_in', return_value=True):
+        with patch.object(cfg.accounts, 'tool_login', return_value=0), \
+                patch.object(cfg.accounts, 'tool_logged_in', return_value=True):
             out = self.cap(cfg.cmd_account, ['add', 'codex', 'trabalho'])
         self.assertIn('adicionada', out)
 
@@ -440,10 +451,10 @@ class KeyTests(ConfigBase):
         self.assertEqual(cfg.ask_key('claude', 'sk-ant-abcdefghijklmnop1234'), 'sk-ant-abcdefghijklmnop1234')
 
     def test_ask_key_uses_getpass_when_not_inline(self):
-        with patch.object(cfg.getpass, 'getpass', return_value='xai-abcdefghijklmnop1234'), \
+        with patch.object(cfg.keys.getpass, 'getpass', return_value='xai-abcdefghijklmnop1234'), \
                 contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(cfg.ask_key('grok', ''), 'xai-abcdefghijklmnop1234')
-        with patch.object(cfg.getpass, 'getpass', side_effect=EOFError), contextlib.redirect_stdout(io.StringIO()):
+        with patch.object(cfg.keys.getpass, 'getpass', side_effect=EOFError), contextlib.redirect_stdout(io.StringIO()):
             with self.assertRaises(SystemExit):
                 cfg.ask_key('grok', '')
 
@@ -488,7 +499,7 @@ class MainDispatchTests(ConfigBase):
         self.assertIn('codex', self.cap(cfg.main, ['model']))
         self.assertIn('codex', self.cap(cfg.main, ['key', 'list']))
         self.assertEqual(self.cap(cfg.main, ['profiles']).split(), ['primary', 'extra'])
-        with patch.object(cfg, 'logged_in', return_value=True):
+        with patch.object(cfg.accounts, 'logged_in', return_value=True):
             self.assertIn('primary', self.cap(cfg.main, ['account', 'list']))
         self.assertIn('codex', self.cap(cfg.main, []))  # defaults to model
         with self.assertRaises(SystemExit):

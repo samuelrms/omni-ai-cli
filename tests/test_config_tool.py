@@ -96,8 +96,8 @@ class MultipleKeysTests(unittest.TestCase):
         from pathlib import Path
         from unittest.mock import patch
         from omni_ai import config as cfg
-        with tempfile.TemporaryDirectory() as d, patch.object(cfg, 'KEYS_DIR', Path(d) / 'keys'), \
-                patch.object(cfg, 'LEGACY_OPENROUTER', Path(d) / 'legacy'), patch.dict('os.environ', {}, clear=False):
+        with tempfile.TemporaryDirectory() as d, patch.object(cfg.keys, 'KEYS_DIR', Path(d) / 'keys'), \
+                patch.object(cfg.keys, 'LEGACY_OPENROUTER', Path(d) / 'legacy'), patch.dict('os.environ', {}, clear=False):
             import os
             os.environ.pop('OPENROUTER_API_KEY', None)
             cfg.cmd_key(['add', 'openrouter', 'sk-or-aaaaaaaaaaaaaaaa1'])  # first one becomes the main key
