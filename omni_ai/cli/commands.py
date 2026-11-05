@@ -8,7 +8,7 @@ from ..osutils import REPO, resolve_bin
 from ..tools import TOOLS
 from .base import (
     LOG_FILE, STATE_FILE, RED, GREEN, YELLOW, CYAN, BOLD, DIM, NC,
-    say, state,
+    say,
 )
 
 SOURCE_LABEL = {'omni': f'{CYAN}omni{NC}', 'claude': f'{YELLOW}claude{NC}', 'codex': f'{GREEN}codex{NC}',
@@ -92,11 +92,12 @@ compdef _ai ai''')
 
 
 def reset_cooldowns():
-    data = state()
-    for key in list(data):
-        if key.endswith('_last_rate_limit'):
-            data[key] = ''
-    config_tool.write_json(STATE_FILE, data)
+    def clear(data):
+        for key in list(data):
+            if key.endswith('_last_rate_limit'):
+                data[key] = ''
+
+    config_tool.update_json(STATE_FILE, clear)
     say(f'{GREEN}✓ Cooldowns resetados para todos os perfis.{NC}')
 
 

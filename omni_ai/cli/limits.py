@@ -5,7 +5,7 @@ import re
 import time
 
 from .. import config as config_tool
-from .base import state, STATE_FILE, LIMIT_TEXT
+from .base import STATE_FILE, LIMIT_TEXT
 
 LIMIT_MESSAGE = re.compile(r"[^\n]*(?:hit your (?:usage|session) limit|quota reached|rate limit|try again at|resets? (?:at|in))[^\n]*", re.I)
 
@@ -38,8 +38,7 @@ def limit_until(text, at):
 def remember_limit(key, output):
     """Keep the tool's own words about its limit (e.g. 'resets 7:40pm') for /usage."""
     match = LIMIT_MESSAGE.search(re.sub(r'\\u2019', "'", output))
-    data = state()
-    limits = data.setdefault('limits', {})
+    entry = None
     if match:
         text = match.group(0)
         inner = re.search(r'"message"\s*:\s*"((?:[^"\\]|\\.)*)"', text)  # JSON error: keep only its message
@@ -47,10 +46,16 @@ def remember_limit(key, output):
             text = inner.group(1)
         text = ' '.join(text.split())[:220]
         now = int(time.time())
-        limits[key] = {'text': text, 'at': now, 'until': limit_until(text, now)}
-    else:
-        limits.pop(key, None)
-    config_tool.write_json(STATE_FILE, data)
+        entry = {'text': text, 'at': now, 'until': limit_until(text, now)}
+
+    def store(data):
+        limits = data.setdefault('limits', {})
+        if entry:
+            limits[key] = entry
+        else:
+            limits.pop(key, None)
+
+    config_tool.update_json(STATE_FILE, store)
 
 
 def active_limit(item, now=None):
