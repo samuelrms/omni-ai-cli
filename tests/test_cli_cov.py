@@ -593,15 +593,15 @@ class VersionUpdateTests(Base):
         self.assertIsInstance(cli.ai_version(), str)
 
     def test_update_npm_path(self):
-        with patch.object(cli, 'REPO', Path(self.tmp.name)), \
+        with patch.object(cli.commands, 'REPO', Path(self.tmp.name)), \
                 patch.dict(os.environ, {'SMART_AI_INSTALLER': 'npm'}), \
-                patch.object(cli, 'resolve_bin', return_value='/bin/npm'), \
+                patch.object(cli.commands, 'resolve_bin', return_value='/bin/npm'), \
                 patch.object(cli.subprocess, 'call', return_value=0):
             code, text = self.capture(cli.update)
         self.assertEqual(code, 0)
 
     def test_update_no_git_prints_command(self):
-        with patch.object(cli, 'REPO', Path(self.tmp.name)), \
+        with patch.object(cli.commands, 'REPO', Path(self.tmp.name)), \
                 patch.dict(os.environ, {'SMART_AI_INSTALLER': ''}, clear=False):
             os.environ.pop('SMART_AI_INSTALLER', None)
             code, text = self.capture(cli.update)
