@@ -157,7 +157,8 @@ class ShellTests(unittest.TestCase):
             import shutil
             shutil.copytree(ROOT / 'omni_ai', root / 'omni_ai', ignore=shutil.ignore_patterns('__pycache__', 'vendor'))
             (root / 'profiles.json').write_text(json.dumps({'routing': {'prefer_tool_for_simple': 'openrouter', 'fallback_order': ['openrouter', 'codex']}}))
-            (root / 'omni_ai' / 'openrouter.py').write_text('import os,sys\nprompt=sys.stdin.read()\nprint("ROUTER_OK")\nsys.exit(int(os.environ.get("TEST_FAILURE", "0")))\n')
+            # openrouter is a package now; `python -m omni_ai.openrouter` runs its __main__.py
+            (root / 'omni_ai' / 'openrouter' / '__main__.py').write_text('import os,sys\nprompt=sys.stdin.read()\nprint("ROUTER_OK")\nsys.exit(int(os.environ.get("TEST_FAILURE", "0")))\n')
             codex = root / 'fake-codex'
             codex.write_text('#!/bin/sh\necho CODEX_OK\n')
             codex.chmod(0o700)
@@ -177,7 +178,7 @@ class ShellTests(unittest.TestCase):
 @unittest.skipUnless(os.getenv('SMART_AI_SIM_URL'), 'local Postman simulation not enabled')
 class HttpTests(unittest.TestCase):
     def test_real_http_masking_fallback_contract_and_quota(self):
-        with patch('omni_ai.openrouter.OPENROUTER_BASE', os.environ['SMART_AI_SIM_URL']):
+        with patch('omni_ai.openrouter.client.OPENROUTER_BASE', os.environ['SMART_AI_SIM_URL']):
             client = OpenRouterClient(api_key='synthetic-key')
             trace = io.StringIO()
             with patch.dict(os.environ, SMART_AI_EVENTS='1'), contextlib.redirect_stderr(trace):
