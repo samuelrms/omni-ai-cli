@@ -1,6 +1,7 @@
 """Branch coverage for omni_ai.pii: masking every category, unmask round-trips,
 false positives, reporting and the CLI. All in-process, no files outside temp dirs.
 """
+import isolation  # noqa: F401  (first: keeps the tests away from real data)
 import io
 import json
 from pathlib import Path

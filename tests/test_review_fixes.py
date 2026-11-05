@@ -2,6 +2,7 @@
 
 Each test pins a specific bug that was fixed, so a future change that reintroduces it fails here.
 """
+import isolation  # noqa: F401  (first: keeps the tests away from real data)
 import io
 import unittest
 from unittest.mock import patch

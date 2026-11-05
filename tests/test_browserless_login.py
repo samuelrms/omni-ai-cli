@@ -1,4 +1,5 @@
 """Login without a browser: which command each tool gets, and logging in to the main accounts."""
+import isolation  # noqa: F401  (first: keeps the tests away from real data)
 import contextlib
 import io
 import os

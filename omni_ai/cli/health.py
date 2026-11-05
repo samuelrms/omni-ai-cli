@@ -3,6 +3,8 @@ import json
 import os
 import subprocess
 from pathlib import Path
+import urllib.error
+import urllib.request
 
 from .. import config as config_tool
 from ..osutils import REPO, resolve_bin
@@ -11,6 +13,39 @@ from .base import (
     BINS, LOG_FILE, RED, GREEN, YELLOW, CYAN, BOLD, DIM, NC,
     say, installed, mode, cooldown_left,
 )
+
+# A cheap authenticated call per provider. Cursor has no public endpoint to check a key against.
+KEY_CHECKS = {
+    'claude': ('https://api.anthropic.com/v1/models', lambda key: {'x-api-key': key, 'anthropic-version': '2023-06-01'}),
+    'codex': ('https://api.openai.com/v1/models', None),
+    'agy': ('https://generativelanguage.googleapis.com/v1beta/models', lambda key: {'x-goog-api-key': key}),
+    'openrouter': ('https://openrouter.ai/api/v1/key', None),
+    'grok': ('https://api.x.ai/v1/models', None),
+    'deepseek': ('https://api.deepseek.com/models', None),
+    'groq': ('https://api.groq.com/openai/v1/models', None),
+    'cerebras': ('https://api.cerebras.ai/v1/models', None),
+}
+REJECTS_WITH_400 = ('agy', 'grok')  # these two answer 400, not 401, to an invalid key
+
+
+def key_problem(provider, key):
+    """Why a saved key cannot work, or None. A network failure says nothing about the key, so it is not a problem."""
+    prefix = config_tool.KEYS[provider][1]
+    if prefix and not key.startswith(prefix):
+        return f'formato inválido (esperado {prefix}...)'
+    check = KEY_CHECKS.get(provider)
+    if not check:
+        return None
+    url, headers = check
+    headers = headers(key) if headers else {'Authorization': f'Bearer {key}'}
+    try:
+        urllib.request.urlopen(urllib.request.Request(url, headers={**headers, 'User-Agent': 'omni-ai-cli'}), timeout=5).close()
+    except urllib.error.HTTPError as error:
+        return f'recusada pelo provedor (HTTP {error.code})' if (
+            error.code in (401, 403) or (error.code == 400 and provider in REJECTS_WITH_400)) else None
+    except (OSError, ValueError):
+        return None
+    return None
 
 
 def version(tool):
@@ -112,6 +147,12 @@ def doctor():
     say(f'{BOLD}  Chaves de API{NC}')
     keys = [p for p in config_tool.KEYS if config_tool.stored_key(p)[0]]
     say(f"  {ok if keys else warn} {', '.join(keys) if keys else 'nenhuma configurada (ai --key)'}")
+    for provider in config_tool.KEYS:
+        for name, value, _ in config_tool.stored_keys(provider):
+            problem = key_problem(provider, value)
+            if problem:
+                say(f'  {warn} {provider} ({name}): {problem}')
+                problems.append(f'chave {name} de {provider}: {problem}. Troque com ai --key {provider}')
     say()
 
     say(f'{BOLD}  Ferramentas{NC}')

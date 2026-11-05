@@ -3,6 +3,7 @@
 resolve_bin, subprocess and input() are stubbed; the first-run marker uses a temp
 file, so no installer ever runs and nothing persists on the machine.
 """
+import isolation  # noqa: F401  (first: keeps the tests away from real data)
 import io
 import json
 from pathlib import Path

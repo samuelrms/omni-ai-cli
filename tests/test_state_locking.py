@@ -1,4 +1,5 @@
 """state.json writers must not lose each other's updates across threads and processes."""
+import isolation  # noqa: F401  (first: keeps the tests away from real data)
 import json
 import os
 from pathlib import Path

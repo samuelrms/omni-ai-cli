@@ -1,4 +1,5 @@
 """`ai serve` end to end: a real server process, the real router, fictional CLIs."""
+import isolation  # noqa: F401  (first: keeps the tests away from real data)
 import http.client
 import json
 import os
