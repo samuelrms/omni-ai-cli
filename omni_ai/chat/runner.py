@@ -7,6 +7,7 @@ import subprocess
 import threading
 import time
 
+from .. import agy_events
 from .. import config as config_tool
 from .. import ui
 from ..osutils import group_kwargs, kill_tree, module_cmd, module_env
@@ -115,6 +116,10 @@ class Runner:
             if not NOISE.search(text):
                 view.note(ui.short(text, ui.width() - 4))
             return
+        if agy_events.is_agy_event(event):
+            job['events'].append(event)
+            self.agy_event(job, event)
+            return
         kind = event.get('type', '')
         if kind in ('reasoning', 'thinking') or event.get('item', {}).get('type') == 'reasoning':
             return
@@ -208,6 +213,28 @@ class Runner:
             job['protocol_error'] = True
             detail = event.get('message') or event.get('error', {})
             view.error(detail.get('message', str(detail)) if isinstance(detail, dict) else str(detail))
+
+    def agy_event(self, job, event):
+        parsed = agy_events.parse(event)
+        if not parsed:
+            return
+        view = job['view']
+        if parsed[0] == 'answer':
+            spend(job, parsed[2] or {})
+            self.answer(job, parsed[1])
+        elif parsed[0] == 'error':
+            job['protocol_error'] = True
+            view.error(parsed[1])
+        elif parsed[0] == 'tool_start':
+            name, data = parsed[1], parsed[2] if isinstance(parsed[2], dict) else {}
+            if name == 'run_command':
+                view.action('Ran', data.get('CommandLine', ''))
+            elif name == 'read_file':
+                view.action('Read', ui.home_path(data.get('Path', '')))
+            else:
+                view.action(*describe_tool(name, data))
+        else:
+            view.result(parsed[1], failed=parsed[2])
 
     def answer(self, job, content):
         if content and content.strip():
