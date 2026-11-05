@@ -1,0 +1,39 @@
+services:
+  omni:
+    build: .
+    image: omni-ai-cli:local
+    container_name: omni
+    init: true
+    # plan: read-only. edits, auto or yolo let requests change files in /workspace.
+    command: ["ai", "serve", "--host", "0.0.0.0", "--port", "8080", "--workdir", "/workspace", "--mode", "${OMNI_MODE:-plan}"]
+    restart: unless-stopped
+    # Only this machine by default. To expose it, put a reverse proxy with HTTPS in front.
+    ports:
+      - "127.0.0.1:${OMNI_PORT:-8080}:8080"
+    environment:
+      # Empty: a key is generated on first start and shown once in `docker compose logs`.
+      SMART_AI_SERVER_KEY: ${SMART_AI_SERVER_KEY:-}
+      # With a Docker secret, set this to /run/secrets/omni_server_key instead.
+      SMART_AI_SERVER_KEY_FILE: ${SMART_AI_SERVER_KEY_FILE:-}
+    volumes:
+      - omni-home:/home/omni
+      # A host folder also works: OMNI_WORKSPACE=/path/to/project, writable by uid 10001.
+      - ${OMNI_WORKSPACE:-omni-workspace}:/workspace
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # Docker secret:
+    # secrets:
+    #   - omni_server_key
+
+volumes:
+  omni-home:
+  omni-workspace:
+
+# secrets:
+#   omni_server_key:
+#     file: ./omni_server_key.txt

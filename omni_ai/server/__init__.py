@@ -5,6 +5,7 @@ handler (HTTP).
 """
 import argparse
 import ipaddress
+import os
 import signal
 import sys
 import time
@@ -65,19 +66,29 @@ def main(argv):
     parser.add_argument('--port', type=int, default=8080, help='Porta (padrão: 8080)')
     parser.add_argument('--max-concurrent', type=_positive, default=4, help='Pedidos simultâneos (padrão: 4)')
     parser.add_argument('--timeout', type=_positive, default=600, help='Limite de cada pedido, em segundos (padrão: 600)')
+    parser.add_argument('--mode', choices=('plan', 'edits', 'auto', 'yolo'), default='plan',
+                        help='O que as ferramentas podem fazer (padrão: plan, somente leitura)')
+    parser.add_argument('--workdir', help='Pasta de trabalho das ferramentas (obrigatória fora do modo plan)')
     args = parser.parse_args(argv)
     if not 0 <= args.port <= 65535:
         parser.error('porta inválida')
+    workdir = os.path.abspath(args.workdir) if args.workdir else None
+    if args.mode != 'plan' and not workdir:
+        parser.error(f'--mode {args.mode} exige --workdir')
+    if workdir and not os.path.isdir(workdir):
+        parser.error(f'pasta de trabalho não encontrada: {workdir}')
 
     created = None
     if not auth.configured():
         created = auth.add('default')
     concurrent = args.max_concurrent
+    if concurrent > 1 and args.mode != 'plan':
+        concurrent = 1  # requests would overwrite each other's files in the shared folder
     if concurrent > 1 and uses_shared_credentials():
         concurrent = 1
         print('Aviso: perfil Claude legado troca credenciais durante a chamada; atendendo um pedido por vez.', file=sys.stderr)
     try:
-        server = Server((args.host, args.port), concurrent, args.timeout)
+        server = Server((args.host, args.port), concurrent, args.timeout, args.mode, workdir)
     except OSError as error:
         print(f'Não foi possível abrir {args.host}:{args.port}: {error}', file=sys.stderr)
         return 1
@@ -90,6 +101,9 @@ def main(argv):
     print(f'Omni AI server em http://{host}:{server.server_address[1]}/v1', flush=True)
     if created:
         print(f'Chave de API criada (guarde agora, ela não será mostrada de novo):\n{created}', flush=True)
+    if args.mode != 'plan':
+        print(f'Aviso: modo {args.mode}. Os pedidos podem alterar arquivos em {workdir}, um por vez, sem aprovação. '
+              'Quem tem a chave também pode alcançar os logins das contas.', file=sys.stderr, flush=True)
     if not _loopback(args.host):
         print('Aviso: acessível pela rede. Use HTTPS com proxy reverso. Quem tem a chave usa suas contas e pode ler '
               'arquivos desta máquina por meio das ferramentas.', file=sys.stderr, flush=True)

@@ -2,12 +2,14 @@
 import hashlib
 import hmac
 import os
+from pathlib import Path
 import secrets
 import time
 
 from .. import config as config_tool
 
 ENV_KEY = 'SMART_AI_SERVER_KEY'
+ENV_KEY_FILE = 'SMART_AI_SERVER_KEY_FILE'  # for Docker secrets
 
 
 def keys_path():
@@ -47,8 +49,22 @@ def remove(name):
     return found[0]
 
 
+def external_key():
+    """The key given by the environment. A key file that was named but cannot be read stops the server."""
+    path = os.environ.get(ENV_KEY_FILE)
+    if path:
+        try:
+            value = Path(path).read_text(encoding='utf-8').strip()
+        except (OSError, ValueError) as error:
+            raise SystemExit(f'Não foi possível ler {ENV_KEY_FILE}: {error}') from None
+        if not value:
+            raise SystemExit(f'{ENV_KEY_FILE} aponta para um arquivo vazio.')
+        return value
+    return os.environ.get(ENV_KEY) or None
+
+
 def configured():
-    return bool(os.environ.get(ENV_KEY)) or bool(stored())
+    return bool(external_key()) or bool(stored())
 
 
 def verify(value):
@@ -59,7 +75,7 @@ def verify(value):
     valid = False
     for item in stored().values():
         valid |= hmac.compare_digest(digest, str(item.get('hash', '')))
-    env = os.environ.get(ENV_KEY)
+    env = external_key()
     if env:
         valid |= hmac.compare_digest(digest, _hash(env))
     return valid

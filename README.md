@@ -45,6 +45,7 @@ se configuram de dentro do próprio chat.
 - [Skills e MCP](#skills-e-mcp)
 - [Uso direto, sem chat](#uso-direto-sem-chat)
 - [Modo servidor](#modo-servidor)
+- [Docker](#docker)
 - [Onde ficam os arquivos](#onde-ficam-os-arquivos)
 - [Estrutura do projeto](#estrutura-do-projeto)
 - [Testes](#testes)
@@ -485,7 +486,8 @@ No primeiro início, o servidor cria uma chave e a mostra uma única vez. Só o 
 
 **Segurança:**
 
-- As ferramentas sempre rodam no modo `plan`, em uma pasta temporária, seja qual for o `SMART_AI_MODE`.
+- Por padrão, as ferramentas rodam no modo `plan`, em uma pasta temporária, seja qual for o `SMART_AI_MODE`.
+- **Para criar, editar e rodar comandos:** `ai serve --mode edits|auto|yolo --workdir PASTA`. A pasta é obrigatória, os pedidos passam a ser atendidos um por vez (os demais recebem 429) e nada pede aprovação. Quem tem a chave pode alterar a pasta e, com comandos, alcançar os logins das contas.
 - **Somente leitura não impede ler arquivos.** Quem tem a chave pode pedir a uma ferramenta que leia arquivos desta máquina. MCPs configurados também podem estar disponíveis. Trate a chave como acesso à sua conta.
 - O padrão é `127.0.0.1`. Para expor em rede, use `--host` e HTTPS com proxy reverso.
 - Quem compartilha uma instância compartilha as mesmas contas e assinaturas. Verifique os termos de cada provedor.
@@ -501,6 +503,39 @@ No primeiro início, o servidor cria uma chave e a mostra uma única vez. Só o 
 - `tools`/function calling e imagens retornam erro 400.
 - O prompt chega às ferramentas como argumento de linha de comando e fica visível na lista de processos da máquina. O limite é de 100 KB por pedido.
 - Perfis Claude legados, que trocam o arquivo de credenciais, limitam o servidor a um pedido por vez.
+
+---
+
+## Docker
+
+Imagem com o Omni e os CLIs em versões fixas, para rodar o `ai serve` em servidor próprio. Inclui Claude Code, Codex, Cursor e Grok. O Antigravity não está incluído, porque não tem instalação por comando.
+
+```bash
+git clone https://github.com/samuelrms/omni-ai-cli && cd omni-ai-cli
+docker compose up -d
+docker compose logs omni                       # chave gerada no primeiro início
+docker exec -it omni ai --account login primary
+```
+
+- **Login:** veja [Login sem navegador](#login-sem-navegador). Chaves de provedores vão com `docker exec -it omni ai --key <ferramenta>`.
+- **Dados:** logins, chaves, configuração e cooldowns ficam no volume `omni-home`, que sobrevive à recriação do container. `docker compose down -v` apaga esse volume.
+- **Chave do servidor:** sem chave informada, uma é gerada e aparece uma única vez no log. Para definir a sua, use `SMART_AI_SERVER_KEY`, ou `SMART_AI_SERVER_KEY_FILE` com um Docker secret. O `docker-compose.yml` traz o exemplo.
+- **Porta:** publicada só em `127.0.0.1`. `OMNI_PORT` muda a porta.
+- **Isolamento:** roda sem root, com sistema de arquivos somente leitura e sem capabilities.
+- **Modos:** `OMNI_MODE=plan|edits|auto|yolo docker compose up -d` (padrão: `plan`). As ferramentas trabalham em `/workspace`, no volume `omni-workspace`. Para usar uma pasta sua, defina `OMNI_WORKSPACE=/caminho`, com escrita liberada para o uid 10001.
+- **Risco fora do `plan`:** os comandos rodam no mesmo usuário que guarda os logins em `omni-home`. Quem tem a chave pode ler esses logins, então use uma chave por pessoa de confiança e revogue sessões se ela vazar.
+- **Codex:** o sandbox dele não inicia no container, porque depende de recursos bloqueados pelo Docker e pelo kernel do host. Ele só usa ferramentas em `yolo`, com o container como isolamento. Em `plan`, `edits` e `auto`, ele apenas responde, sem ler nem alterar arquivos.
+- **Atualização:** `git pull && docker compose up -d --build`. `ai --update` não se aplica à imagem.
+
+Para expor em rede, use um proxy reverso com HTTPS, como o Caddy:
+
+```text
+omni.example.com {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+**Risco:** o container não enxerga os arquivos da sua máquina, mas enxerga o volume. Quem tem a chave pode pedir a uma ferramenta que leia as credenciais guardadas nele. Trate a chave do servidor como acesso às suas contas.
 
 ---
 

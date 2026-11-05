@@ -11,6 +11,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -447,9 +448,107 @@ class EventStream(unittest.TestCase):
         self.assertEqual(execution.stop_reason, DISCONNECTED)
 
 
+class ExternalKey(unittest.TestCase):
+    def setUp(self):
+        from omni_ai.server import auth
+        self.auth = auth
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.file = Path(self.tmp.name) / 'secret'
+
+    def test_key_file_is_used_and_trimmed(self):
+        self.file.write_text('from-file\n')
+        with patch.dict(os.environ, {'SMART_AI_SERVER_KEY_FILE': str(self.file), 'SMART_AI_SERVER_KEY': 'ignored'}):
+            self.assertEqual(self.auth.external_key(), 'from-file')
+
+    def test_unreadable_or_empty_file_fails_instead_of_generating_a_key(self):
+        self.file.write_text('  ')
+        for path in (self.file, Path(self.tmp.name) / 'missing'):
+            with patch.dict(os.environ, {'SMART_AI_SERVER_KEY_FILE': str(path)}), self.assertRaises(SystemExit):
+                self.auth.configured()
+
+    def test_tools_do_not_inherit_the_key_settings(self):
+        from omni_ai.server.execution import Execution
+        with patch.dict(os.environ, {'SMART_AI_SERVER_KEY': 'k', 'SMART_AI_SERVER_KEY_FILE': '/run/secrets/k'}):
+            env = Execution('codex', 'p', 'p')._env()
+        self.assertNotIn('SMART_AI_SERVER_KEY', env)
+        self.assertNotIn('SMART_AI_SERVER_KEY_FILE', env)
+
+
+class WriteMode(unittest.TestCase):
+    @staticmethod
+    def _execution(**options):
+        from omni_ai.server.execution import Execution
+        return Execution('codex', 'p', 'p', **options)
+
+    def test_plan_stays_read_only_by_default(self):
+        env = self._execution()._env()
+        self.assertEqual((env['SMART_AI_READ_ONLY'], env['SMART_AI_MODE']), ('1', 'plan'))
+
+    def test_chosen_mode_reaches_the_tools(self):
+        env = self._execution(mode='yolo', workdir='/w')._env()
+        self.assertEqual((env['SMART_AI_READ_ONLY'], env['SMART_AI_MODE']), ('0', 'yolo'))
+
+    def test_shell_mode_is_not_inherited(self):
+        with patch.dict(os.environ, {'SMART_AI_MODE': 'yolo'}):
+            self.assertEqual(self._execution()._env()['SMART_AI_MODE'], 'plan')
+
+    def _main(self, *args):
+        from omni_ai import server
+        with patch('sys.stderr'), self.assertRaises(SystemExit) as caught:
+            server.main(list(args))
+        return caught.exception.code
+
+    def test_writing_needs_a_folder(self):
+        self.assertEqual(self._main('--mode', 'auto'), 2)
+
+    def test_folder_must_exist(self):
+        self.assertEqual(self._main('--mode', 'auto', '--workdir', '/does/not/exist'), 2)
+
+    def test_unknown_mode_is_refused(self):
+        self.assertEqual(self._main('--mode', 'default'), 2)
+
+    def test_requests_run_in_the_folder_and_one_at_a_time(self):
+        from omni_ai import server
+        with tempfile.TemporaryDirectory() as folder, patch.object(server, 'Server', side_effect=OSError('stop')) as built, \
+                patch.object(server.auth, 'configured', return_value=True), patch('sys.stderr'):
+            self.assertEqual(server.main(['--mode', 'edits', '--workdir', folder]), 1)
+        self.assertEqual(built.call_args.args[1:], (1, 600, 'edits', os.path.abspath(folder)))
+
+    def test_plan_keeps_parallel_requests(self):
+        from omni_ai import server
+        with patch.object(server, 'Server', side_effect=OSError('stop')) as built, \
+                patch.object(server, 'uses_shared_credentials', return_value=False), \
+                patch.object(server.auth, 'configured', return_value=True), patch('sys.stderr'):
+            self.assertEqual(server.main([]), 1)
+        self.assertEqual(built.call_args.args[1:], (4, 600, 'plan', None))
+
+
+class CursorReadOnly(unittest.TestCase):
+    def test_plan_uses_the_mode_that_does_not_write(self):
+        from omni_ai.cli import executors
+        with patch.dict(os.environ, {'SMART_AI_READ_ONLY': '1'}), patch.object(executors, 'installed', return_value=True), \
+                patch.object(executors, 'run_with_key_retry', return_value=0) as called, patch.object(executors, 'header'):
+            executors.run_cursor('p')
+        argv = called.call_args.args[1]
+        self.assertEqual(argv[argv.index('--mode') + 1], 'ask')
+
+
+class SharedCredentials(unittest.TestCase):
+    def check(self, conf):
+        from omni_ai.server import execution
+        with patch.object(execution.config_tool, 'profiles', return_value={'profiles': {'p': conf}}), \
+                patch.object(execution.config_tool, 'enabled_profiles', return_value=['p']):
+            return execution.uses_shared_credentials()
+
+    def test_only_a_profile_that_really_swaps_files_counts(self):
+        self.assertFalse(self.check({'credentials_file': '~/.claude/.credentials.json'}))
+        self.assertFalse(self.check({'config_dir': '/x'}))
+        self.assertTrue(self.check({'credentials_file': '~/other.json'}))
+
+
 class ApiClientParameters(unittest.TestCase):
     def test_grok_client_sends_request_parameters(self):
-        from unittest.mock import patch
         from omni_ai import grok
         sent = {}
 

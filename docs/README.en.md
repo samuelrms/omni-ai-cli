@@ -45,6 +45,7 @@ configured from inside the chat itself.
 - [Skills and MCP](#skills-and-mcp)
 - [Direct use, no chat](#direct-use-no-chat)
 - [Server mode](#server-mode)
+- [Docker](#docker)
 - [Where files live](#where-files-live)
 - [Project structure](#project-structure)
 - [Tests](#tests)
@@ -484,7 +485,8 @@ On first start, the server creates a key and shows it once. Only its hash is sto
 
 **Security:**
 
-- Tools always run in `plan` mode, in a temporary folder, whatever `SMART_AI_MODE` says.
+- By default, tools run in `plan` mode, in a temporary folder, whatever `SMART_AI_MODE` says.
+- **To create, edit and run commands:** `ai serve --mode edits|auto|yolo --workdir FOLDER`. The folder is required, requests are served one at a time (others get 429) and nothing asks for approval. Whoever has the key can change the folder and, with commands, reach the account logins.
 - **Read-only does not prevent reading files.** Anyone with the key can ask a tool to read files on this machine. Configured MCPs may also be available. Treat the key as access to your account.
 - The default is `127.0.0.1`. To expose it on a network, use `--host` and HTTPS through a reverse proxy.
 - Sharing an instance means sharing the same accounts and subscriptions. Check each provider's terms.
@@ -500,6 +502,39 @@ On first start, the server creates a key and shows it once. Only its hash is sto
 - `tools`/function calling and images return error 400.
 - The prompt reaches the tools as a command-line argument, so it is visible in the machine's process list. The limit is 100 KB per request.
 - Legacy Claude profiles, which swap the credentials file, limit the server to one request at a time.
+
+---
+
+## Docker
+
+An image with Omni and the CLIs at pinned versions, to run `ai serve` on your own server. It includes Claude Code, Codex, Cursor and Grok. Antigravity is not included, because it has no command-line install.
+
+```bash
+git clone https://github.com/samuelrms/omni-ai-cli && cd omni-ai-cli
+docker compose up -d
+docker compose logs omni                       # key generated on first start
+docker exec -it omni ai --account login primary
+```
+
+- **Login:** see [Browserless login](#browserless-login). Provider keys go through `docker exec -it omni ai --key <tool>`.
+- **Data:** logins, keys, config and cooldowns live in the `omni-home` volume, which survives recreating the container. `docker compose down -v` deletes it.
+- **Server key:** if none is provided, one is generated and shown once in the log. To set your own, use `SMART_AI_SERVER_KEY`, or `SMART_AI_SERVER_KEY_FILE` with a Docker secret. `docker-compose.yml` has the example.
+- **Port:** published only on `127.0.0.1`. `OMNI_PORT` changes the port.
+- **Isolation:** runs without root, with a read-only filesystem and no capabilities.
+- **Modes:** `OMNI_MODE=plan|edits|auto|yolo docker compose up -d` (default: `plan`). Tools work in `/workspace`, on the `omni-workspace` volume. To use your own folder, set `OMNI_WORKSPACE=/path`, writable by uid 10001.
+- **Risk outside `plan`:** commands run as the same user that holds the logins in `omni-home`. Whoever has the key can read those logins, so give keys only to people you trust and revoke sessions if one leaks.
+- **Codex:** its sandbox does not start in the container, because it needs features blocked by Docker and the host kernel. It only uses tools in `yolo`, with the container as isolation. In `plan`, `edits` and `auto` it only answers, without reading or changing files.
+- **Updating:** `git pull && docker compose up -d --build`. `ai --update` does not apply to the image.
+
+To expose it on a network, use a reverse proxy with HTTPS, such as Caddy:
+
+```text
+omni.example.com {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+**Risk:** the container cannot see your machine's files, but it can see the volume. Anyone with the key can ask a tool to read the credentials stored there. Treat the server key as access to your accounts.
 
 ---
 
