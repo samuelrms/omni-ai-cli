@@ -3,6 +3,7 @@
 Everything runs in-process with subprocess/network stubbed and all filesystem
 writes aimed at a temp dir, so the suite is deterministic and leaves no trace.
 """
+import isolation  # noqa: F401  (first: keeps the tests away from real data)
 import contextlib
 import io
 import json

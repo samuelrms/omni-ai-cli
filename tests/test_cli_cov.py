@@ -4,6 +4,7 @@ Every test is hermetic: no network, no real subprocess, no real filesystem write
 per-test temp dir. The subprocess wrapper `cli.run`, `subprocess.run/call/Popen`, `input()`,
 `urllib`, and the provider runners are all mocked.
 """
+import isolation  # noqa: F401  (first: keeps the tests away from real data)
 import io
 import json
 import os

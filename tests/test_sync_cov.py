@@ -1,3 +1,4 @@
+import isolation  # noqa: F401  (first: keeps the tests away from real data)
 import contextlib
 import io
 import json

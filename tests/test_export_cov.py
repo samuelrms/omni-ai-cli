@@ -1,3 +1,4 @@
+import isolation  # noqa: F401  (first: keeps the tests away from real data)
 import io
 import json
 import os

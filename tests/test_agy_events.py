@@ -1,4 +1,5 @@
 """Antigravity events, in the shape agy 1.5.1 really emits, through the chat runner."""
+import isolation  # noqa: F401  (first: keeps the tests away from real data)
 import json
 import os
 from pathlib import Path

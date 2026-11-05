@@ -3,6 +3,7 @@
 Network, subprocess and the Keychain are all stubbed; the cache file lives in a
 temp dir, so nothing here touches the machine or the real services.
 """
+import isolation  # noqa: F401  (first: keeps the tests away from real data)
 import io
 import json
 from pathlib import Path

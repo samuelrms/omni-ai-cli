@@ -4,6 +4,7 @@ persistence, errors, i18n, release notes and the interactive main loop.
 Everything that would touch the network, a subprocess, the clock or real input is mocked,
 and the filesystem is redirected to temporary directories, so the suite is deterministic.
 """
+import isolation  # noqa: F401  (first: keeps the tests away from real data)
 import builtins
 import contextlib
 import io

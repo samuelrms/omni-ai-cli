@@ -19,6 +19,8 @@ python3 -m unittest discover -s tests -v
 bash -n scripts/install.sh
 ```
 
+Todo módulo de teste começa com `import isolation`, que troca a pasta home, remove chaves de API do ambiente e esconde os CLIs reais. Gravar na home real faz a execução falhar.
+
 Todos os executáveis dos testes são fictícios: nada autentica nem consome cota.
 
 ## Diagramas do README
