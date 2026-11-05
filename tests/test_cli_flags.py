@@ -11,9 +11,18 @@ from omni_ai import cli  # noqa: E402
 
 class CliFlagTests(unittest.TestCase):
     def output(self, argv):
+        # main dispatches to functions across cli's submodules, each with its own `say`; patch all.
         lines = []
-        with patch.object(cli, 'say', side_effect=lambda *a: lines.append(a[0] if a else '')):
+        say = lambda *a: lines.append(a[0] if a else '')
+        mods = (cli, cli.base, cli.commands, cli.health, cli.usage_view, cli.executors, cli.routing)
+        patches = [patch.object(m, 'say', say) for m in mods]
+        for p in patches:
+            p.start()
+        try:
             code = cli.main(argv)
+        finally:
+            for p in patches:
+                p.stop()
         return code, '\n'.join(lines)
 
     def test_version(self):

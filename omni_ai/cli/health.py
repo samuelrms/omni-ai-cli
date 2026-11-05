@@ -1,0 +1,140 @@
+"""Status, version and health-check commands: what is installed, logged in and configured."""
+import json
+import os
+import subprocess
+from pathlib import Path
+
+from .. import config as config_tool
+from ..osutils import REPO, resolve_bin
+from ..tools import CLIS, TOOLS
+from .base import (
+    BINS, LOG_FILE, RED, GREEN, YELLOW, CYAN, BOLD, DIM, NC,
+    say, installed, mode, cooldown_left,
+)
+
+
+def version(tool):
+    try:
+        out = subprocess.run([resolve_bin(BINS[tool]), '--version'], capture_output=True, text=True, timeout=15).stdout
+        return out.strip().splitlines()[0] if out.strip() else '?'
+    except (OSError, subprocess.TimeoutExpired, TypeError):
+        return '?'
+
+
+def show_status():
+    say(f'{BOLD}{CYAN}  🧠 Omni AI CLI{NC}\n')
+    say(f'{BOLD}  Perfis Claude:{NC}\n')
+    for name, conf in config_tool.ordered(config_tool.profiles()):
+        left = cooldown_left(name)
+        if not conf.get('enabled', True):
+            icon, text = f'{RED}○{NC}', 'desabilitado'
+        elif left:
+            icon, text = f'{YELLOW}◐{NC}', f'cooldown (restam: {left // 60}m{left % 60}s)'
+        else:
+            icon, text = f'{GREEN}●{NC}', 'disponível'
+        say(f"  {icon} {BOLD}{name}{NC}: {conf.get('name', '')}")
+        say(f'    Status: {text}')
+        if conf.get('config_dir'):
+            say(f"    Login: {GREEN}pasta isolada{NC} {DIM}{conf['config_dir']}{NC}")
+        elif conf.get('credentials_file'):
+            ok = Path(conf['credentials_file']).expanduser().is_file()
+            say('    Credenciais: ' + (f'{GREEN}✓ configurado{NC}' if ok else f'{RED}✗ arquivo não encontrado{NC}'))
+        say()
+    keys = [p for p in config_tool.KEYS if config_tool.stored_key(p)[0]]
+    say(f"  Chaves de API: {', '.join(keys) if keys else 'nenhuma (ai --key)'}")
+    say(f'  Modo padrão: {mode()}\n')
+    say(f'{BOLD}  Ferramentas:{NC}\n')
+    for tool, label in ((name, TOOLS[name].label) for name in CLIS):
+        say(f'  {GREEN}●{NC} {label}: {version(tool)}' if installed(tool) else f'  {RED}○{NC} {label}: não instalado')
+    if LOG_FILE.is_file():
+        lines = LOG_FILE.read_text(errors='replace').splitlines()
+        counts = {t: sum(f'tool={t} ' in l for l in lines) for t in TOOLS}
+        say(f'\n{BOLD}  📊 Estatísticas de uso:{NC}')
+        say(f'    Total de chamadas: {len(lines)}')
+        say('    ' + ' | '.join(f'{t}: {n}' for t, n in counts.items()))
+    say()
+
+
+def ai_version():
+    try:
+        return json.loads((REPO / 'package.json').read_text()).get('version', '?')
+    except (OSError, ValueError):
+        return '?'
+
+
+def doctor():
+    """Health check: what is installed, logged in and configured, and what is missing. Returns 1 when
+    nothing can answer a request (no Claude login and no API key), 0 otherwise."""
+    import platform
+    ok, warn, bad = f'{GREEN}✓{NC}', f'{YELLOW}!{NC}', f'{RED}✗{NC}'
+    problems = []
+
+    say(f'{BOLD}{CYAN}  🩺 Omni AI CLI — diagnóstico{NC}\n')
+
+    say(f'{BOLD}  Sistema{NC}')
+    say(f'  {ok} Omni AI CLI {ai_version()}')
+    say(f'  {ok} Python {platform.python_version()} · {platform.system()} {platform.machine()}')
+    local_bin = str(Path('~/.local/bin').expanduser())
+    if local_bin in os.environ.get('PATH', '').split(os.pathsep):
+        say(f'  {ok} ~/.local/bin no PATH')
+    else:
+        say(f'  {warn} ~/.local/bin fora do PATH (adicione ao shell para o comando `ai`)')
+        problems.append('~/.local/bin não está no PATH')
+    say()
+
+    say(f'{BOLD}  Configuração{NC}')
+    cfg = config_tool.CONFIG_DIR
+    say(f'  {ok if cfg.is_dir() else warn} {cfg}')
+    say()
+
+    say(f'{BOLD}  Contas Claude{NC}')
+    logged = 0
+    profiles = config_tool.ordered(config_tool.profiles())
+    for name, conf in profiles:
+        if not conf.get('enabled', True):
+            say(f'  {warn} {name}: desabilitado')
+            continue
+        has_login = bool(conf.get('config_dir')) or (
+            conf.get('credentials_file') and Path(conf['credentials_file']).expanduser().is_file())
+        left = cooldown_left(name)
+        if has_login and left:
+            say(f'  {warn} {name}: em cooldown ({left // 60}m{left % 60}s)')
+            logged += 1
+        elif has_login:
+            say(f'  {ok} {name}: logado')
+            logged += 1
+        else:
+            say(f'  {bad} {name}: sem login (ai --account login {name})')
+    if not logged:
+        say(f'  {warn} nenhuma conta Claude logada')
+    say()
+
+    say(f'{BOLD}  Chaves de API{NC}')
+    keys = [p for p in config_tool.KEYS if config_tool.stored_key(p)[0]]
+    say(f"  {ok if keys else warn} {', '.join(keys) if keys else 'nenhuma configurada (ai --key)'}")
+    say()
+
+    say(f'{BOLD}  Ferramentas{NC}')
+    for name in CLIS:
+        label = TOOLS[name].label
+        say(f'  {ok} {label}: {version(name)}' if installed(name) else f'  {warn} {label}: não instalado')
+    say()
+
+    classifiers = [p for p in ('groq', 'cerebras') if config_tool.stored_key(p)[0]]
+    if classifiers:
+        say(f'  {ok} Classificador: {", ".join(classifiers)} (rápido e grátis)')
+    else:
+        say(f'  {warn} Sem chave de classificador (Groq/Cerebras); usa OpenRouter grátis ou palavras-chave')
+    say()
+
+    if not logged and not keys:
+        problems.append('nenhuma conta Claude logada e nenhuma chave de API: o roteador não tem como responder')
+
+    if problems:
+        say(f'{BOLD}{YELLOW}  Pendências:{NC}')
+        for p in problems:
+            say(f'  {warn} {p}')
+        say(f'\n{DIM}  Rode `ai --setup` para um guia de primeiro acesso.{NC}\n')
+    else:
+        say(f'{GREEN}  Tudo pronto.{NC}\n')
+    return 1 if not logged and not keys else 0
