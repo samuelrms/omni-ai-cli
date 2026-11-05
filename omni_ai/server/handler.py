@@ -3,6 +3,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import select
 import socket
+import socketserver
 import sys
 import threading
 import time
@@ -64,6 +65,11 @@ class Server(ThreadingHTTPServer):
         self.running = set()
         self.running_lock = threading.Lock()
         super().__init__(address, Handler)
+
+    def server_bind(self):
+        # HTTPServer.server_bind resolves the host name, which can block for over 30 s without working reverse DNS
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
 
     def stop_all(self, reason):
         with self.running_lock:
