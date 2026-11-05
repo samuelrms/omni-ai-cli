@@ -64,6 +64,11 @@ def chat(key, prompt, model="", system_prompt=None, mask=True, base=XAI_BASE, na
             print(f"  🛡️  PII mascarado: {len(pii_map)} item(s)", file=sys.stderr)
     messages = ([{"role": "system", "content": system_prompt}] if system_prompt else []) + [{"role": "user", "content": prompt}]
     data = {"model": model or pick_model(key), "messages": messages}
+    # Set by the server for one request
+    if os.environ.get("SMART_AI_TEMPERATURE"):
+        data["temperature"] = float(os.environ["SMART_AI_TEMPERATURE"])
+    if os.environ.get("SMART_AI_MAX_TOKENS"):
+        data["max_tokens"] = int(os.environ["SMART_AI_MAX_TOKENS"])
     if os.environ.get("SMART_AI_EVENTS") == "1":
         print(json.dumps({"type": "smart.request", "data": data}, ensure_ascii=False), file=sys.stderr, flush=True)
     resp = request("/chat/completions", key, data, base=base, name=name)

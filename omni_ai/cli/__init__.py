@@ -65,6 +65,8 @@ USAGE = f'''{BOLD}Uso:{NC}
   ai --setup                          Guia de primeiro acesso: logins e chaves
   ai --install                       Instala as ferramentas que faltam (pergunta antes)
   ai --status | --doctor | --reset | --log | --classify "prompt"
+  ai serve [--host H] [--port P]     Servidor compatível com a API da OpenAI
+  ai serve keys [list|add|remove]    Chaves de API do servidor
   ai --update                        Atualizar para a versão mais nova
   ai --version                       Versão do Omni AI CLI
   ai --completions zsh|bash          Script de autocomplete do shell
@@ -101,6 +103,12 @@ def main(argv):
     if head == '--history' or (head == 'history' and (
             len(argv) == 1 or argv[1] in ('list', '--json', '--source') or len(argv) == 2)):
         return history_command(argv[1:])
+    # Same care as `history`: `ai serve dinner at eight` stays a prompt
+    if head == '--serve' or (head == 'serve' and (
+            len(argv) == 1 or argv[1].startswith('--') or (argv[1] == 'keys' and (
+                len(argv) == 2 or argv[2] in ('list', 'add', 'remove'))))):
+        from .. import server
+        return server.main(argv[1:])
     if head == '--sync':
         from .. import sync
         return sync.main(argv[1:])

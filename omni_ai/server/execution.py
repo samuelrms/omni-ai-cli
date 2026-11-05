@@ -1,0 +1,187 @@
+"""One request, one router process: isolated environment, read-only tools, and a way to stop it."""
+import json
+import os
+import re
+import subprocess
+import tempfile
+import threading
+
+from .. import config as config_tool
+from ..chat.spend import record_spend, spend
+from ..cli.base import LIMIT_TEXT
+from ..osutils import group_kwargs, kill_tree, module_cmd, module_env
+from .auth import ENV_KEY
+
+FORCE_AFTER = 5  # seconds between asking a process to stop and killing it
+LIMITED = re.compile(LIMIT_TEXT.pattern + '|cooldown', re.I)
+MASKED = 'PII mascarado'  # the API clients say this when placeholders may show up in the streamed pieces
+
+OK, FAILED, RATE_LIMITED, TIMEOUT, DISCONNECTED, SHUTDOWN, SWITCHED = (
+    'ok', 'failed', 'rate_limited', 'timeout', 'disconnected', 'shutdown', 'switched')
+
+
+class Execution:
+    def __init__(self, tool, prompt, last_user, temperature=None, max_tokens=None):
+        self.tool, self.prompt, self.last_user = tool, prompt, last_user
+        self.temperature, self.max_tokens = temperature, max_tokens
+        self.child = None
+        self.lock = threading.Lock()
+        self.stop_reason = None
+        self.provider = None
+        self.profile = ''
+        self.answer = ''
+        self.model = None
+        self.protocol_error = False
+        self.limited = False
+        self.masked = False
+        self.sent_delta = False
+        self.tokens = None
+        self.job = {'engine': tool}
+        self.on_delta = None
+
+    def _env(self):
+        env = dict(os.environ, SMART_AI_EVENTS='1', SMART_AI_READ_ONLY='1', SMART_AI_MODE='plan', NO_COLOR='1',
+                   PYTHONUNBUFFERED='1', SMART_AI_CLASSIFY_PROMPT=self.last_user)
+        env.pop(ENV_KEY, None)  # tools have no business reading the server's own key
+        env.pop('SMART_AI_TEMPERATURE', None)
+        env.pop('SMART_AI_MAX_TOKENS', None)
+        if self.temperature is not None:
+            env['SMART_AI_TEMPERATURE'] = str(self.temperature)
+        if self.max_tokens is not None:
+            env['SMART_AI_MAX_TOKENS'] = str(self.max_tokens)
+        return module_env(env)
+
+    def run(self, on_delta=None):
+        """Blocks until the router exits. Returns the outcome; `on_delta` gets streamed text as it arrives."""
+        self.on_delta = on_delta
+        args = module_cmd('cli') + ([] if self.tool == 'auto' else ['--' + self.tool]) + ['--', self.prompt]
+        with tempfile.TemporaryDirectory(prefix='omni-serve-', ignore_cleanup_errors=True) as folder:
+            try:
+                with self.lock:
+                    if self.stop_reason:
+                        return self.stop_reason
+                    self.child = subprocess.Popen(args, cwd=folder, env=self._env(), stdin=subprocess.DEVNULL,
+                                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                                  encoding='utf-8', errors='replace', **group_kwargs())
+                try:
+                    for raw in self.child.stdout:
+                        self._line(raw.rstrip())
+                    code = self.child.wait()
+                finally:
+                    self.child.stdout.close()
+            except OSError:
+                return FAILED
+            finally:
+                self.job['provider'] = self.provider or self.tool
+                record_spend(self.job)
+        if self.stop_reason:
+            return self.stop_reason
+        if code == 0 and self.answer.strip() and not self.protocol_error:
+            return OK
+        return RATE_LIMITED if self.limited else FAILED
+
+    def stop(self, reason):
+        """Stops the whole process tree, gently first. The first reason given is the one reported."""
+        with self.lock:
+            if self.stop_reason:
+                return
+            self.stop_reason = reason
+            child = self.child
+        if child is None or child.poll() is not None:
+            return
+        kill_tree(child)
+        timer = threading.Timer(FORCE_AFTER, self._force)
+        timer.daemon = True
+        timer.start()
+
+    def _force(self):
+        if self.child is not None and self.child.poll() is None:
+            kill_tree(self.child, force=True)
+
+    def _line(self, raw):
+        if not raw:
+            return
+        try:
+            event = json.loads(raw)
+            if not isinstance(event, dict):
+                raise ValueError()
+        except ValueError:
+            # Router status line: only used to tell why it failed, never sent to the client
+            self.masked = self.masked or MASKED in raw
+            self.limited = self.limited or bool(LIMITED.search(raw))
+            return
+        if 'event' in event and 'type' not in event:
+            self._antigravity(event)
+            return
+        kind = event.get('type', '')
+        if kind == 'smart.provider':
+            if self.sent_delta:
+                self.stop(SWITCHED)  # the client already has part of another answer
+                return
+            self.provider, self.profile = event.get('provider'), event.get('profile') or ''
+            self.answer, self.protocol_error, self.tokens = '', False, None
+        elif kind == 'smart.delta':
+            self._delta(event.get('text', ''))
+        elif kind == 'smart.answer':
+            self.answer, self.model = event.get('content', ''), event.get('model')
+            self._usage(event.get('usage'))
+        elif kind == 'item.completed' and event.get('item', {}).get('type') == 'agent_message':
+            self.answer = event['item'].get('text', '') or self.answer
+        elif kind == 'assistant':
+            for block in event.get('message', {}).get('content', []):
+                if block.get('type') == 'text' and block.get('text', '').strip():
+                    self.answer = block['text']
+        elif kind == 'result':
+            if str(self.profile).startswith('api-key') and event.get('total_cost_usd'):
+                self.job['cost'] = (self.job.get('cost') or 0) + event['total_cost_usd']
+            self._usage(event.get('usage'))
+            if event.get('is_error'):
+                self.protocol_error = True
+                self.limited = self.limited or bool(LIMITED.search(str(event.get('result') or '')))
+            elif event.get('result'):
+                self.answer = event['result']
+        elif kind == 'turn.completed':
+            self._usage(event.get('usage'))
+        elif kind in ('error', 'turn.failed'):
+            self.protocol_error = True
+            self.limited = self.limited or bool(LIMITED.search(json.dumps(event, ensure_ascii=False)))
+
+    def _antigravity(self, event):
+        """agy's stream-json has its own shape: {"event": "result", "result": {"status", "response", "usage"}}."""
+        kind, result = event.get('event'), event.get('result')
+        if kind == 'result' and isinstance(result, dict):
+            self._usage(result.get('usage'))
+            if result.get('status') == 'SUCCESS':
+                self.answer = str(result.get('response') or '').strip() or self.answer
+            else:
+                self.protocol_error = True
+                self.limited = self.limited or bool(LIMITED.search(json.dumps(result, ensure_ascii=False)))
+        elif kind == 'error':
+            self.protocol_error = True
+            self.limited = self.limited or bool(LIMITED.search(json.dumps(event, ensure_ascii=False)))
+
+    def _delta(self, text):
+        # With masked data a piece can be a placeholder split in two: wait for the whole, restored answer.
+        if not text or self.masked or self.on_delta is None:
+            return
+        try:
+            self.on_delta(text)
+            self.sent_delta = True
+        except OSError:
+            self.stop(DISCONNECTED)
+
+    def _usage(self, usage):
+        if not isinstance(usage, dict):
+            return
+        spend(self.job, usage)
+        prompt = usage.get('prompt_tokens') or usage.get('input_tokens') or 0
+        completion = usage.get('completion_tokens') or usage.get('output_tokens') or 0
+        if prompt or completion:
+            self.tokens = (int(prompt), int(completion))
+
+
+def uses_shared_credentials():
+    """Legacy Claude profiles swap ~/.claude/.credentials.json during a call, so they cannot run in parallel."""
+    profiles = config_tool.profiles().get('profiles', {})
+    return any(profiles.get(name, {}).get('credentials_file') and not profiles.get(name, {}).get('config_dir')
+               for name in config_tool.enabled_profiles())
