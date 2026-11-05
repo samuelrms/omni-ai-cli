@@ -44,7 +44,7 @@ class CheckTests(unittest.TestCase):
         import tempfile
         from unittest.mock import patch
         self.tmp = tempfile.TemporaryDirectory()
-        self.patch = patch.object(usage, 'CACHE_FILE', Path(self.tmp.name) / 'cache.json')
+        self.patch = patch.object(usage.cache, 'CACHE_FILE', Path(self.tmp.name) / 'cache.json')
         self.patch.start()
 
     def tearDown(self):
@@ -68,7 +68,7 @@ class CheckTests(unittest.TestCase):
     def test_alert_is_said_once_per_window(self):
         from unittest.mock import patch
         reading = {'windows': [{'minutes': 300, 'used': 85.0, 'resets': 2000000000}]}
-        with patch.object(usage, 'thresholds', return_value=(100.0, 80.0)):
+        with patch.object(usage.cache, 'thresholds', return_value=(100.0, 80.0)):
             self.assertEqual(len(usage.alerts('claude:primary', reading, 'Claude primary')), 1)
             self.assertEqual(usage.alerts('claude:primary', reading, 'Claude primary'), [])
 

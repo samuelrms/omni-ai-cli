@@ -146,13 +146,13 @@ class ClaudeTokenTests(unittest.TestCase):
 
 class ClaudeLimitsTests(unittest.TestCase):
     def test_none_without_token(self):
-        with patch.object(usage, 'claude_token', return_value=None):
+        with patch.object(usage.providers, 'claude_token', return_value=None):
             self.assertIsNone(usage.claude_limits({}))
 
     def test_parses_windows(self):
         data = {'five_hour': {'utilization': 50.0, 'resets_at': '2026-10-27T18:00:00Z'},
                 'seven_day_opus': {'utilization': 12.0, 'resets_at': None}}
-        with patch.object(usage, 'claude_token', return_value='tok'), \
+        with patch.object(usage.providers, 'claude_token', return_value='tok'), \
                 patch.object(usage.urllib.request, 'urlopen', return_value=FakeResponse(data)):
             windows = usage.claude_limits({})
         labels = {w.get('label') for w in windows}
@@ -160,32 +160,32 @@ class ClaudeLimitsTests(unittest.TestCase):
 
     def test_rate_limited_returns_retry(self):
         err = usage.urllib.error.HTTPError('u', 429, 'too many', {'retry-after': '55'}, None)
-        with patch.object(usage, 'claude_token', return_value='tok'), \
+        with patch.object(usage.providers, 'claude_token', return_value='tok'), \
                 patch.object(usage.urllib.request, 'urlopen', side_effect=err):
             self.assertEqual(usage.claude_limits({}), {'error': 'rate', 'retry': 55})
 
     def test_other_http_error_returns_none(self):
         err = usage.urllib.error.HTTPError('u', 500, 'boom', {}, None)
-        with patch.object(usage, 'claude_token', return_value='tok'), \
+        with patch.object(usage.providers, 'claude_token', return_value='tok'), \
                 patch.object(usage.urllib.request, 'urlopen', side_effect=err):
             self.assertIsNone(usage.claude_limits({}))
 
 
 class ClaudeReadingTests(unittest.TestCase):
     def test_wraps_windows(self):
-        with patch.object(usage, 'claude_limits', return_value=[{'minutes': 300, 'used': 1.0}]):
+        with patch.object(usage.providers, 'claude_limits', return_value=[{'minutes': 300, 'used': 1.0}]):
             self.assertEqual(usage.claude_reading({}), {'windows': [{'minutes': 300, 'used': 1.0}]})
 
     def test_passes_through_none_and_error(self):
-        with patch.object(usage, 'claude_limits', return_value=None):
+        with patch.object(usage.providers, 'claude_limits', return_value=None):
             self.assertIsNone(usage.claude_reading({}))
-        with patch.object(usage, 'claude_limits', return_value={'error': 'rate'}):
+        with patch.object(usage.providers, 'claude_limits', return_value={'error': 'rate'}):
             self.assertEqual(usage.claude_reading({}), {'error': 'rate'})
 
     def test_codex_reading(self):
-        with patch.object(usage, 'codex_status', return_value={'email': 'x'}):
+        with patch.object(usage.providers, 'codex_status', return_value={'email': 'x'}):
             self.assertEqual(usage.codex_reading(), {'email': 'x'})
-        with patch.object(usage, 'codex_status', return_value=None):
+        with patch.object(usage.providers, 'codex_status', return_value=None):
             self.assertIsNone(usage.codex_reading())
 
 
@@ -193,7 +193,7 @@ class CacheTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        p = patch.object(usage, 'CACHE_FILE', Path(self.tmp.name) / 'cache.json')
+        p = patch.object(usage.cache, 'CACHE_FILE', Path(self.tmp.name) / 'cache.json')
         p.start()
         self.addCleanup(p.stop)
 
@@ -219,7 +219,7 @@ class CacheTests(unittest.TestCase):
 
     def test_alerts_include_reset_text(self):
         reading = {'windows': [{'minutes': 300, 'used': 90.0, 'resets': time.time() + 7200, 'label': None}]}
-        with patch.object(usage, 'thresholds', return_value=(100.0, 80.0)):
+        with patch.object(usage.cache, 'thresholds', return_value=(100.0, 80.0)):
             lines = usage.alerts('claude:a', reading, 'Claude a')
         self.assertEqual(len(lines), 1)
         self.assertIn('reseta em', lines[0])

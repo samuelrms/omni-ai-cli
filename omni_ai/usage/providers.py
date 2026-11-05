@@ -1,31 +1,22 @@
-"""Real usage numbers for /usage: who each account is and how much of its limit is used.
-
-Each tool is asked through its own channel, so no credential is read or copied here:
-  claude      `claude auth status --json` (e-mail and plan of each login) and the usage endpoint that
-              Claude Code's own /usage calls (% of the 5-hour and weekly windows); the login token is
-              read from the Keychain or .credentials.json only in memory and only sent to Anthropic
-  codex       `codex app-server` (e-mail, plan, % of the 5-hour and weekly windows, reset time)
-  openrouter  GET /api/v1/key with the saved key (credits used and the key's limit)
-Anything that fails returns None and /usage falls back to what the tool last said.
-"""
-from datetime import datetime
+"""Per-provider usage readings (Claude, Codex, OpenRouter) read locally and over each API."""
 import hashlib
 import http.client
 import json
 import os
-from pathlib import Path
 import select
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime
+from pathlib import Path
 
-from . import config as config_tool
-from .osutils import resolve_bin
+from .. import config as config_tool
+from ..osutils import resolve_bin
+from .cache import _f, read, store, FRESH
 
 PLANS = {'max': 'Max', 'pro': 'Pro', 'plus': 'Plus', 'team': 'Team', 'enterprise': 'Enterprise', 'free': 'Free'}
-
 
 def plan_name(value):
     return PLANS.get(str(value or '').lower(), str(value or '').capitalize())
@@ -120,29 +111,6 @@ def openrouter_credits(key, timeout=10):
         return None
 
 
-def window_label(minutes, label=None):
-    if label:
-        return label
-    if minutes and minutes % 10080 == 0:
-        return 'semana'
-    if minutes and minutes % 1440 == 0:
-        return f'{minutes // 1440} dias'
-    return f'{minutes // 60}h' if minutes else 'crédito'
-
-
-def bar(percent, width=20):
-    filled = round(max(0.0, min(100.0, percent)) / 100 * width)
-    return '█' * filled + '░' * (width - filled)
-
-
-def resets_in(epoch, now=None):
-    seconds = int(epoch - (time.time() if now is None else now))
-    if seconds <= 0:
-        return 'agora'
-    days, rest = divmod(seconds, 86400)
-    return f'{days}d{rest // 3600:02d}h' if days else f'{rest // 3600}h{rest % 3600 // 60:02d}m' if rest >= 3600 else f'{rest // 60}m'
-
-
 def codex_accounts():
     """Main Codex login plus every extra account, each with its own CODEX_HOME."""
     found = [('assinatura', None)]
@@ -153,7 +121,6 @@ def codex_accounts():
 
 CLAUDE_USAGE_URL = 'https://api.anthropic.com/api/oauth/usage'
 CLAUDE_WINDOWS = (('five_hour', 300), ('seven_day', 10080), ('seven_day_opus', 10080))
-
 
 def claude_token(conf):
     """OAuth access token of a Claude login: Keychain on macOS, .credentials.json elsewhere."""
@@ -218,86 +185,6 @@ def claude_windows(data):
 
 # ─── checagem: cache, paralelo, teto do roteador e alerta ─────────
 
-CACHE_FILE = config_tool.CONFIG_DIR / 'usage-cache.json'
-FRESH = {'claude': 120, 'codex': 300}  # seconds a reading stays good for the router
-
-
-def _f(value, default=0.0):
-    """A float from a maybe-string/maybe-bad API value, never raising."""
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def thresholds():
-    """routing.usage_skip_percent: the router skips an account at or above it (default 100).
-    routing.usage_alert_percent: warn once per window when an account passes it (default 80)."""
-    routing = config_tool.profiles().get('routing', {})
-    return _f(routing.get('usage_skip_percent', 100), 100.0), _f(routing.get('usage_alert_percent', 80), 80.0)
-
-
-def load_cache():
-    return config_tool.read_json(CACHE_FILE, {})
-
-
-def store(key, reading):
-    def _mutate(data):
-        data.setdefault('readings', {})[key] = dict(reading, at=int(time.time()))
-    config_tool.update_json(CACHE_FILE, _mutate)
-
-
-def peak(windows):
-    """Highest % among windows that have not reset yet."""
-    now = time.time()
-    return max((w['used'] for w in windows or [] if not w.get('resets') or w['resets'] > now), default=0.0)
-
-
-def read(key, fetch, max_age=None):
-    """Reading for an account: from the cache while fresh, otherwise fetched (and cached). When the tool
-    refuses the check (too many in a row) or fails, the last reading comes back marked stale, and no new
-    check is made until the wait the tool asked for is over."""
-    tool = key.split(':')[0]
-    data = load_cache()
-    cached = data.get('readings', {}).get(key)
-    now = time.time()
-    if cached and now - cached['at'] < (FRESH.get(tool, 120) if max_age is None else max_age):
-        return cached
-    stale = dict(cached, stale=True) if cached else None
-    if data.get('backoff', {}).get(key, 0) > now:
-        return stale
-    reading = fetch()
-    if reading and 'error' not in reading:
-        store(key, reading)
-        return reading
-    if reading and reading.get('retry'):
-        config_tool.update_json(CACHE_FILE,
-                                lambda data: data.setdefault('backoff', {}).__setitem__(key, int(now + reading['retry'])))
-    return stale
-
-
-def alerts(key, reading, label):
-    """Warning lines for windows past the alert threshold, each said once per reset."""
-    _, alert = thresholds()
-    windows = (reading or {}).get('windows', [])
-    if not windows:
-        return []
-    lines = []
-
-    def _mutate(data):
-        said = data.setdefault('alerted', {})
-        for window in windows:
-            mark = f"{key}:{window['minutes']}:{window.get('label') or ''}:{int(window.get('resets') or 0)}"
-            if window['used'] >= alert and mark not in said:
-                said[mark] = int(time.time())
-                reset = f", reseta em {resets_in(window['resets'])}" if window.get('resets') else ''
-                lines.append(f"{label}: {window['used']:.0f}% da janela "
-                             f"{window_label(window['minutes'], window.get('label'))} usada{reset}")
-
-    config_tool.update_json(CACHE_FILE, _mutate)
-    return lines
-
-
 def claude_reading(conf):
     windows = claude_limits(conf)
     if windows is None or isinstance(windows, dict):
@@ -308,32 +195,3 @@ def claude_reading(conf):
 def codex_reading(env=None):
     status = codex_status(env)
     return None if status is None else status
-
-
-def snapshot(claude_profiles, codex_accounts, openrouter_keys):
-    """Everything /usage shows, fetched at once: one thread per account."""
-    from concurrent.futures import ThreadPoolExecutor
-    jobs = {}
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        for name, conf in claude_profiles:
-            jobs[('claude-who', name)] = pool.submit(claude_account, conf)
-            jobs[('claude', name)] = pool.submit(read, f'claude:{name}', lambda conf=conf: claude_reading(conf), 60)
-        for name, env in codex_accounts:
-            jobs[('codex', name)] = pool.submit(read, f'codex:{name}', lambda env=env: codex_reading(env), 30)
-        for name, key, _ in openrouter_keys or []:
-            jobs[('openrouter', name)] = pool.submit(openrouter_credits, key)
-
-        def _result(future):
-            try:
-                return future.result()
-            except Exception:
-                return None  # one bad account must not blank the whole /usage screen
-        return {k: _result(f) for k, f in jobs.items()}
-
-
-def clock(epoch):
-    """Reset time in local time: '14:00' today/tomorrow, 'seg 14:00' within a week."""
-    moment = time.localtime(epoch)
-    if epoch - time.time() < 86400:
-        return time.strftime('%H:%M', moment)
-    return ('seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom')[moment.tm_wday] + time.strftime(' %H:%M', moment)
