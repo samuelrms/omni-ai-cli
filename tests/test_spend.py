@@ -59,7 +59,7 @@ class SpendTests(unittest.TestCase):
         chat.record_spend({'engine': 'codex', 'tokens': 7})
         with open(self.log.with_name('costs.jsonl'), 'a') as stream:
             stream.write('{"at": "1999-01-01 00:00:00", "tool": "codex", "cost": 9, "tokens": 9}\nnot json\n')
-        with patch.object(cli, 'LOG_FILE', self.log):
+        with patch.object(cli.usage_view, 'LOG_FILE', self.log):
             totals = cli.spend_today(today)
         self.assertEqual(set(totals), {'openrouter', 'codex'})
         self.assertAlmostEqual(totals['openrouter'][0], 0.003)

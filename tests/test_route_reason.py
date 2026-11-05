@@ -23,9 +23,9 @@ class RouteReasonTests(unittest.TestCase):
 
         def real_claude(_):
             raise AssertionError('the real Claude must never run in tests')
-        with patch.object(cli, 'claude_with_fallback', side_effect=real_claude), \
-                patch.object(cli, 'classify_llm', side_effect=classify_llm), patch.object(cli, 'emit', side_effect=events.append), \
-                patch.object(cli, 'runners', return_value=fakes), patch.object(cli, 'say'), \
+        with patch.object(cli.routing, 'claude_with_fallback', side_effect=real_claude), \
+                patch.object(cli.classifier, 'classify_llm', side_effect=classify_llm), patch.object(cli.routing, 'emit', side_effect=events.append), \
+                patch.object(cli.routing, 'runners', return_value=fakes), patch.object(cli.routing, 'say'), \
                 patch.dict(os.environ, {'SMART_AI_CLASSIFY_PROMPT': ''}):
             cli.route(prompt)
         return [e for e in events if e.get('type') == 'smart.route']
@@ -39,7 +39,7 @@ class RouteReasonTests(unittest.TestCase):
                          [{'type': 'smart.route', 'label': 'complex', 'by': 'rules'}])
 
     def test_forced_tool_has_no_route_line(self):
-        with patch.object(cli, 'runners', return_value={'codex': lambda _: 0}), patch.object(cli, 'emit') as emit:
+        with patch.object(cli.routing, 'runners', return_value={'codex': lambda _: 0}), patch.object(cli.routing, 'emit') as emit:
             cli.route('anything', 'codex')
         emit.assert_not_called()
 

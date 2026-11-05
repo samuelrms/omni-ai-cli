@@ -19,10 +19,10 @@ class DoctorTests(unittest.TestCase):
                 patch.object(cli.config_tool, 'profiles', return_value=profiles), \
                 patch.object(cli.config_tool, 'KEYS', ['claude', 'openrouter', 'groq', 'cerebras']), \
                 patch.object(cli.config_tool, 'stored_key', side_effect=lambda p: (('x', 'name', 'file') if p in keys else (None, None, None))), \
-                patch.object(cli, 'cooldown_left', return_value=0), \
-                patch.object(cli, 'installed', return_value=False), \
-                patch.object(cli, 'version', return_value='1.0'), \
-                patch.object(cli, 'say', side_effect=lambda *a: lines.append(a[0] if a else '')):
+                patch.object(cli.health, 'cooldown_left', return_value=0), \
+                patch.object(cli.health, 'installed', return_value=False), \
+                patch.object(cli.health, 'version', return_value='1.0'), \
+                patch.object(cli.health, 'say', side_effect=lambda *a: lines.append(a[0] if a else '')):
             code = cli.doctor()
         return code, '\n'.join(lines)
 

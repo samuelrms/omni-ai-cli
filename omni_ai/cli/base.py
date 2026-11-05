@@ -1,0 +1,141 @@
+"""Shared primitives for the router: colors, config/state access, logging, cooldowns, process runner."""
+import json
+import os
+import re
+import subprocess
+import threading
+import sys
+import time
+from pathlib import Path
+
+from .. import config as config_tool
+from .. import usage
+from ..osutils import REPO, enable_ansi, module_cmd, module_env, resolve_bin
+from ..tools import CLIS, KEY_NAMES, TOOLS
+
+STATE_FILE = Path(os.environ.get('SMART_AI_STATE', '~/.cache/smart-ai/state.json')).expanduser()
+LOG_FILE = Path(os.environ.get('SMART_AI_LOG', '~/.cache/smart-ai/usage.log')).expanduser()
+BINS = {name: os.environ.get(name.upper() + '_BIN', TOOLS[name].bin) for name in CLIS}
+# --claude or -c, --codex or -x ...
+FLAGS = {**{name: name for name in TOOLS}, **{tool.flag: name for name, tool in TOOLS.items()}}
+TOOL_FLAGS = '|'.join('--' + name for name in TOOLS)
+KEY_LIST = '|'.join(KEY_NAMES)
+MODES = ('default', 'plan', 'edits', 'auto', 'yolo')
+RATE_LIMITED = 2
+NOT_READY = 3  # account without login: skip it, don't stop the fallback
+LIMIT_TEXT = re.compile(r'rate.?limit|too many requests|usage limit|session limit|limit reached|quota|resets? (at|in)|out of .*messages', re.I)
+
+COLOR = sys.stdout.isatty() and not os.environ.get('NO_COLOR')
+RED, GREEN, YELLOW, BLUE, CYAN, MAGENTA, BOLD, DIM, NC = (
+    ('\033[0;31m', '\033[0;32m', '\033[1;33m', '\033[0;34m', '\033[0;36m', '\033[0;35m', '\033[1m', '\033[2m', '\033[0m')
+    if COLOR else ('',) * 9)
+
+
+def say(text=''):
+    print(text, flush=True)
+
+
+# ─── config and state ────────────────────────────────────────────
+
+def config():
+    return config_tool.read_json(config_tool.profiles_path(), {})
+
+
+def profile_conf(name):
+    return config().get('profiles', {}).get(name, {})
+
+
+def state():
+    return config_tool.read_json(STATE_FILE, {})
+
+
+def set_state(key, value):
+    data = state()
+    data[key] = value
+    config_tool.write_json(STATE_FILE, data)
+
+
+def log_usage(tool, profile, status):
+    # Metadata only: the prompt never goes to the log
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(LOG_FILE, 'a') as stream:
+        stream.write(f"[{time.strftime('%Y-%m-%dT%H:%M:%S%z')}] tool={tool} profile={profile} status={status}\n")
+
+
+def cooldown_left(profile):
+    last = state().get(f'{profile}_last_rate_limit')
+    if not last:
+        return 0
+    left = int(last) + int(profile_conf(profile).get('cooldown_minutes', 60)) * 60 - int(time.time())
+    if left <= 0:
+        set_state(f'{profile}_last_rate_limit', '')
+        return 0
+    return left
+
+
+def mark_rate_limited(profile):
+    set_state(f'{profile}_last_rate_limit', str(int(time.time())))
+    say(f"{YELLOW}⚠  Conta '{profile}' atingiu o rate limit. Cooldown ativado.{NC}")
+
+
+def mode():
+    return 'plan' if os.environ.get('SMART_AI_READ_ONLY') == '1' else os.environ.get('SMART_AI_MODE', 'default')
+
+
+def models():
+    return config_tool.model_values()
+
+
+def emit(event):
+    if os.environ.get('SMART_AI_EVENTS') == '1':
+        say(json.dumps(event, ensure_ascii=False))
+
+
+def emit_provider(provider, profile=''):
+    emit({'type': 'smart.provider', 'provider': provider, 'profile': profile})
+
+
+def run(argv, env=None, stdin=None):
+    """Run a CLI, stream its output live, and return (exit code, captured text)."""
+    executable = resolve_bin(argv[0])
+    if not executable:
+        say(f'{RED}✗ {argv[0]} não encontrado.{NC}')
+        return 127, ''
+    process = subprocess.Popen([executable] + argv[1:], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                               stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
+                               text=True, encoding='utf-8', errors='replace')
+    writer = None
+    if stdin is not None:
+        # Feed stdin from a thread: writing inline can deadlock when the child fills its
+        # stdout pipe before draining stdin, and it crashes with BrokenPipeError if the
+        # child exits early. The reader loop below keeps stdout drained meanwhile.
+        def _feed():
+            try:
+                process.stdin.write(stdin)
+            except (BrokenPipeError, OSError):
+                pass
+            finally:
+                try:
+                    process.stdin.close()
+                except OSError:
+                    pass
+        writer = threading.Thread(target=_feed, daemon=True)
+        writer.start()
+    captured = []
+    for line in process.stdout:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+        captured.append(line)
+    code = process.wait()
+    if writer is not None:
+        writer.join(timeout=1)
+    return code, ''.join(captured)
+
+
+def installed(tool):
+    return resolve_bin(BINS[tool]) is not None
+
+
+def header(label, note):
+    say(f'{label} {DIM}({note}){NC}')
+    say(f'{DIM}─────────────────────────────────────{NC}')

@@ -89,7 +89,7 @@ class HistoryTests(unittest.TestCase):
     def test_cli_history_json(self):
         (self.omni / 'a.json').write_text(json.dumps({'id': 'a', 'messages': [{'role': 'user', 'content': 'hi'}]}))
         lines = []
-        with patch.object(cli, 'say', side_effect=lambda *a: lines.append(a[0] if a else '')):
+        with patch.object(cli.commands, 'say', side_effect=lambda *a: lines.append(a[0] if a else '')):
             self.assertEqual(cli.history_command(['--json', '--source', 'omni']), 0)
         data = json.loads(lines[0])
         self.assertEqual(data[0]['id'], 'omni:a')

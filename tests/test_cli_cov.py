@@ -23,6 +23,18 @@ MODELS = {'claude': 'opus', 'codex': 'gpt', 'codex_effort': 'low', 'cursor': '',
           'openrouter': '', 'openrouter_paid': 'off', 'grok': '', 'deepseek': ''}
 
 
+# After cli.py became a package, a constant/function lives in the submodule that uses it (imported by
+# value) rather than only on the package. Patch each name on every submodule that holds it, so a single
+# setUp/capture call affects all callers regardless of which submodule the function under test lives in.
+_SAY_MODS = (cli, cli.base, cli.executors, cli.routing, cli.health, cli.usage_view, cli.commands)
+_LOG_MODS = (cli, cli.base, cli.usage_view, cli.commands, cli.health)
+_STATE_MODS = (cli, cli.base, cli.limits, cli.commands)
+
+
+def _patch_all(mods, name, value):
+    return [patch.object(mod, name, value) for mod in mods]
+
+
 class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -30,18 +42,25 @@ class Base(unittest.TestCase):
         root = Path(self.tmp.name)
         self.state_file = root / 'state.json'
         self.log_file = root / 'usage.log'
-        for target in (patch.object(cli, 'STATE_FILE', self.state_file),
-                       patch.object(cli, 'LOG_FILE', self.log_file),
-                       patch.dict(os.environ, {'SMART_AI_MODE': 'default', 'SMART_AI_EVENTS': '0',
-                                                'SMART_AI_READ_ONLY': '0', 'SMART_AI_CLASSIFY_PROMPT': ''},
-                                  clear=False)):
+        targets = (_patch_all(_STATE_MODS, 'STATE_FILE', self.state_file)
+                   + _patch_all(_LOG_MODS, 'LOG_FILE', self.log_file)
+                   + [patch.dict(os.environ, {'SMART_AI_MODE': 'default', 'SMART_AI_EVENTS': '0',
+                                              'SMART_AI_READ_ONLY': '0', 'SMART_AI_CLASSIFY_PROMPT': ''},
+                                 clear=False)])
+        for target in targets:
             target.start()
             self.addCleanup(target.stop)
 
     def capture(self, func, *a, **k):
         lines = []
-        with patch.object(cli, 'say', side_effect=lambda *x: lines.append(x[0] if x else '')):
+        patches = _patch_all(_SAY_MODS, 'say', lambda *x: lines.append(x[0] if x else ''))
+        for p in patches:
+            p.start()
+        try:
             result = func(*a, **k)
+        finally:
+            for p in patches:
+                p.stop()
         return result, '\n'.join(lines)
 
     def main(self, argv):
@@ -117,11 +136,11 @@ class StateTests(Base):
     def test_cooldown_left_active_and_expired(self):
         import time
         cli.set_state('p1_last_rate_limit', str(int(time.time())))
-        with patch.object(cli, 'profile_conf', return_value={'cooldown_minutes': 60}):
+        with patch.object(cli.base, 'profile_conf', return_value={'cooldown_minutes': 60}):
             self.assertGreater(cli.cooldown_left('p1'), 0)
         # far in the past → expired, cleared
         cli.set_state('p1_last_rate_limit', '1000')
-        with patch.object(cli, 'profile_conf', return_value={'cooldown_minutes': 1}):
+        with patch.object(cli.base, 'profile_conf', return_value={'cooldown_minutes': 1}):
             self.assertEqual(cli.cooldown_left('p1'), 0)
 
     def test_mark_rate_limited(self):
@@ -154,41 +173,41 @@ class StateTests(Base):
 
 class ClassifyTests(Base):
     def test_classify_rules_complex_keywords(self):
-        with patch.object(cli, 'config', return_value={'routing': {'complex_keywords': ['refatorar']}}):
+        with patch.object(cli.classifier, 'config', return_value={'routing': {'complex_keywords': ['refatorar']}}):
             self.assertEqual(cli.classify_rules('refatorar isso'), 'complex')
 
     def test_classify_rules_workspace_regex(self):
-        with patch.object(cli, 'config', return_value={'routing': {}}):
+        with patch.object(cli.classifier, 'config', return_value={'routing': {}}):
             self.assertEqual(cli.classify_rules('edite o repositório'), 'complex')
             self.assertEqual(cli.classify_rules('rode o script main.py'), 'complex')
             self.assertEqual(cli.classify_rules('veja ./src/app'), 'complex')
 
     def test_classify_rules_simple_short(self):
-        with patch.object(cli, 'config', return_value={'routing': {'max_simple_length': 120}}):
+        with patch.object(cli.classifier, 'config', return_value={'routing': {'max_simple_length': 120}}):
             self.assertEqual(cli.classify_rules('o que significa REST'), 'simple')
 
     def test_classify_rules_simple_keyword(self):
-        with patch.object(cli, 'config', return_value={'routing': {'simple_keywords': ['traduz']}}):
+        with patch.object(cli.classifier, 'config', return_value={'routing': {'simple_keywords': ['traduz']}}):
             self.assertEqual(cli.classify_rules('traduz ' + 'x' * 200), 'simple')
 
     def test_classify_rules_long_falls_complex(self):
-        with patch.object(cli, 'config', return_value={'routing': {}}):
+        with patch.object(cli.classifier, 'config', return_value={'routing': {}}):
             self.assertEqual(cli.classify_rules('explique o conceito de ' + 'palavra ' * 40), 'complex')
 
     def test_classify_prefers_llm(self):
-        with patch.object(cli, 'classify_llm', return_value='simple'):
+        with patch.object(cli.classifier, 'classify_llm', return_value='simple'):
             self.assertEqual(cli.classify('anything'), 'simple')
 
     def test_classify_falls_back_to_rules(self):
-        with patch.object(cli, 'classify_llm', return_value=None), \
-                patch.object(cli, 'classify_rules', return_value='complex') as rules:
+        with patch.object(cli.classifier, 'classify_llm', return_value=None), \
+                patch.object(cli.classifier, 'classify_rules', return_value='complex') as rules:
             self.assertEqual(cli.classify('x'), 'complex')
             rules.assert_called_once()
 
     def test_classify_uses_env_override(self):
         with patch.dict(os.environ, {'SMART_AI_CLASSIFY_PROMPT': 'forced prompt'}), \
-                patch.object(cli, 'classify_llm', return_value=None), \
-                patch.object(cli, 'classify_rules', side_effect=lambda p: p) as rules:
+                patch.object(cli.classifier, 'classify_llm', return_value=None), \
+                patch.object(cli.classifier, 'classify_rules', side_effect=lambda p: p) as rules:
             cli.classify('ignored')
             rules.assert_called_once_with('forced prompt')
 
@@ -204,9 +223,9 @@ class ClassifyTests(Base):
             self.assertIsNone(cli.ask_text('http://x', 'k', {}))
 
     def test_ask_classifier_finds_label(self):
-        with patch.object(cli, 'ask_text', return_value='The answer is SIMPLE here'):
+        with patch.object(cli.classifier, 'ask_text', return_value='The answer is SIMPLE here'):
             self.assertEqual(cli.ask_classifier('u', 'k', {}), 'simple')
-        with patch.object(cli, 'ask_text', return_value=None):
+        with patch.object(cli.classifier, 'ask_text', return_value=None):
             self.assertIsNone(cli.ask_classifier('u', 'k', {}))
 
     def test_free_classifiers_structure(self):
@@ -218,14 +237,14 @@ class ClassifyTests(Base):
         def stored_keys(provider):
             return [('principal', 'key', 'salva')] if provider == 'groq' else []
         with patch.object(cli.config_tool, 'stored_keys', side_effect=stored_keys), \
-                patch.object(cli, 'models', return_value=MODELS), \
-                patch.object(cli, 'ask_classifier', return_value='complex'):
+                patch.object(cli.classifier, 'models', return_value=MODELS), \
+                patch.object(cli.classifier, 'ask_classifier', return_value='complex'):
             self.assertEqual(cli.classify_llm('do something'), 'complex')
             self.assertEqual(cli.CLASSIFIED_BY[0], 'groq')
 
     def test_classify_llm_none_when_no_keys(self):
         with patch.object(cli.config_tool, 'stored_keys', return_value=[]), \
-                patch.object(cli, 'models', return_value=MODELS):
+                patch.object(cli.classifier, 'models', return_value=MODELS):
             self.assertIsNone(cli.classify_llm('do something'))
 
 
@@ -233,7 +252,7 @@ class ClassifyTests(Base):
 
 class RunWrapperTests(Base):
     def test_run_missing_binary(self):
-        with patch.object(cli, 'resolve_bin', return_value=None):
+        with patch.object(cli.base, 'resolve_bin', return_value=None):
             (code, out), _ = self.capture(cli.run, ['nope', 'arg'])
         self.assertEqual(code, 127)
 
@@ -241,7 +260,7 @@ class RunWrapperTests(Base):
         fake = MagicMock()
         fake.stdout = iter(['hello\n', 'world\n'])
         fake.wait.return_value = 0
-        with patch.object(cli, 'resolve_bin', return_value='/bin/tool'), \
+        with patch.object(cli.base, 'resolve_bin', return_value='/bin/tool'), \
                 patch.object(cli.subprocess, 'Popen', return_value=fake), \
                 patch.object(cli.sys.stdout, 'write'), patch.object(cli.sys.stdout, 'flush'):
             code, out = cli.run(['tool'])
@@ -253,7 +272,7 @@ class RunWrapperTests(Base):
         fake.stdout = iter([])
         fake.wait.return_value = 0
         fake.stdin = MagicMock()
-        with patch.object(cli, 'resolve_bin', return_value='/bin/tool'), \
+        with patch.object(cli.base, 'resolve_bin', return_value='/bin/tool'), \
                 patch.object(cli.subprocess, 'Popen', return_value=fake), \
                 patch.object(cli.sys.stdout, 'write'), patch.object(cli.sys.stdout, 'flush'):
             cli.run(['tool'], stdin='data')
@@ -264,50 +283,50 @@ class RunWrapperTests(Base):
 
 class RunClaudeTests(Base):
     def test_not_installed(self):
-        with patch.object(cli, 'installed', return_value=False):
+        with patch.object(cli.executors, 'installed', return_value=False):
             code, text = self.capture(cli.run_claude, 'p1', 'hi')
         self.assertEqual(code, 1)
         self.assertIn('não instalado', text)
 
     def test_api_key_success(self):
-        with patch.object(cli, 'installed', return_value=True), \
-                patch.object(cli, 'models', return_value=MODELS), \
+        with patch.object(cli.executors, 'installed', return_value=True), \
+                patch.object(cli.executors, 'models', return_value=MODELS), \
                 patch.object(cli.config_tool, 'stored_keys', return_value=[('principal', 'sk-ant-x', 'salva')]), \
                 patch.object(cli.config_tool, 'stored_key', return_value=('sk-ant-x', 'salva')), \
-                patch.object(cli, 'run', return_value=(0, 'ok')):
+                patch.object(cli.executors, 'run', return_value=(0, 'ok')):
             code, text = self.capture(cli.run_claude, 'api-key', 'hi')
         self.assertEqual(code, 0)
 
     def test_rate_limited_marks_cooldown(self):
-        with patch.object(cli, 'installed', return_value=True), \
-                patch.object(cli, 'models', return_value=MODELS), \
+        with patch.object(cli.executors, 'installed', return_value=True), \
+                patch.object(cli.executors, 'models', return_value=MODELS), \
                 patch.object(cli.config_tool, 'stored_keys', return_value=[('principal', 'sk-ant-x', 'salva')]), \
                 patch.object(cli.config_tool, 'stored_key', return_value=('sk-ant-x', 'salva')), \
-                patch.object(cli, 'run', return_value=(1, 'usage limit reached')):
+                patch.object(cli.executors, 'run', return_value=(1, 'usage limit reached')):
             code, text = self.capture(cli.run_claude, 'api-key', 'hi')
         self.assertEqual(code, cli.RATE_LIMITED)
 
     def test_config_dir_missing_is_not_ready(self):
-        with patch.object(cli, 'installed', return_value=True), \
-                patch.object(cli, 'models', return_value=MODELS), \
-                patch.object(cli, 'profile_conf', return_value={'config_dir': '/nonexistent/xyz'}):
+        with patch.object(cli.executors, 'installed', return_value=True), \
+                patch.object(cli.executors, 'models', return_value=MODELS), \
+                patch.object(cli.executors, 'profile_conf', return_value={'config_dir': '/nonexistent/xyz'}):
             code, text = self.capture(cli.run_claude, 'p1', 'hi')
         self.assertEqual(code, cli.NOT_READY)
         self.assertIn('sem login', text)
 
     def test_config_dir_present_success(self):
-        with patch.object(cli, 'installed', return_value=True), \
-                patch.object(cli, 'models', return_value=MODELS), \
-                patch.object(cli, 'profile_conf', return_value={'config_dir': self.tmp.name}), \
-                patch.object(cli, 'run', return_value=(0, 'ok')):
+        with patch.object(cli.executors, 'installed', return_value=True), \
+                patch.object(cli.executors, 'models', return_value=MODELS), \
+                patch.object(cli.executors, 'profile_conf', return_value={'config_dir': self.tmp.name}), \
+                patch.object(cli.executors, 'run', return_value=(0, 'ok')):
             code, text = self.capture(cli.run_claude, 'p1', 'hi')
         self.assertEqual(code, 0)
 
     def test_credentials_file_missing_is_not_ready(self):
         missing = str(Path(self.tmp.name) / 'creds.json')  # never created
-        with patch.object(cli, 'installed', return_value=True), \
-                patch.object(cli, 'models', return_value=MODELS), \
-                patch.object(cli, 'profile_conf', return_value={'credentials_file': missing}):
+        with patch.object(cli.executors, 'installed', return_value=True), \
+                patch.object(cli.executors, 'models', return_value=MODELS), \
+                patch.object(cli.executors, 'profile_conf', return_value={'credentials_file': missing}):
             code, text = self.capture(cli.run_claude, 'p1', 'hi')
         self.assertEqual(code, cli.NOT_READY)
 
@@ -320,15 +339,15 @@ class ProviderRunnerTests(Base):
         return [patch.object(cli.config_tool, 'tool_accounts', return_value=[]),
                 patch.object(cli.config_tool, 'tool_env', return_value={}),
                 patch.object(cli.config_tool, 'stored_keys', return_value=[]),
-                patch.object(cli, 'cooldown_left', return_value=0),
-                patch.object(cli, 'over_ceiling', return_value=False),
-                patch.object(cli, 'models', return_value=MODELS)]
+                patch.object(cli.executors, 'cooldown_left', return_value=0),
+                patch.object(cli.executors, 'over_ceiling', return_value=False),
+                patch.object(cli.executors, 'models', return_value=MODELS)]
 
     def test_run_with_key_retry_primary_success(self):
         for t in self._no_accounts():
             t.start()
             self.addCleanup(t.stop)
-        with patch.object(cli, 'run', return_value=(0, '')):
+        with patch.object(cli.executors, 'run', return_value=(0, '')):
             code, _ = self.capture(cli.run_with_key_retry, 'codex', ['codex'], 'CODEX_API_KEY', 'Codex')
         self.assertEqual(code, 0)
 
@@ -336,26 +355,26 @@ class ProviderRunnerTests(Base):
         with patch.object(cli.config_tool, 'tool_accounts', return_value=[]), \
                 patch.object(cli.config_tool, 'tool_env', return_value={}), \
                 patch.object(cli.config_tool, 'stored_keys', return_value=[('k1', 'val', 'salva')]), \
-                patch.object(cli, 'cooldown_left', return_value=0), \
-                patch.object(cli, 'over_ceiling', return_value=False), \
-                patch.object(cli, 'models', return_value=MODELS), \
-                patch.object(cli, 'run', side_effect=[(1, 'limit reached'), (0, '')]) as run_mock:
+                patch.object(cli.executors, 'cooldown_left', return_value=0), \
+                patch.object(cli.executors, 'over_ceiling', return_value=False), \
+                patch.object(cli.executors, 'models', return_value=MODELS), \
+                patch.object(cli.executors, 'run', side_effect=[(1, 'limit reached'), (0, '')]) as run_mock:
             code, text = self.capture(cli.run_with_key_retry, 'codex', ['codex'], 'CODEX_API_KEY', 'Codex')
         self.assertEqual(code, 0)
         self.assertEqual(run_mock.call_count, 2)
 
     def test_run_codex(self):
-        with patch.object(cli, 'models', return_value=MODELS), \
-                patch.object(cli, 'run_with_key_retry', return_value=0) as rk:
+        with patch.object(cli.executors, 'models', return_value=MODELS), \
+                patch.object(cli.executors, 'run_with_key_retry', return_value=0) as rk:
             code, _ = self.capture(cli.run_codex, 'prompt')
         self.assertEqual(code, 0)
         rk.assert_called_once()
 
     def test_run_agy_with_events_and_model(self):
         models = dict(MODELS, agy='gemini-x')
-        with patch.object(cli, 'models', return_value=models), \
+        with patch.object(cli.executors, 'models', return_value=models), \
                 patch.dict(os.environ, {'SMART_AI_EVENTS': '1'}), \
-                patch.object(cli, 'run_with_key_retry', return_value=0) as rk:
+                patch.object(cli.executors, 'run_with_key_retry', return_value=0) as rk:
             code, _ = self.capture(cli.run_agy, 'prompt')
         self.assertEqual(code, 0)
         argv = rk.call_args[0][1]
@@ -363,15 +382,15 @@ class ProviderRunnerTests(Base):
         self.assertIn('stream-json', argv)
 
     def test_run_cursor_not_installed(self):
-        with patch.object(cli, 'installed', return_value=False):
+        with patch.object(cli.executors, 'installed', return_value=False):
             code, text = self.capture(cli.run_cursor, 'prompt')
         self.assertEqual(code, 1)
         self.assertIn('não instalado', text)
 
     def test_run_cursor_installed(self):
-        with patch.object(cli, 'installed', return_value=True), \
-                patch.object(cli, 'models', return_value=MODELS), \
-                patch.object(cli, 'run_with_key_retry', return_value=0) as rk:
+        with patch.object(cli.executors, 'installed', return_value=True), \
+                patch.object(cli.executors, 'models', return_value=MODELS), \
+                patch.object(cli.executors, 'run_with_key_retry', return_value=0) as rk:
             code, _ = self.capture(cli.run_cursor, 'prompt')
         self.assertEqual(code, 0)
         rk.assert_called_once()
@@ -384,10 +403,10 @@ class ProviderRunnerTests(Base):
 
     def test_run_openrouter_success(self):
         with patch.object(cli.config_tool, 'stored_keys', return_value=[('principal', 'sk-or-x', 'salva')]), \
-                patch.object(cli, 'models', return_value=dict(MODELS, openrouter='model/x')), \
-                patch.object(cli, 'module_cmd', return_value=['py', '-m', 'x']), \
-                patch.object(cli, 'module_env', side_effect=lambda e: e), \
-                patch.object(cli, 'run', return_value=(0, '')):
+                patch.object(cli.executors, 'models', return_value=dict(MODELS, openrouter='model/x')), \
+                patch.object(cli.executors, 'module_cmd', return_value=['py', '-m', 'x']), \
+                patch.object(cli.executors, 'module_env', side_effect=lambda e: e), \
+                patch.object(cli.executors, 'run', return_value=(0, '')):
             code, _ = self.capture(cli.run_openrouter, 'prompt')
         self.assertEqual(code, 0)
 
@@ -399,37 +418,37 @@ class ProviderRunnerTests(Base):
     def test_run_deepseek_success_second_key(self):
         with patch.object(cli.config_tool, 'stored_keys',
                           return_value=[('k1', 'a', 'salva'), ('k2', 'b', 'salva')]), \
-                patch.object(cli, 'models', return_value=dict(MODELS, deepseek='deepseek-chat')), \
-                patch.object(cli, 'module_cmd', return_value=['py']), \
-                patch.object(cli, 'module_env', side_effect=lambda e: e), \
-                patch.object(cli, 'run', side_effect=[(1, ''), (0, '')]):
+                patch.object(cli.executors, 'models', return_value=dict(MODELS, deepseek='deepseek-chat')), \
+                patch.object(cli.executors, 'module_cmd', return_value=['py']), \
+                patch.object(cli.executors, 'module_env', side_effect=lambda e: e), \
+                patch.object(cli.executors, 'run', side_effect=[(1, ''), (0, '')]):
             code, text = self.capture(cli.run_deepseek, 'prompt')
         self.assertEqual(code, 0)
         self.assertIn('tentando com a chave k2', text)
 
     def test_run_grok_cli_path(self):
-        with patch.object(cli, 'installed', return_value=True), \
-                patch.object(cli, 'models', return_value=dict(MODELS, grok='grok-4')), \
-                patch.object(cli, 'run_with_key_retry', return_value=0) as rk:
+        with patch.object(cli.executors, 'installed', return_value=True), \
+                patch.object(cli.executors, 'models', return_value=dict(MODELS, grok='grok-4')), \
+                patch.object(cli.executors, 'run_with_key_retry', return_value=0) as rk:
             code, _ = self.capture(cli.run_grok, 'prompt')
         self.assertEqual(code, 0)
         rk.assert_called_once()
 
     def test_run_grok_api_no_key(self):
-        with patch.object(cli, 'installed', return_value=False), \
-                patch.object(cli, 'models', return_value=MODELS), \
+        with patch.object(cli.executors, 'installed', return_value=False), \
+                patch.object(cli.executors, 'models', return_value=MODELS), \
                 patch.object(cli.config_tool, 'stored_keys', return_value=[]):
             code, text = self.capture(cli.run_grok, 'prompt')
         self.assertEqual(code, 1)
         self.assertIn('não instalado', text)
 
     def test_run_grok_api_success(self):
-        with patch.object(cli, 'installed', return_value=False), \
-                patch.object(cli, 'models', return_value=dict(MODELS, grok='grok-4')), \
+        with patch.object(cli.executors, 'installed', return_value=False), \
+                patch.object(cli.executors, 'models', return_value=dict(MODELS, grok='grok-4')), \
                 patch.object(cli.config_tool, 'stored_keys', return_value=[('principal', 'xai-x', 'salva')]), \
-                patch.object(cli, 'module_cmd', return_value=['py']), \
-                patch.object(cli, 'module_env', side_effect=lambda e: e), \
-                patch.object(cli, 'run', return_value=(0, '')):
+                patch.object(cli.executors, 'module_cmd', return_value=['py']), \
+                patch.object(cli.executors, 'module_env', side_effect=lambda e: e), \
+                patch.object(cli.executors, 'run', return_value=(0, '')):
             code, _ = self.capture(cli.run_grok, 'prompt')
         self.assertEqual(code, 0)
 
@@ -461,9 +480,9 @@ class ClaudeFallbackTests(Base):
     def test_first_profile_succeeds(self):
         with patch.object(cli.config_tool, 'enabled_profiles', return_value=['p1']), \
                 patch.object(cli.config_tool, 'profiles', return_value={'profiles': {'p1': {}}}), \
-                patch.object(cli, 'cooldown_left', return_value=0), \
-                patch.object(cli, 'over_ceiling', return_value=False), \
-                patch.object(cli, 'run_claude', return_value=0):
+                patch.object(cli.routing, 'cooldown_left', return_value=0), \
+                patch.object(cli.routing, 'over_ceiling', return_value=False), \
+                patch.object(cli.routing, 'run_claude', return_value=0):
             code, _ = self.capture(cli.claude_with_fallback, 'hi')
         self.assertEqual(code, 0)
 
@@ -471,9 +490,9 @@ class ClaudeFallbackTests(Base):
         with patch.object(cli.config_tool, 'enabled_profiles', return_value=['p1']), \
                 patch.object(cli.config_tool, 'profiles', return_value={'profiles': {'p1': {}}}), \
                 patch.object(cli.config_tool, 'stored_keys', return_value=[('k1', 'sk-ant', 'salva')]), \
-                patch.object(cli, 'cooldown_left', side_effect=[60, 0]), \
-                patch.object(cli, 'over_ceiling', return_value=False), \
-                patch.object(cli, 'run_claude', return_value=0):
+                patch.object(cli.routing, 'cooldown_left', side_effect=[60, 0]), \
+                patch.object(cli.routing, 'over_ceiling', return_value=False), \
+                patch.object(cli.routing, 'run_claude', return_value=0):
             code, text = self.capture(cli.claude_with_fallback, 'hi')
         self.assertEqual(code, 0)
         self.assertIn('cooldown', text)
@@ -482,11 +501,11 @@ class ClaudeFallbackTests(Base):
         with patch.object(cli.config_tool, 'enabled_profiles', return_value=['p1']), \
                 patch.object(cli.config_tool, 'profiles', return_value={'profiles': {'p1': {}}}), \
                 patch.object(cli.config_tool, 'stored_keys', return_value=[]), \
-                patch.object(cli, 'cooldown_left', return_value=0), \
-                patch.object(cli, 'over_ceiling', return_value=False), \
-                patch.object(cli, 'run_claude', return_value=cli.RATE_LIMITED), \
-                patch.object(cli, 'installed', side_effect=lambda t: t == 'codex'), \
-                patch.object(cli, 'run_codex', return_value=0):
+                patch.object(cli.routing, 'cooldown_left', return_value=0), \
+                patch.object(cli.routing, 'over_ceiling', return_value=False), \
+                patch.object(cli.routing, 'run_claude', return_value=cli.RATE_LIMITED), \
+                patch.object(cli.routing, 'installed', side_effect=lambda t: t == 'codex'), \
+                patch.object(cli.routing, 'run_codex', return_value=0):
             code, text = self.capture(cli.claude_with_fallback, 'hi')
         self.assertEqual(code, 0)
         self.assertIn('último recurso', text)
@@ -494,16 +513,16 @@ class ClaudeFallbackTests(Base):
     def test_hard_error_returns_immediately(self):
         with patch.object(cli.config_tool, 'enabled_profiles', return_value=['p1']), \
                 patch.object(cli.config_tool, 'profiles', return_value={'profiles': {'p1': {}}}), \
-                patch.object(cli, 'cooldown_left', return_value=0), \
-                patch.object(cli, 'over_ceiling', return_value=False), \
-                patch.object(cli, 'run_claude', return_value=42):
+                patch.object(cli.routing, 'cooldown_left', return_value=0), \
+                patch.object(cli.routing, 'over_ceiling', return_value=False), \
+                patch.object(cli.routing, 'run_claude', return_value=42):
             code, _ = self.capture(cli.claude_with_fallback, 'hi')
         self.assertEqual(code, 42)
 
     def test_nothing_available(self):
         with patch.object(cli.config_tool, 'enabled_profiles', return_value=[]), \
                 patch.object(cli.config_tool, 'stored_keys', return_value=[]), \
-                patch.object(cli, 'installed', return_value=False):
+                patch.object(cli.routing, 'installed', return_value=False):
             code, text = self.capture(cli.claude_with_fallback, 'hi')
         self.assertEqual(code, 1)
         self.assertIn('Nenhuma ferramenta', text)
@@ -513,14 +532,14 @@ class ClaudeFallbackTests(Base):
 
 class RouteTests(Base):
     def test_forced_tool(self):
-        with patch.object(cli, 'runners', return_value={'codex': lambda p: 7}):
+        with patch.object(cli.routing, 'runners', return_value={'codex': lambda p: 7}):
             self.assertEqual(cli.route('x', 'codex'), 7)
 
     def test_complex_goes_to_claude(self):
         fakes = {'claude': lambda p: 0}
-        with patch.object(cli, 'runners', return_value=fakes), \
-                patch.object(cli, 'classify', return_value='complex'), \
-                patch.object(cli, 'emit'):
+        with patch.object(cli.routing, 'runners', return_value=fakes), \
+                patch.object(cli.routing, 'classify', return_value='complex'), \
+                patch.object(cli.routing, 'emit'):
             code, text = self.capture(cli.route, 'x')
         self.assertEqual(code, 0)
         self.assertIn('complexa', text)
@@ -528,12 +547,12 @@ class RouteTests(Base):
     def test_simple_uses_fallback_order(self):
         calls = []
         fakes = {'claude': lambda p: 0, 'codex': lambda p: calls.append('codex') or 0}
-        with patch.object(cli, 'runners', return_value=fakes), \
-                patch.object(cli, 'classify', return_value='simple'), \
-                patch.object(cli, 'config', return_value={'routing': {'prefer_tool_for_simple': 'codex',
+        with patch.object(cli.routing, 'runners', return_value=fakes), \
+                patch.object(cli.routing, 'classify', return_value='simple'), \
+                patch.object(cli.routing, 'config', return_value={'routing': {'prefer_tool_for_simple': 'codex',
                                                                       'fallback_order': []}}), \
-                patch.object(cli, 'installed', return_value=True), \
-                patch.object(cli, 'emit'):
+                patch.object(cli.routing, 'installed', return_value=True), \
+                patch.object(cli.routing, 'emit'):
             code, text = self.capture(cli.route, 'x')
         self.assertEqual(code, 0)
         self.assertEqual(calls, ['codex'])
@@ -542,13 +561,13 @@ class RouteTests(Base):
         claude_called = []
         fakes = {'claude': lambda p: claude_called.append(1) or 0, 'deepseek': lambda p: 0,
                  'grok': lambda p: 0}
-        with patch.object(cli, 'runners', return_value=fakes), \
-                patch.object(cli, 'classify', return_value='simple'), \
-                patch.object(cli, 'config', return_value={'routing': {'prefer_tool_for_simple': 'deepseek',
+        with patch.object(cli.routing, 'runners', return_value=fakes), \
+                patch.object(cli.routing, 'classify', return_value='simple'), \
+                patch.object(cli.routing, 'config', return_value={'routing': {'prefer_tool_for_simple': 'deepseek',
                                                                       'fallback_order': ['grok']}}), \
                 patch.object(cli.config_tool, 'stored_key', return_value=('', '')), \
-                patch.object(cli, 'installed', return_value=False), \
-                patch.object(cli, 'emit'):
+                patch.object(cli.routing, 'installed', return_value=False), \
+                patch.object(cli.routing, 'emit'):
             code, text = self.capture(cli.route, 'x')
         self.assertEqual(code, 0)
         self.assertTrue(claude_called)
@@ -574,15 +593,15 @@ class VersionUpdateTests(Base):
         self.assertIsInstance(cli.ai_version(), str)
 
     def test_update_npm_path(self):
-        with patch.object(cli, 'REPO', Path(self.tmp.name)), \
+        with patch.object(cli.commands, 'REPO', Path(self.tmp.name)), \
                 patch.dict(os.environ, {'SMART_AI_INSTALLER': 'npm'}), \
-                patch.object(cli, 'resolve_bin', return_value='/bin/npm'), \
+                patch.object(cli.commands, 'resolve_bin', return_value='/bin/npm'), \
                 patch.object(cli.subprocess, 'call', return_value=0):
             code, text = self.capture(cli.update)
         self.assertEqual(code, 0)
 
     def test_update_no_git_prints_command(self):
-        with patch.object(cli, 'REPO', Path(self.tmp.name)), \
+        with patch.object(cli.commands, 'REPO', Path(self.tmp.name)), \
                 patch.dict(os.environ, {'SMART_AI_INSTALLER': ''}, clear=False):
             os.environ.pop('SMART_AI_INSTALLER', None)
             code, text = self.capture(cli.update)
@@ -861,8 +880,8 @@ class RenderUsageFullTests(Base):
                 patch.object(cli.config_tool, 'stored_keys', side_effect=stored_keys), \
                 patch.object(cli.config_tool, 'tool_accounts', return_value=[]), \
                 patch.object(cli.config_tool, 'logged_in', return_value=True), \
-                patch.object(cli, 'installed', side_effect=lambda t: t == 'codex'), \
-                patch.object(cli, 'cooldown_left', return_value=0), \
+                patch.object(cli.usage_view, 'installed', side_effect=lambda t: t == 'codex'), \
+                patch.object(cli.usage_view, 'cooldown_left', return_value=0), \
                 patch.object(cli.usage, 'snapshot', return_value=data), \
                 patch.object(cli.usage, 'thresholds', return_value=(90, 80)), \
                 patch.object(cli.usage, 'peak', side_effect=lambda w: max((x['used'] for x in w), default=0)), \
@@ -878,7 +897,7 @@ class RenderUsageFullTests(Base):
         self.assertIn('no limite', text)
 
     def test_show_usage_watch_loop(self):
-        with patch.object(cli, 'render_usage', return_value=0), \
+        with patch.object(cli.usage_view, 'render_usage', return_value=0), \
                 patch.object(cli.time, 'sleep', side_effect=KeyboardInterrupt), \
                 patch.object(cli.sys.stdout, 'write'), patch.object(cli.sys.stdout, 'flush'):
             code, _ = self.capture(cli.show_usage, watch=True)
@@ -892,9 +911,9 @@ class KeyRetryBranchTests(Base):
         with patch.object(cli.config_tool, 'tool_accounts', return_value=accounts), \
                 patch.object(cli.config_tool, 'tool_env', return_value={}), \
                 patch.object(cli.config_tool, 'stored_keys', return_value=[]), \
-                patch.object(cli, 'cooldown_left', side_effect=lambda a: cooldowns.get(a, 0)), \
-                patch.object(cli, 'over_ceiling', return_value=False), \
-                patch.object(cli, 'run', side_effect=[(1, 'limit reached'), (0, '')]):
+                patch.object(cli.executors, 'cooldown_left', side_effect=lambda a: cooldowns.get(a, 0)), \
+                patch.object(cli.executors, 'over_ceiling', return_value=False), \
+                patch.object(cli.executors, 'run', side_effect=[(1, 'limit reached'), (0, '')]):
             code, text = self.capture(cli.run_with_key_retry, 'codex', ['codex'], 'CODEX_API_KEY', 'Codex')
         self.assertEqual(code, 0)
         self.assertIn('cooldown', text)
@@ -904,9 +923,9 @@ class KeyRetryBranchTests(Base):
         with patch.object(cli.config_tool, 'tool_accounts', return_value=[('acct2', {})]), \
                 patch.object(cli.config_tool, 'tool_env', return_value={}), \
                 patch.object(cli.config_tool, 'stored_keys', return_value=[]), \
-                patch.object(cli, 'cooldown_left', return_value=0), \
-                patch.object(cli, 'over_ceiling', side_effect=lambda key, fetch, label: 'acct2' in key), \
-                patch.object(cli, 'run', return_value=(0, '')):
+                patch.object(cli.executors, 'cooldown_left', return_value=0), \
+                patch.object(cli.executors, 'over_ceiling', side_effect=lambda key, fetch, label: 'acct2' in key), \
+                patch.object(cli.executors, 'run', return_value=(0, '')):
             code, _ = self.capture(cli.run_with_key_retry, 'codex', ['codex'], 'CODEX_API_KEY', 'Codex')
         self.assertEqual(code, 0)
 
@@ -915,9 +934,9 @@ class KeyRetryBranchTests(Base):
                 patch.object(cli.config_tool, 'tool_env', return_value={}), \
                 patch.object(cli.config_tool, 'stored_keys',
                              return_value=[('env', 'v', 'env'), ('k1', 'v', 'salva')]), \
-                patch.object(cli, 'cooldown_left', return_value=0), \
-                patch.object(cli, 'over_ceiling', return_value=False), \
-                patch.object(cli, 'run', side_effect=[(1, 'nope'), (1, 'rate limit reached')]):
+                patch.object(cli.executors, 'cooldown_left', return_value=0), \
+                patch.object(cli.executors, 'over_ceiling', return_value=False), \
+                patch.object(cli.executors, 'run', side_effect=[(1, 'nope'), (1, 'rate limit reached')]):
             code, text = self.capture(cli.run_with_key_retry, 'cursor', ['cursor'], 'CURSOR_API_KEY', 'Cursor')
         self.assertEqual(code, 1)
         self.assertIn('chave k1', text)
@@ -928,8 +947,8 @@ class UpdateGitTests(Base):
         (Path(self.tmp.name) / '.git').mkdir()
         done = MagicMock()
         done.stdout = 'main\n'
-        with patch.object(cli, 'REPO', Path(self.tmp.name)), \
-                patch.object(cli, 'resolve_bin', return_value='git'), \
+        with patch.object(cli.commands, 'REPO', Path(self.tmp.name)), \
+                patch.object(cli.commands, 'resolve_bin', return_value='git'), \
                 patch.object(cli.subprocess, 'run', return_value=done), \
                 patch.object(cli.subprocess, 'call', return_value=0):
             code, text = self.capture(cli.update)
@@ -955,9 +974,9 @@ class DoctorBranchTests(Base):
                 patch.object(cli.config_tool, 'profiles', return_value={'profiles': {}}), \
                 patch.object(cli.config_tool, 'KEYS', ['claude']), \
                 patch.object(cli.config_tool, 'stored_key', return_value=('', '')), \
-                patch.object(cli, 'cooldown_left', side_effect=lambda n: 120 if n == 'busy' else 0), \
-                patch.object(cli, 'installed', return_value=False), \
-                patch.object(cli, 'version', return_value='1.0'):
+                patch.object(cli.health, 'cooldown_left', side_effect=lambda n: 120 if n == 'busy' else 0), \
+                patch.object(cli.health, 'installed', return_value=False), \
+                patch.object(cli.health, 'version', return_value='1.0'):
             code, text = self.capture(cli.doctor)
         self.assertEqual(code, 0)  # 'busy' counts as logged, so the router can still answer
         self.assertIn('desabilitado', text)
@@ -977,9 +996,9 @@ class TrivialHelperTests(Base):
             self.assertEqual(cli.models(), MODELS)
 
     def test_installed(self):
-        with patch.object(cli, 'resolve_bin', return_value='/bin/x'):
+        with patch.object(cli.base, 'resolve_bin', return_value='/bin/x'):
             self.assertTrue(cli.installed('codex'))
-        with patch.object(cli, 'resolve_bin', return_value=None):
+        with patch.object(cli.base, 'resolve_bin', return_value=None):
             self.assertFalse(cli.installed('codex'))
 
 
@@ -1006,8 +1025,8 @@ class RenderUsageAltBranchTests(Base):
                 patch.object(cli.config_tool, 'stored_keys', side_effect=stored_keys), \
                 patch.object(cli.config_tool, 'tool_accounts', return_value=[]), \
                 patch.object(cli.config_tool, 'logged_in', return_value=False), \
-                patch.object(cli, 'installed', return_value=False), \
-                patch.object(cli, 'cooldown_left', side_effect=cooldown), \
+                patch.object(cli.usage_view, 'installed', return_value=False), \
+                patch.object(cli.usage_view, 'cooldown_left', side_effect=cooldown), \
                 patch.object(cli.usage, 'snapshot', return_value=data), \
                 patch.object(cli.usage, 'thresholds', return_value=(90, 80)), \
                 patch.object(cli.usage, 'peak', side_effect=lambda w: max((x['used'] for x in w), default=0)), \

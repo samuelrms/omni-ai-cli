@@ -22,8 +22,8 @@ class UpdateTests(unittest.TestCase):
         class Done:
             stdout = branch + '\n'
 
-        with patch.object(cli, 'REPO', Path(temp.name)), \
-                patch.object(cli, 'resolve_bin', return_value='git'), \
+        with patch.object(cli.commands, 'REPO', Path(temp.name)), \
+                patch.object(cli.commands, 'resolve_bin', return_value='git'), \
                 patch.object(cli.subprocess, 'run', return_value=Done()), \
                 patch.object(cli.subprocess, 'call', side_effect=lambda cmd: calls.append(cmd) or 0), \
                 patch.object(cli, 'say'):

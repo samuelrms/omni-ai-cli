@@ -21,13 +21,13 @@ class FakeTTY(io.StringIO):
 
 @contextlib.contextmanager
 def color_on(truecolor=True):
-    with patch.object(ui, 'COLOR', True), patch.object(ui, 'TRUECOLOR', truecolor):
+    with patch.object(ui.color, 'COLOR', True), patch.object(ui.color, 'TRUECOLOR', truecolor):
         yield
 
 
 class ColorPrimitiveTests(unittest.TestCase):
     def test_c_identity_without_color(self):
-        with patch.object(ui, 'COLOR', False):
+        with patch.object(ui.color, 'COLOR', False):
             self.assertEqual(ui._c('1')('hi'), 'hi')
 
     def test_c_wraps_with_color(self):
@@ -35,7 +35,7 @@ class ColorPrimitiveTests(unittest.TestCase):
             self.assertEqual(ui._c('1')('hi'), '\033[1mhi\033[0m')
 
     def test_rgb_plain_without_color(self):
-        with patch.object(ui, 'COLOR', False):
+        with patch.object(ui.color, 'COLOR', False):
             self.assertEqual(ui.rgb((1, 2, 3), 'x'), 'x')
 
     def test_rgb_truecolor_foreground_and_background(self):
@@ -63,19 +63,19 @@ class ColorPrimitiveTests(unittest.TestCase):
             self.assertIn('\033[', ui.rainbow('abc', 0.5))
 
     def test_gradient_plain_and_colored(self):
-        with patch.object(ui, 'COLOR', False):
+        with patch.object(ui.color, 'COLOR', False):
             self.assertEqual(ui.gradient('abc'), 'abc')
         with color_on():
             self.assertIn('\033[', ui.gradient('abc'))
 
     def test_badge_plain_and_colored(self):
-        with patch.object(ui, 'COLOR', False):
+        with patch.object(ui.color, 'COLOR', False):
             self.assertEqual(ui.badge('ERRO', (1, 2, 3)), '[ERRO]')
         with color_on():
             self.assertIn('ERRO', ui.badge('ERRO', (1, 2, 3)))
 
     def test_shimmer_plain_and_colored(self):
-        with patch.object(ui, 'COLOR', False):
+        with patch.object(ui.color, 'COLOR', False):
             self.assertEqual(ui.shimmer('hello', 3), 'hello')
         with color_on():
             self.assertIn('\033[', ui.shimmer('hello world', 3))
@@ -83,19 +83,19 @@ class ColorPrimitiveTests(unittest.TestCase):
 
 class TextHelperTests(unittest.TestCase):
     def test_t_uses_language_and_falls_back_to_pt(self):
-        with patch.object(ui, 'LANG', ['en']):
+        with patch.object(ui.text, 'LANG', ['en']):
             self.assertEqual(ui.t('cancel'), 'Ctrl-C cancels')
-        with patch.object(ui, 'LANG', ['xx']):  # unknown -> pt
+        with patch.object(ui.text, 'LANG', ['xx']):  # unknown -> pt
             self.assertEqual(ui.t('cancel'), 'Ctrl-C cancela')
 
     def test_t_formats_values(self):
-        with patch.object(ui, 'LANG', ['pt']):
+        with patch.object(ui.text, 'LANG', ['pt']):
             self.assertIn('5', ui.t('more', n=5))
 
     def test_width_clamped_to_minimum(self):
-        with patch('omni_ai.ui.shutil.get_terminal_size', return_value=os.terminal_size((10, 30))):
+        with patch('omni_ai.ui.text.shutil.get_terminal_size', return_value=os.terminal_size((10, 30))):
             self.assertEqual(ui.width(), 40)
-        with patch('omni_ai.ui.shutil.get_terminal_size', return_value=os.terminal_size((120, 30))):
+        with patch('omni_ai.ui.text.shutil.get_terminal_size', return_value=os.terminal_size((120, 30))):
             self.assertEqual(ui.width(), 120)
 
     def test_short_truncates_and_collapses_whitespace(self):
@@ -109,7 +109,7 @@ class TextHelperTests(unittest.TestCase):
 
     def test_elapsed_seconds_and_minutes(self):
         import time
-        with patch('omni_ai.ui.time.time', return_value=1000.0):
+        with patch('omni_ai.ui.screen.time.time', return_value=1000.0):
             self.assertEqual(ui.elapsed(995.0), '5s')
             self.assertEqual(ui.elapsed(900.0), '1m 40s')
 
@@ -156,13 +156,13 @@ class ViewTests(unittest.TestCase):
 
     def test_action_with_and_without_target(self):
         view = ui.View()
-        with patch('omni_ai.ui.width', return_value=100):
+        with patch('omni_ai.ui.text.width', return_value=100):
             self.assertIn('Reading', self.capture(lambda: view.action('Reading', 'file.py')))
             self.assertIn('Done', self.capture(lambda: view.action('Done', '')))
 
     def test_result_empty_single_and_multiline(self):
         view = ui.View()
-        with patch('omni_ai.ui.width', return_value=100):
+        with patch('omni_ai.ui.text.width', return_value=100):
             self.assertIn('sem saída', self.capture(lambda: view.result('   ')))
             self.assertIn('only', self.capture(lambda: view.result('only line')))
             multi = self.capture(lambda: view.result('a\nb\nc', failed=True))
@@ -176,14 +176,14 @@ class ViewTests(unittest.TestCase):
 
     def test_note_limit_warn_and_plain(self):
         view = ui.View()
-        with patch.object(ui, 'LANG', ['pt']):
+        with patch.object(ui.text, 'LANG', ['pt']):
             self.assertIn('LIMITE', self.capture(lambda: view.note('rate limit reached, try again')))
             self.assertIn('AVISO', self.capture(lambda: view.note('⚠ something off')))
             self.assertIn('just a note', self.capture(lambda: view.note('just a note')))
 
     def test_error_dedup_limit_and_plain(self):
         view = ui.View()
-        with patch('omni_ai.ui.width', return_value=100), patch.object(ui, 'LANG', ['pt']):
+        with patch('omni_ai.ui.text.width', return_value=100), patch.object(ui.text, 'LANG', ['pt']):
             first = self.capture(lambda: view.error('boom failure'))
             self.assertIn('ERRO', first)
             # same error again is suppressed
@@ -216,7 +216,7 @@ class ReplayTests(unittest.TestCase):
 
     def test_older_messages_truncation_banner(self):
         messages = [{'role': 'user', 'content': f'm{i}'} for i in range(50)]
-        with patch.object(ui, 'LANG', ['pt']):
+        with patch.object(ui.text, 'LANG', ['pt']):
             text = self.capture(messages, limit=10)
         self.assertIn('anteriores', text)
 
@@ -293,7 +293,7 @@ class SpinnerTests(unittest.TestCase):
     def test_start_and_stop_thread_runs_loop(self):
         sp = ui.Spinner()
         fake = FakeTTY()
-        with color_on(), patch.object(sys, 'stdout', fake), patch.object(ui, 'LANG', ['pt']):
+        with color_on(), patch.object(sys, 'stdout', fake), patch.object(ui.text, 'LANG', ['pt']):
             sp.start('loading')
             # let the loop tick at least once
             import time as _t
@@ -306,7 +306,7 @@ class SpinnerTests(unittest.TestCase):
 
 class SplashTests(unittest.TestCase):
     def test_splash_skipped_without_color(self):
-        with patch.object(ui, 'COLOR', False):
+        with patch.object(ui.color, 'COLOR', False):
             self.assertFalse(ui.splash())
 
     def test_splash_skipped_by_env(self):
@@ -319,8 +319,8 @@ class SplashTests(unittest.TestCase):
         fake = FakeTTY()
         with color_on(), patch.object(sys, 'stdout', fake), \
              patch.dict(os.environ, {}, clear=False), \
-             patch('omni_ai.ui.time.sleep'), \
-             patch('omni_ai.ui.shutil.get_terminal_size', return_value=os.terminal_size((120, 40))):
+             patch('omni_ai.ui.screen.time.sleep'), \
+             patch('omni_ai.ui.screen.shutil.get_terminal_size', return_value=os.terminal_size((120, 40))):
             os.environ.pop('SMART_AI_NO_SPLASH', None)
             self.assertTrue(ui.splash(seconds=0.1))
         self.assertIn('\033[?1049h', fake.getvalue())
@@ -328,8 +328,8 @@ class SplashTests(unittest.TestCase):
     def test_splash_small_layout_runs(self):
         fake = FakeTTY()
         with color_on(), patch.object(sys, 'stdout', fake), \
-             patch('omni_ai.ui.time.sleep'), \
-             patch('omni_ai.ui.shutil.get_terminal_size', return_value=os.terminal_size((50, 20))):
+             patch('omni_ai.ui.screen.time.sleep'), \
+             patch('omni_ai.ui.screen.shutil.get_terminal_size', return_value=os.terminal_size((50, 20))):
             os.environ.pop('SMART_AI_NO_SPLASH', None)
             self.assertTrue(ui.splash(seconds=0.1))
 
@@ -337,24 +337,24 @@ class SplashTests(unittest.TestCase):
 class WelcomeTests(unittest.TestCase):
     def test_welcome_static_without_animation(self):
         buf = io.StringIO()
-        with patch.object(ui, 'COLOR', False), contextlib.redirect_stdout(buf), \
-             patch('omni_ai.ui.width', return_value=80), patch.object(ui, 'LANG', ['pt']):
+        with patch.object(ui.color, 'COLOR', False), contextlib.redirect_stdout(buf), \
+             patch('omni_ai.ui.text.width', return_value=80), patch.object(ui.text, 'LANG', ['pt']):
             ui.welcome('sess-1', '/home/u/proj', 'codex', 'gpt', 'default', 'pt-BR', animate=False)
         self.assertIn('sess-1', buf.getvalue())
         self.assertIn('Omni AI', buf.getvalue())
 
     def test_welcome_mode_chip_shown(self):
         buf = io.StringIO()
-        with patch.object(ui, 'COLOR', False), contextlib.redirect_stdout(buf), \
-             patch('omni_ai.ui.width', return_value=80), patch.object(ui, 'LANG', ['pt']):
+        with patch.object(ui.color, 'COLOR', False), contextlib.redirect_stdout(buf), \
+             patch('omni_ai.ui.text.width', return_value=80), patch.object(ui.text, 'LANG', ['pt']):
             ui.welcome('s', '/p', 'codex', 'gpt', 'yolo', 'pt', animate=False)
         self.assertIn('yolo', buf.getvalue())
 
     def test_welcome_animated_runs(self):
         fake = FakeTTY()
         with color_on(), patch.object(sys, 'stdout', fake), \
-             patch('omni_ai.ui.time.sleep'), patch('omni_ai.ui.width', return_value=80), \
-             patch.object(ui, 'LANG', ['pt']):
+             patch('omni_ai.ui.screen.time.sleep'), patch('omni_ai.ui.text.width', return_value=80), \
+             patch.object(ui.text, 'LANG', ['pt']):
             ui.welcome('s', '/home/u/p', 'codex', 'gpt', 'plan', 'pt', animate=True)
         # the title characters are individually colored, so check for the box frame + a redraw sequence
         self.assertIn('╭', fake.getvalue())
@@ -437,7 +437,7 @@ class InputBoxTests(unittest.TestCase):
             self.assertTrue(any('clear' in c.text for c in cmds))
             # @file mention completion
             (Path(tmp) / 'file.py').write_text('x')
-            with patch('omni_ai.ui.project_files', return_value=['file.py']):
+            with patch('omni_ai.ui.inputbox.project_files', return_value=['file.py']):
                 mentions = list(completer.get_completions(Document('@fi'), None))
             self.assertTrue(any('file.py' in c.text for c in mentions))
             # argument completion (after a command + space)
@@ -462,7 +462,7 @@ class InputBoxTests(unittest.TestCase):
             fake = FakeTTY()
             with patch.object(box.session, 'prompt', return_value='answer') as prompt, \
                  patch.object(sys, 'stdout', fake), \
-                 patch('omni_ai.ui.width', return_value=80), patch.object(ui, 'LANG', ['pt']):
+                 patch('omni_ai.ui.text.width', return_value=80), patch.object(ui.text, 'LANG', ['pt']):
                 result = box.ask()
             self.assertEqual(result, 'answer')
             # exercise the message and toolbar callables passed to prompt
@@ -476,7 +476,7 @@ class InputBoxTests(unittest.TestCase):
             box = self._tty_box(tmp, mode=None, status=lambda: 'ready', hints=lambda: 'h', activity=None)
             fake = FakeTTY()
             with patch.object(box.session, 'prompt', return_value='x') as prompt, \
-                 patch.object(sys, 'stdout', fake), patch('omni_ai.ui.width', return_value=80):
+                 patch.object(sys, 'stdout', fake), patch('omni_ai.ui.text.width', return_value=80):
                 box.ask()
             toolbar = prompt.call_args.kwargs['bottom_toolbar']
             self.assertIsNotNone(toolbar())
@@ -487,7 +487,7 @@ class InputBoxTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             box = self._tty_box(tmp)
             with patch.object(box.session, 'prompt', return_value='chosen') as prompt, \
-                 patch.object(ui, 'LANG', ['pt']):
+                 patch.object(ui.text, 'LANG', ['pt']):
                 result = box.ask_args('/skill', 'hint text', ['a', 'b'])
             self.assertEqual(result, 'chosen')
             prompt.assert_called_once()
