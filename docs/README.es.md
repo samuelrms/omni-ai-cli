@@ -45,6 +45,7 @@ las cuentas se configuran desde el propio chat.
 - [Skills y MCP](#skills-y-mcp)
 - [Uso directo, sin chat](#uso-directo-sin-chat)
 - [Modo servidor](#modo-servidor)
+- [Docker](#docker)
 - [Dónde están los archivos](#dónde-están-los-archivos)
 - [Estructura del proyecto](#estructura-del-proyecto)
 - [Pruebas](#pruebas)
@@ -485,7 +486,8 @@ En el primer inicio, el servidor crea una clave y la muestra una sola vez. Solo 
 
 **Seguridad:**
 
-- Las herramientas siempre se ejecutan en modo `plan`, en una carpeta temporal, sea cual sea el `SMART_AI_MODE`.
+- Por defecto, las herramientas se ejecutan en modo `plan`, en una carpeta temporal, sea cual sea el `SMART_AI_MODE`.
+- **Para crear, editar y ejecutar comandos:** `ai serve --mode edits|auto|yolo --workdir CARPETA`. La carpeta es obligatoria, los pedidos se atienden de uno en uno (los demás reciben 429) y nada pide aprobación. Quien tiene la clave puede cambiar la carpeta y, con comandos, alcanzar los inicios de sesión de las cuentas.
 - **Solo lectura no impide leer archivos.** Quien tiene la clave puede pedirle a una herramienta que lea archivos de esta máquina. Los MCP configurados también pueden estar disponibles. Trata la clave como acceso a tu cuenta.
 - El valor predeterminado es `127.0.0.1`. Para exponerlo en red, usa `--host` y HTTPS con un proxy inverso.
 - Compartir una instancia significa compartir las mismas cuentas y suscripciones. Revisa los términos de cada proveedor.
@@ -501,6 +503,39 @@ En el primer inicio, el servidor crea una clave y la muestra una sola vez. Solo 
 - `tools`/function calling e imágenes devuelven error 400.
 - El prompt llega a las herramientas como argumento de línea de comandos y queda visible en la lista de procesos de la máquina. El límite es de 100 KB por pedido.
 - Los perfiles Claude heredados, que cambian el archivo de credenciales, limitan el servidor a un pedido a la vez.
+
+---
+
+## Docker
+
+Imagen con Omni y los CLI en versiones fijas, para ejecutar `ai serve` en tu propio servidor. Incluye Claude Code, Codex, Cursor y Grok. Antigravity no está incluido, porque no se instala por comando.
+
+```bash
+git clone https://github.com/samuelrms/omni-ai-cli && cd omni-ai-cli
+docker compose up -d
+docker compose logs omni                       # clave generada en el primer inicio
+docker exec -it omni ai --account login primary
+```
+
+- **Inicio de sesión:** consulta [Inicio de sesión sin navegador](#inicio-de-sesión-sin-navegador). Las claves de proveedores van con `docker exec -it omni ai --key <herramienta>`.
+- **Datos:** los inicios de sesión, las claves, la configuración y los cooldowns están en el volumen `omni-home`, que sobrevive a la recreación del contenedor. `docker compose down -v` lo elimina.
+- **Clave del servidor:** si no se indica ninguna, se genera una y aparece una sola vez en el log. Para definir la tuya, usa `SMART_AI_SERVER_KEY`, o `SMART_AI_SERVER_KEY_FILE` con un Docker secret. `docker-compose.yml` trae el ejemplo.
+- **Puerto:** publicado solo en `127.0.0.1`. `OMNI_PORT` cambia el puerto.
+- **Aislamiento:** se ejecuta sin root, con sistema de archivos de solo lectura y sin capabilities.
+- **Modos:** `OMNI_MODE=plan|edits|auto|yolo docker compose up -d` (por defecto: `plan`). Las herramientas trabajan en `/workspace`, en el volumen `omni-workspace`. Para usar tu carpeta, define `OMNI_WORKSPACE=/ruta`, con escritura para el uid 10001.
+- **Riesgo fuera de `plan`:** los comandos se ejecutan con el mismo usuario que guarda los inicios de sesión en `omni-home`. Quien tiene la clave puede leerlos, así que da claves solo a personas de confianza y revoca las sesiones si una se filtra.
+- **Codex:** su sandbox no arranca en el contenedor, porque necesita recursos bloqueados por Docker y por el kernel del host. Solo usa herramientas en `yolo`, con el contenedor como aislamiento. En `plan`, `edits` y `auto` solo responde, sin leer ni cambiar archivos.
+- **Actualización:** `git pull && docker compose up -d --build`. `ai --update` no se aplica a la imagen.
+
+Para exponerlo en red, usa un proxy inverso con HTTPS, como Caddy:
+
+```text
+omni.example.com {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+**Riesgo:** el contenedor no ve los archivos de tu máquina, pero sí ve el volumen. Quien tiene la clave puede pedirle a una herramienta que lea las credenciales guardadas allí. Trata la clave del servidor como acceso a tus cuentas.
 
 ---
 

@@ -1,6 +1,7 @@
-"""One request, one router process: isolated environment, read-only tools, and a way to stop it."""
+"""One request, one router process: isolated environment, the permission mode chosen for the server, and a way to stop it."""
 import json
 import os
+from pathlib import Path
 import re
 import subprocess
 import tempfile
@@ -11,7 +12,7 @@ from .. import config as config_tool
 from ..chat.spend import record_spend, spend
 from ..cli.base import LIMIT_TEXT
 from ..osutils import group_kwargs, kill_tree, module_cmd, module_env
-from .auth import ENV_KEY
+from .auth import ENV_KEY, ENV_KEY_FILE
 
 FORCE_AFTER = 5  # seconds between asking a process to stop and killing it
 LIMITED = re.compile(LIMIT_TEXT.pattern + '|cooldown', re.I)
@@ -22,8 +23,9 @@ OK, FAILED, RATE_LIMITED, TIMEOUT, DISCONNECTED, SHUTDOWN, SWITCHED = (
 
 
 class Execution:
-    def __init__(self, tool, prompt, last_user, temperature=None, max_tokens=None):
+    def __init__(self, tool, prompt, last_user, temperature=None, max_tokens=None, mode='plan', workdir=None):
         self.tool, self.prompt, self.last_user = tool, prompt, last_user
+        self.mode, self.workdir = mode, workdir
         self.temperature, self.max_tokens = temperature, max_tokens
         self.child = None
         self.lock = threading.Lock()
@@ -41,9 +43,11 @@ class Execution:
         self.on_delta = None
 
     def _env(self):
-        env = dict(os.environ, SMART_AI_EVENTS='1', SMART_AI_READ_ONLY='1', SMART_AI_MODE='plan', NO_COLOR='1',
+        env = dict(os.environ, SMART_AI_EVENTS='1', SMART_AI_READ_ONLY='1' if self.mode == 'plan' else '0',
+                   SMART_AI_MODE=self.mode, NO_COLOR='1',
                    PYTHONUNBUFFERED='1', SMART_AI_CLASSIFY_PROMPT=self.last_user)
         env.pop(ENV_KEY, None)  # tools have no business reading the server's own key
+        env.pop(ENV_KEY_FILE, None)
         env.pop('SMART_AI_TEMPERATURE', None)
         env.pop('SMART_AI_MAX_TOKENS', None)
         if self.temperature is not None:
@@ -61,7 +65,7 @@ class Execution:
                 with self.lock:
                     if self.stop_reason:
                         return self.stop_reason
-                    self.child = subprocess.Popen(args, cwd=folder, env=self._env(), stdin=subprocess.DEVNULL,
+                    self.child = subprocess.Popen(args, cwd=self.workdir or folder, env=self._env(), stdin=subprocess.DEVNULL,
                                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                                   encoding='utf-8', errors='replace', **group_kwargs())
                 try:
@@ -179,5 +183,10 @@ class Execution:
 def uses_shared_credentials():
     """Legacy Claude profiles swap ~/.claude/.credentials.json during a call, so they cannot run in parallel."""
     profiles = config_tool.profiles().get('profiles', {})
-    return any(profiles.get(name, {}).get('credentials_file') and not profiles.get(name, {}).get('config_dir')
-               for name in config_tool.enabled_profiles())
+    main = Path('~/.claude/.credentials.json').expanduser()
+    for name in config_tool.enabled_profiles():
+        conf = profiles.get(name, {})
+        # A profile pointing at the main file swaps nothing: it is what a default install has
+        if conf.get('credentials_file') and not conf.get('config_dir') and Path(conf['credentials_file']).expanduser() != main:
+            return True
+    return False

@@ -46,6 +46,7 @@ et les modèles comme les comptes se configurent depuis le chat lui-même.
 - [Skills et MCP](#skills-et-mcp)
 - [Utilisation directe, sans chat](#utilisation-directe-sans-chat)
 - [Mode serveur](#mode-serveur)
+- [Docker](#docker)
 - [Emplacement des fichiers](#emplacement-des-fichiers)
 - [Structure du projet](#structure-du-projet)
 - [Tests](#tests)
@@ -494,7 +495,8 @@ Au premier démarrage, le serveur crée une clé et ne l'affiche qu'une fois. Se
 
 **Sécurité :**
 
-- Les outils s'exécutent toujours en mode `plan`, dans un dossier temporaire, quelle que soit la valeur de `SMART_AI_MODE`.
+- Par défaut, les outils s'exécutent en mode `plan`, dans un dossier temporaire, quelle que soit la valeur de `SMART_AI_MODE`.
+- **Pour créer, modifier et lancer des commandes :** `ai serve --mode edits|auto|yolo --workdir DOSSIER`. Le dossier est obligatoire, les requêtes sont traitées une par une (les autres reçoivent 429) et rien ne demande d'approbation. Qui détient la clé peut modifier le dossier et, avec des commandes, atteindre les connexions des comptes.
 - **La lecture seule n'empêche pas de lire les fichiers.** Toute personne disposant de la clé peut demander à un outil de lire des fichiers de cette machine. Les MCP configurés peuvent aussi être disponibles. Traitez la clé comme un accès à votre compte.
 - La valeur par défaut est `127.0.0.1`. Pour l'exposer sur un réseau, utilisez `--host` et HTTPS avec un proxy inverse.
 - Partager une instance revient à partager les mêmes comptes et abonnements. Vérifiez les conditions de chaque fournisseur.
@@ -510,6 +512,39 @@ Au premier démarrage, le serveur crée une clé et ne l'affiche qu'une fois. Se
 - `tools`/function calling et les images renvoient une erreur 400.
 - Le prompt parvient aux outils comme argument de ligne de commande : il est donc visible dans la liste des processus de la machine. La limite est de 100 Ko par demande.
 - Les profils Claude hérités, qui échangent le fichier d'identifiants, limitent le serveur à une demande à la fois.
+
+---
+
+## Docker
+
+Une image avec Omni et les CLI en versions figées, pour exécuter `ai serve` sur votre propre serveur. Elle inclut Claude Code, Codex, Cursor et Grok. Antigravity n'est pas inclus, car il ne s'installe pas en ligne de commande.
+
+```bash
+git clone https://github.com/samuelrms/omni-ai-cli && cd omni-ai-cli
+docker compose up -d
+docker compose logs omni                       # clé générée au premier démarrage
+docker exec -it omni ai --account login primary
+```
+
+- **Connexion :** voir [Connexion sans navigateur](#connexion-sans-navigateur). Les clés des fournisseurs passent par `docker exec -it omni ai --key <outil>`.
+- **Données :** connexions, clés, configuration et cooldowns restent dans le volume `omni-home`, qui survit à la recréation du conteneur. `docker compose down -v` le supprime.
+- **Clé du serveur :** si aucune n'est fournie, une clé est générée et affichée une seule fois dans le journal. Pour définir la vôtre, utilisez `SMART_AI_SERVER_KEY`, ou `SMART_AI_SERVER_KEY_FILE` avec un Docker secret. `docker-compose.yml` contient l'exemple.
+- **Port :** publié uniquement sur `127.0.0.1`. `OMNI_PORT` change le port.
+- **Isolation :** s'exécute sans root, avec un système de fichiers en lecture seule et sans capabilities.
+- **Modes :** `OMNI_MODE=plan|edits|auto|yolo docker compose up -d` (par défaut : `plan`). Les outils travaillent dans `/workspace`, sur le volume `omni-workspace`. Pour utiliser votre dossier, définissez `OMNI_WORKSPACE=/chemin`, accessible en écriture à l'uid 10001.
+- **Risque hors de `plan` :** les commandes tournent avec l'utilisateur qui détient les connexions dans `omni-home`. Qui détient la clé peut les lire : ne donnez de clés qu'à des personnes de confiance et révoquez les sessions en cas de fuite.
+- **Codex :** son sandbox ne démarre pas dans le conteneur, car il a besoin de fonctions bloquées par Docker et le noyau de l'hôte. Il n'utilise des outils qu'en `yolo`, avec le conteneur comme isolation. En `plan`, `edits` et `auto`, il répond seulement, sans lire ni modifier de fichiers.
+- **Mise à jour :** `git pull && docker compose up -d --build`. `ai --update` ne s'applique pas à l'image.
+
+Pour l'exposer sur un réseau, utilisez un proxy inverse avec HTTPS, comme Caddy :
+
+```text
+omni.example.com {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+**Risque :** le conteneur ne voit pas les fichiers de votre machine, mais il voit le volume. Toute personne disposant de la clé peut demander à un outil de lire les identifiants qui y sont stockés. Traitez la clé du serveur comme un accès à vos comptes.
 
 ---
 

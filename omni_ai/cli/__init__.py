@@ -65,7 +65,7 @@ USAGE = f'''{BOLD}Uso:{NC}
   ai --setup                          Guia de primeiro acesso: logins e chaves
   ai --install                       Instala as ferramentas que faltam (pergunta antes)
   ai --status | --doctor | --reset | --log | --classify "prompt"
-  ai serve [--host H] [--port P]     Servidor compatível com a API da OpenAI
+  ai serve [--host H] [--port P] [--mode M --workdir PASTA]   Servidor compatível com a API da OpenAI
   ai serve keys [list|add|remove]    Chaves de API do servidor
   ai --update                        Atualizar para a versão mais nova
   ai --version                       Versão do Omni AI CLI

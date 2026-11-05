@@ -32,6 +32,14 @@ jobs:
       - name: Shell installer syntax
         run: bash -n scripts/install.sh
 
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build and startup checks
+        run: bash scripts/docker-smoke.sh
+
   package:
     name: npm package
     runs-on: ubuntu-latest

@@ -198,7 +198,8 @@ def run_cursor(prompt):
     if models()['cursor']:
         argv += ['--model', models()['cursor']]
     # Without --force the headless agent only proposes changes
-    argv += {'plan': ['--mode', 'plan'], 'edits': ['--force'], 'auto': ['--force'], 'yolo': ['--force']}.get(mode(), [])
+    # 'ask', not 'plan': in plan mode the headless agent was seen writing files anyway
+    argv += {'plan': ['--mode', 'ask'], 'edits': ['--force'], 'auto': ['--force'], 'yolo': ['--force']}.get(mode(), [])
     # Subscription login first, then each saved CURSOR_API_KEY
     return run_with_key_retry('cursor', argv + [prompt], 'CURSOR_API_KEY', 'Cursor')
 

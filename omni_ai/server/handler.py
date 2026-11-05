@@ -57,11 +57,12 @@ class Server(ThreadingHTTPServer):
     daemon_threads = True
     block_on_close = False
 
-    def __init__(self, address, max_concurrent=4, timeout=600):
+    def __init__(self, address, max_concurrent=4, timeout=600, mode='plan', workdir=None):
         host = address[0]
         self.address_family = socket.AF_INET6 if ':' in host else socket.AF_INET
         self.slots = threading.BoundedSemaphore(max_concurrent)
         self.request_timeout = timeout
+        self.mode, self.workdir = mode, workdir
         self.running = set()
         self.running_lock = threading.Lock()
         super().__init__(address, Handler)
@@ -192,7 +193,8 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
     def _complete(self, request, tool):
-        execution = Execution(tool, request['prompt'], request['last_user'], request['temperature'], request['max_tokens'])
+        execution = Execution(tool, request['prompt'], request['last_user'], request['temperature'], request['max_tokens'],
+                              self.server.mode, self.server.workdir)
         stream = None
         if request['stream']:
             stream = Stream(self, request, execution)
