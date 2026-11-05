@@ -56,8 +56,8 @@ las cuentas se configuran desde el propio chat.
 
 ## Cómo funciona
 
-Desde la línea escrita hasta la respuesta guardada. El chat (`chat.py`) no llama a
-ninguna IA directamente: lanza el enrutador (`cli.py`) como subproceso y lee los
+Desde la línea escrita hasta la respuesta guardada. El chat (`omni_ai/chat/`) no llama a
+ninguna IA directamente: lanza el enrutador (`omni_ai/cli/`) como subproceso y lee los
 eventos que este emite, línea por línea, para mostrar quién está atendiendo y qué está
 haciendo.
 
@@ -500,16 +500,21 @@ En el primer inicio, el servidor crea una clave y la muestra una sola vez. Solo 
 omni-ai-cli/
 ├── omni_ai/                  # el programa (paquete Python)
 │   ├── tools.py              # registro único de herramientas: nombre, color, CLI, modelo, clave
-│   ├── cli.py                # comando ai: clasifica, enruta y ejecuta cada herramienta
-│   ├── chat.py               # chat: sesiones, eventos, Ctrl-C, idiomas
-│   ├── ui.py                 # aspecto: caja de entrada, barra de estado, acciones y respuestas
+│   ├── cli/                  # comando ai: clasifica, enruta y ejecuta cada herramienta
+│   ├── chat/                 # chat: sesiones, eventos, Ctrl-C, idiomas
+│   ├── ui/                   # aspecto: caja de entrada, barra de estado, acciones y respuestas
 │   ├── skills.py             # skills y comandos del proyecto, del usuario y nativos
-│   ├── config.py             # modelos, claves y cuentas Claude (/model, /key, /account)
+│   ├── config/               # modelos, claves y cuentas Claude (/model, /key, /account)
 │   ├── sync.py               # /sync: MCPs y skills entre las tres herramientas
-│   ├── openrouter.py         # cliente OpenRouter: gratuitos, de pago solo si se autorizan
+│   ├── usage/                # uso y límites de cada herramienta y cuenta
+│   ├── export/               # exporta la conversación en PDF o Markdown
+│   ├── history.py            # conversaciones de todas las herramientas (ai history)
+│   ├── onboarding.py         # guía de primer acceso (ai --setup)
+│   ├── openrouter/           # cliente OpenRouter: gratuitos, de pago solo si se autorizan
 │   ├── grok.py               # cliente xAI, reutilizado por DeepSeek
 │   ├── deepseek.py           # cliente DeepSeek con datos personales enmascarados
-│   ├── pii.py                # enmascara y restaura datos personales
+│   ├── agy_events.py         # lee los eventos de Antigravity para el chat y el servidor
+│   ├── pii/                  # enmascara y restaura datos personales
 │   ├── server/               # ai serve: API compatible con OpenAI
 │   ├── osutils.py            # diferencias entre macOS, Linux y Windows
 │   ├── profiles.json         # plantilla inicial; la tuya queda en ~/.config/smart-ai
@@ -525,7 +530,7 @@ omni-ai-cli/
 
 El enrutador no sabe nada del chat: solo ejecuta una pregunta y, con
 `SMART_AI_EVENTS=1`, emite eventos JSON. El chat no sabe nada de credenciales: las
-cuentas y los modelos pasan por `config.py`.
+cuentas y los modelos pasan por `omni_ai/config/`.
 
 ---
 
