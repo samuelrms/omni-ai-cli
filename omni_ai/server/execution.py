@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import threading
 
+from .. import agy_events
 from .. import config as config_tool
 from ..chat.spend import record_spend, spend
 from ..cli.base import LIMIT_TEXT
@@ -110,7 +111,7 @@ class Execution:
             self.masked = self.masked or MASKED in raw
             self.limited = self.limited or bool(LIMITED.search(raw))
             return
-        if 'event' in event and 'type' not in event:
+        if agy_events.is_agy_event(event):
             self._antigravity(event)
             return
         kind = event.get('type', '')
@@ -147,18 +148,13 @@ class Execution:
             self.limited = self.limited or bool(LIMITED.search(json.dumps(event, ensure_ascii=False)))
 
     def _antigravity(self, event):
-        """agy's stream-json has its own shape: {"event": "result", "result": {"status", "response", "usage"}}."""
-        kind, result = event.get('event'), event.get('result')
-        if kind == 'result' and isinstance(result, dict):
-            self._usage(result.get('usage'))
-            if result.get('status') == 'SUCCESS':
-                self.answer = str(result.get('response') or '').strip() or self.answer
-            else:
-                self.protocol_error = True
-                self.limited = self.limited or bool(LIMITED.search(json.dumps(result, ensure_ascii=False)))
-        elif kind == 'error':
+        parsed = agy_events.parse(event)
+        if parsed and parsed[0] == 'answer':
+            self.answer = parsed[1] or self.answer
+            self._usage(parsed[2])
+        elif parsed and parsed[0] == 'error':
             self.protocol_error = True
-            self.limited = self.limited or bool(LIMITED.search(json.dumps(event, ensure_ascii=False)))
+            self.limited = self.limited or bool(LIMITED.search(parsed[1]))
 
     def _delta(self, text):
         # With masked data a piece can be a placeholder split in two: wait for the whole, restored answer.
