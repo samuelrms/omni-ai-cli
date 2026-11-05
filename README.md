@@ -466,6 +466,7 @@ No primeiro início, o servidor cria uma chave e a mostra uma única vez. Só o 
 - `temperature` só vale em OpenRouter, DeepSeek e Grok via API. Nos CLIs, é ignorada e aparece em `X-Omni-Ignored-Params`.
 - `max_tokens` é aproximado nos CLIs (cerca de 4 caracteres por token).
 - `usage` é estimado quando o provedor não informa o consumo.
+- Cada pedido pode consumir bastante cota, porque os CLIs de agente carregam o próprio contexto. No Codex, um simples "OK" já usou cerca de 19 mil tokens de entrada.
 - Nos CLIs, o streaming entrega a resposta de uma vez, ao final. Só o OpenRouter envia pedaços durante a geração, exceto quando há dados pessoais mascarados.
 - O fallback é transparente até o primeiro trecho da resposta. Se o provedor falhar depois disso, o cliente recebe um erro.
 - `tools`/function calling e imagens retornam erro 400.
