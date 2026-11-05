@@ -39,6 +39,7 @@ las cuentas se configuran desde el propio chat.
 - [Comandos del chat](#comandos-del-chat)
 - [Modelos](#modelos)
 - [Cuentas de Claude](#cuentas-de-claude)
+- [Inicio de sesión sin navegador](#inicio-de-sesión-sin-navegador)
 - [Claves de API](#claves-de-api)
 - [Modos](#modos)
 - [Skills y MCP](#skills-y-mcp)
@@ -294,6 +295,32 @@ Skills, plugins, agentes, `CLAUDE.md`, `settings.json` y los servidores MCP de l
 principal se comparten con cada cuenta extra al iniciar sesión. Solo el login queda
 separado. Si instalas una skill o un MCP nuevo después, ejecuta `/account sync NOMBRE`.
 
+
+---
+
+## Inicio de sesión sin navegador
+
+En un servidor, un contenedor o por SSH, abre el enlace en otro dispositivo:
+
+```bash
+ai --account login primary       # Claude
+ai --account login codex
+ai --account login grok
+ai --account login cursor
+ai --account login codex NOMBRE  # cuenta adicional
+```
+
+| Herramienta | Qué ocurre sin navegador |
+| --- | --- |
+| Claude Code | Muestra un enlace y pide pegar el código en la terminal |
+| Codex | Sin navegador, Omni usa `--device-auth`: un enlace y un código de un solo uso. El inicio predeterminado depende de `localhost:1455` |
+| Cursor | Muestra un enlace y espera la autorización |
+| Grok | Muestra un enlace y un código |
+| Antigravity | No probado. No tiene comando de inicio de sesión, así que usa `GEMINI_API_KEY` |
+
+Omni considera "sin navegador" una sesión SSH, un contenedor o Linux sin pantalla. Usa `SMART_AI_HEADLESS=1` o `0` para definirlo manualmente.
+
+En un contenedor, el inicio de sesión necesita una terminal interactiva (`docker exec -it`). Conserva en un volumen `~/.claude`, `~/.claude.json`, `~/.claude-accounts`, `~/.codex`, `~/.grok`, `~/.cursor`, `~/.config/cursor` y `~/.config/smart-ai`.
 
 ---
 

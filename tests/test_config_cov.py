@@ -291,8 +291,10 @@ class AccountCommandTests(ConfigBase):
         self.write_profiles({'profiles': {
             'primary': {'priority': 1, 'enabled': True},
             'nova': {'priority': 2, 'config_dir': str(self.root / 'accounts' / 'nova')}}})
-        out = self.cap(cfg.cmd_account, ['login', 'primary'])
-        self.assertIn('claude auth login', out)
+        with patch.object(cfg.accounts.subprocess, 'call', return_value=0) as call:
+            out = self.cap(cfg.cmd_account, ['login', 'primary'])
+        self.assertIn('login principal do claude', out)
+        self.assertEqual(call.call_args.args[0][1:], ['auth', 'login'])
         with patch.object(cfg.accounts, 'login', return_value=0):
             out = self.cap(cfg.cmd_account, ['login', 'nova'])
         self.assertIn('atualizado', out)
