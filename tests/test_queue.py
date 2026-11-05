@@ -216,7 +216,7 @@ class EditableQueueTests(unittest.TestCase):
 class RunSpecTests(unittest.TestCase):
     def test_each_kind_reaches_the_right_call(self):
         session = object()
-        with patch.object(chat, 'execute') as run, patch.object(chat, 'compact') as summarize:
+        with patch.object(chat.queue, 'execute') as run, patch.object(chat.queue, 'compact') as summarize:
             run_spec(session, {'kind': 'ask', 'engine': 'codex', 'text': 'hi'})
             run_spec(session, {'kind': 'skill', 'tool': 'claude', 'prompt': 'p', 'raw': True})
             run_spec(session, {'kind': 'parallel', 'tasks': [['codex', 'x'], ['grok', 'y']]})

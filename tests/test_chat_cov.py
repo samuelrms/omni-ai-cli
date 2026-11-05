@@ -42,7 +42,7 @@ class Base(unittest.TestCase):
         self.addCleanup(p.stop)
         # a writable language file, and a known starting language
         lang_file = self.root / 'lang'
-        lp = patch.object(chat, 'LANG_FILE', lang_file)
+        lp = patch.object(chat.i18n, 'LANG_FILE', lang_file)
         lp.start()
         self.addCleanup(lp.stop)
         self.lang_file = lang_file
@@ -371,7 +371,7 @@ class RunnerRunTests(Base):
         runner = chat.Runner(str(self.root))
         child = MagicMock()
         runner.children.add(child)
-        with patch.object(chat, 'kill_tree') as kill:
+        with patch.object(chat.runner, 'kill_tree') as kill:
             runner.cancel()
         self.assertTrue(runner.cancelled.is_set())
         kill.assert_called_once_with(child)
@@ -411,7 +411,7 @@ class ExecuteTests(Base):
         super().setUp()
         FakeRunner.instances = []
         FakeRunner.outcome = 'done'
-        p = patch.object(chat, 'Runner', FakeRunner)
+        p = patch.object(chat.runner, 'Runner', FakeRunner)
         p.start()
         self.addCleanup(p.stop)
 
@@ -518,7 +518,7 @@ class HelperTests(Base):
 
     def test_run_spec_dispatch(self):
         s = object()
-        with patch.object(chat, 'execute') as run, patch.object(chat, 'compact') as comp:
+        with patch.object(chat.queue, 'execute') as run, patch.object(chat.queue, 'compact') as comp:
             chat.run_spec(s, {'kind': 'ask', 'engine': 'codex', 'text': 'hi'})
             chat.run_spec(s, {'kind': 'skill', 'tool': 'claude', 'prompt': 'p', 'raw': True})
             chat.run_spec(s, {'kind': 'parallel', 'tasks': [['codex', 'x']]})
@@ -550,13 +550,13 @@ class HelperTests(Base):
             chat.run_tool(['--usage'])  # must not raise
 
     def test_run_native_opens_tool(self):
-        with patch.object(chat, 'resolve_bin', return_value='/bin/claude'), \
+        with patch.object(chat.ops, 'resolve_bin', return_value='/bin/claude'), \
              patch.object(chat.subprocess, 'call') as call, contextlib.redirect_stdout(io.StringIO()):
             chat.run_native('claude', 'usage', str(self.root))
         self.assertEqual(call.call_args.args[0][0], '/bin/claude')
 
     def test_run_native_missing_binary(self):
-        with patch.object(chat, 'resolve_bin', return_value=None):
+        with patch.object(chat.ops, 'resolve_bin', return_value=None):
             with self.assertRaises(ValueError):
                 chat.run_native('codex', 'status', str(self.root))
 
@@ -588,7 +588,7 @@ class HelperTests(Base):
 class ReleaseTests(Base):
     def test_releases_prefers_published(self):
         data = [{'tag_name': 'v1.0', 'draft': False}, {'tag_name': 'v0.9', 'draft': True}]
-        with patch.object(chat, 'github', return_value=data):
+        with patch.object(chat.versions, 'github', return_value=data):
             items = chat.releases()
         self.assertEqual([r['tag_name'] for r in items], ['v1.0'])
 
@@ -599,7 +599,7 @@ class ReleaseTests(Base):
 
         def fake_github(url):
             return [] if 'releases' in url else commits
-        with patch.object(chat, 'github', side_effect=fake_github):
+        with patch.object(chat.versions, 'github', side_effect=fake_github):
             items = chat.releases()
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]['name'], 'new thing')
@@ -625,23 +625,23 @@ class ReleaseTests(Base):
         self.assertIsInstance(chat.installed_version(), str)
 
     def test_newer_release_none_for_dev_build(self):
-        with patch.object(chat, 'installed_version', return_value=''):
+        with patch.object(chat.versions, 'installed_version', return_value=''):
             self.assertIsNone(chat.newer_release())
 
     def test_newer_release_detects_newer(self):
         latest = {'tag_name': 'v9.9.9', 'draft': False, 'prerelease': False, 'body': '* did a thing'}
-        with patch.object(chat, 'installed_version', return_value='1.0.0'), \
-             patch.object(chat, 'github', return_value=[latest]):
+        with patch.object(chat.versions, 'installed_version', return_value='1.0.0'), \
+             patch.object(chat.versions, 'github', return_value=[latest]):
             result = chat.newer_release()
         self.assertEqual(result['tag_name'], 'v9.9.9')
         # second call within a day reads the cached stamp
-        with patch.object(chat, 'installed_version', return_value='1.0.0'), \
-             patch.object(chat, 'github', side_effect=AssertionError('cached')):
+        with patch.object(chat.versions, 'installed_version', return_value='1.0.0'), \
+             patch.object(chat.versions, 'github', side_effect=AssertionError('cached')):
             self.assertIsNotNone(chat.newer_release())
 
     def test_newer_release_none_when_current(self):
-        with patch.object(chat, 'installed_version', return_value='9.9.9'), \
-             patch.object(chat, 'github', return_value=[{'tag_name': 'v1.0.0', 'draft': False, 'prerelease': False}]):
+        with patch.object(chat.versions, 'installed_version', return_value='9.9.9'), \
+             patch.object(chat.versions, 'github', return_value=[{'tag_name': 'v1.0.0', 'draft': False, 'prerelease': False}]):
             self.assertIsNone(chat.newer_release())
 
     def test_announce_release(self):
@@ -654,8 +654,8 @@ class ReleaseTests(Base):
             def start(self):
                 self._target()
 
-        with patch.object(chat, 'newer_release', return_value=latest), \
-             patch.object(chat, 'translate', side_effect=lambda texts, lang: list(texts)), \
+        with patch.object(chat.versions, 'newer_release', return_value=latest), \
+             patch.object(chat.versions, 'translate', side_effect=lambda texts, lang: list(texts)), \
              patch.object(chat.threading, 'Thread', InlineThread), \
              contextlib.redirect_stdout(buf):
             chat.announce_release()
@@ -664,8 +664,8 @@ class ReleaseTests(Base):
     def test_show_versions_list_and_detail(self):
         items = [{'tag_name': 'v1.0', 'published_at': '2024-01-01T00:00:00Z', 'name': 'first',
                   'commit': True, 'body': '* first\n* second'}]
-        with patch.object(chat, 'releases', return_value=items), \
-             patch.object(chat, 'translate', side_effect=lambda texts, lang: list(texts)):
+        with patch.object(chat.versions, 'releases', return_value=items), \
+             patch.object(chat.versions, 'translate', side_effect=lambda texts, lang: list(texts)):
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 chat.show_versions('')
@@ -676,12 +676,12 @@ class ReleaseTests(Base):
             self.assertIn('first', buf.getvalue())
 
     def test_show_versions_bad_argument(self):
-        with patch.object(chat, 'releases', return_value=[{'tag_name': 'v1.0'}]):
+        with patch.object(chat.versions, 'releases', return_value=[{'tag_name': 'v1.0'}]):
             with self.assertRaises(ValueError):
                 chat.show_versions('999')
 
     def test_show_versions_no_network(self):
-        with patch.object(chat, 'releases', side_effect=OSError):
+        with patch.object(chat.versions, 'releases', side_effect=OSError):
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 chat.show_versions('')
@@ -813,8 +813,8 @@ class MainLoopTests(Base):
             patch.object(chat.ui, 'InputBox', FakeBox),
             patch.object(builtins, 'input', side_effect=fake_input),
             patch.object(sys.stdin, 'isatty', return_value=False),
-            patch.object(chat, 'execute', self.exec_mock),
-            patch.object(chat, 'compact', self.compact_mock),
+            patch.object(chat.queue, 'execute', self.exec_mock),
+            patch.object(chat.queue, 'compact', self.compact_mock),
             patch.object(chat, 'run_tool', self.tool_mock),
             patch.object(chat, 'run_native', self.native_mock),
             patch.object(chat.skills, 'discover', return_value=discover or {}),

@@ -48,31 +48,31 @@ class VersionsTests(unittest.TestCase):
         return [{'tag_name': tag, 'draft': False, 'prerelease': False, 'body': '* **chat:** edit the queue ([abc1234](x))'}]
 
     def test_newer_release_only_for_real_versions(self):
-        with patch.object(chat, 'github', return_value=self.release('v1.3.0')) as fetch:
-            with patch.object(chat, 'installed_version', return_value='0.0.0-development'):
+        with patch.object(chat.versions, 'github', return_value=self.release('v1.3.0')) as fetch:
+            with patch.object(chat.versions, 'installed_version', return_value='0.0.0-development'):
                 self.assertIsNone(chat.newer_release())
-            with patch.object(chat, 'installed_version', return_value='1.2.9'):
+            with patch.object(chat.versions, 'installed_version', return_value='1.2.9'):
                 self.assertEqual(chat.newer_release()['tag_name'], 'v1.3.0')
                 self.assertEqual(chat.newer_release()['tag_name'], 'v1.3.0')
-            with patch.object(chat, 'installed_version', return_value='1.3.0'):
+            with patch.object(chat.versions, 'installed_version', return_value='1.3.0'):
                 self.assertIsNone(chat.newer_release())
         self.assertEqual(fetch.call_count, 1)  # checked once a day
 
     def test_check_again_after_a_day(self):
         stamp = self.root / 'release_check.json'
         stamp.write_text(json.dumps({'at': time.time() - 90000, 'release': None}))
-        with patch.object(chat, 'github', return_value=self.release('v2.0.0')), \
-                patch.object(chat, 'installed_version', return_value='1.0.0'):
+        with patch.object(chat.versions, 'github', return_value=self.release('v2.0.0')), \
+                patch.object(chat.versions, 'installed_version', return_value='1.0.0'):
             self.assertEqual(chat.newer_release()['tag_name'], 'v2.0.0')
 
     def test_offline_is_silent(self):
-        with patch.object(chat, 'github', side_effect=OSError), patch.object(chat, 'installed_version', return_value='1.0.0'):
+        with patch.object(chat.versions, 'github', side_effect=OSError), patch.object(chat.versions, 'installed_version', return_value='1.0.0'):
             self.assertIsNone(chat.newer_release())
 
     def test_announcement_line(self):
         chat.set_lang('pt')
         lines = []
-        with patch.object(chat, 'newer_release', return_value=self.release('v1.3.0')[0]), \
+        with patch.object(chat.versions, 'newer_release', return_value=self.release('v1.3.0')[0]), \
                 patch.object(chat.ui, 'out', side_effect=lines.append), self.reply('1. Edita a fila'):
             chat.announce_release()
             deadline = time.time() + 5
