@@ -6,6 +6,8 @@
 
 [![npm](https://img.shields.io/npm/v/omni-ai-cli?color=C4552F)](https://www.npmjs.com/package/omni-ai-cli)
 [![downloads](https://img.shields.io/npm/dm/omni-ai-cli?color=1A1714)](https://www.npmjs.com/package/omni-ai-cli)
+[![VS Code Marketplace](https://img.shields.io/badge/VS%20Code-Marketplace-1A1714)](https://marketplace.visualstudio.com/items?itemName=samuelrms.omni-ai-cli)
+[![Cursor · Open VSX](https://img.shields.io/open-vsx/v/samuelrms/omni-ai-cli?label=Cursor%20%C2%B7%20Open%20VSX&color=C4552F)](https://open-vsx.org/extension/samuelrms/omni-ai-cli)
 [![provenance](https://img.shields.io/badge/npm-OIDC%20trusted%20publishing-C4552F)](https://docs.npmjs.com/trusted-publishers)
 [![coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/samuelrms/omni-ai-cli/badges/coverage.json)](https://github.com/samuelrms/omni-ai-cli/actions/workflows/coverage.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-C4552F.svg)](LICENSE)
