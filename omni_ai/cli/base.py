@@ -50,9 +50,7 @@ def state():
 
 
 def set_state(key, value):
-    data = state()
-    data[key] = value
-    config_tool.write_json(STATE_FILE, data)
+    config_tool.update_json(STATE_FILE, lambda data: data.update({key: value}))
 
 
 def log_usage(tool, profile, status):
@@ -63,14 +61,26 @@ def log_usage(tool, profile, status):
 
 
 def cooldown_left(profile):
-    last = state().get(f'{profile}_last_rate_limit')
+    key = f'{profile}_last_rate_limit'
+    last = state().get(key)
     if not last:
         return 0
-    left = int(last) + int(profile_conf(profile).get('cooldown_minutes', 60)) * 60 - int(time.time())
-    if left <= 0:
-        set_state(f'{profile}_last_rate_limit', '')
-        return 0
-    return left
+    minutes = int(profile_conf(profile).get('cooldown_minutes', 60))
+
+    def remaining(stamp):
+        return int(stamp) + minutes * 60 - int(time.time())
+
+    left = remaining(last)
+    if left > 0:
+        return left
+
+    def clear_if_unchanged(data):
+        # Another process may have recorded a new rate limit since the read above: keep it.
+        if data.get(key) == last:
+            data[key] = ''
+
+    current = config_tool.update_json(STATE_FILE, clear_if_unchanged).get(key)
+    return max(0, remaining(current)) if current else 0
 
 
 def mark_rate_limited(profile):
