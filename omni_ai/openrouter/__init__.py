@@ -108,7 +108,9 @@ def main():
         result = client.chat(
             prompt=prompt,
             system_prompt=args.system,
-            temperature=args.temperature,
+            # Set by the server for one request
+            temperature=float(os.environ.get("SMART_AI_TEMPERATURE") or args.temperature),
+            **({"max_tokens": int(os.environ["SMART_AI_MAX_TOKENS"])} if os.environ.get("SMART_AI_MAX_TOKENS") else {}),
             on_delta=on_delta,
         )
 

@@ -41,6 +41,7 @@ las cuentas se configuran desde el propio chat.
 - [Modos](#modos)
 - [Skills y MCP](#skills-y-mcp)
 - [Uso directo, sin chat](#uso-directo-sin-chat)
+- [Modo servidor](#modo-servidor)
 - [Dónde están los archivos](#dónde-están-los-archivos)
 - [Estructura del proyecto](#estructura-del-proyecto)
 - [Pruebas](#pruebas)
@@ -424,6 +425,56 @@ ai --completions zsh|bash              # autocompletado del shell
 
 ---
 
+## Modo servidor
+
+`ai serve` expone el enrutador como una API compatible con OpenAI. Usa los mismos inicios de sesión, claves, cuentas, cooldowns y fallbacks que el CLI.
+
+```bash
+ai serve                       # http://127.0.0.1:8080/v1
+ai serve --host 0.0.0.0 --port 9000 --max-concurrent 4 --timeout 600
+ai serve keys [list | add NAME | remove NAME]
+```
+
+```python
+from openai import OpenAI
+client = OpenAI(base_url="http://127.0.0.1:8080/v1", api_key="omni-...")
+client.chat.completions.create(model="omni-auto", messages=[{"role": "user", "content": "Olá"}])
+```
+
+En el primer inicio, el servidor crea una clave y la muestra una sola vez. Solo se guarda su hash. En un contenedor, también se puede definir `SMART_AI_SERVER_KEY`. No existe un modo sin autenticación.
+
+| Ruta | Función |
+| --- | --- |
+| `POST /v1/chat/completions` | Respuesta completa o streaming (SSE) |
+| `GET /v1/models` | `omni-auto`, que usa el enrutador, y `omni/<herramienta>` para cada herramienta configurada |
+
+| Header de la respuesta | Significado |
+| --- | --- |
+| `X-Omni-Provider` | Herramienta que respondió |
+| `X-Omni-Usage` | `reported` (informado por el proveedor) o `estimated` (estimado). No aparece en streaming |
+| `X-Omni-Ignored-Params` | Parámetros recibidos e ignorados |
+
+**Seguridad:**
+
+- Las herramientas siempre se ejecutan en modo `plan`, en una carpeta temporal, sea cual sea el `SMART_AI_MODE`.
+- **Solo lectura no impide leer archivos.** Quien tiene la clave puede pedirle a una herramienta que lea archivos de esta máquina. Los MCP configurados también pueden estar disponibles. Trata la clave como acceso a tu cuenta.
+- El valor predeterminado es `127.0.0.1`. Para exponerlo en red, usa `--host` y HTTPS con un proxy inverso.
+- Compartir una instancia significa compartir las mismas cuentas y suscripciones. Revisa los términos de cada proveedor.
+
+**Limitaciones:**
+
+- `temperature` solo se aplica en OpenRouter, DeepSeek y Grok por API. Los CLI la ignoran, y aparece en `X-Omni-Ignored-Params`.
+- `max_tokens` es aproximado en los CLI (unos 4 caracteres por token).
+- `usage` es estimado cuando el proveedor no informa el consumo.
+- Cada pedido puede consumir bastante cuota, porque los CLI de agente cargan su propio contexto. En Codex, un simple "OK" usó unos 19 mil tokens de entrada.
+- En los CLI, el streaming entrega la respuesta de una vez, al final. Solo OpenRouter envía partes durante la generación, salvo cuando hay datos personales enmascarados.
+- El fallback es transparente hasta la primera parte de la respuesta. Si el proveedor falla después, el cliente recibe un error.
+- `tools`/function calling e imágenes devuelven error 400.
+- El prompt llega a las herramientas como argumento de línea de comandos y queda visible en la lista de procesos de la máquina. El límite es de 100 KB por pedido.
+- Los perfiles Claude heredados, que cambian el archivo de credenciales, limitan el servidor a un pedido a la vez.
+
+---
+
 ## Dónde están los archivos
 
 | Ruta | Contenido |
@@ -436,6 +487,7 @@ ai --completions zsh|bash              # autocompletado del shell
 | `~/.local/share/smart-ai/sessions/` | Sesiones del chat |
 | `~/.cache/smart-ai/state.json` | Cooldowns activos |
 | `~/.cache/smart-ai/usage.log` | Log de uso, solo metadatos |
+| `~/.config/smart-ai/server_keys.json` | Hash de las claves de `ai serve` (permiso 600) |
 | `~/.cache/smart-ai/costs.jsonl` | Costo y tokens de cada pedido del chat, sin pregunta ni respuesta (total del día en `/usage`) |
 
 ---
@@ -456,6 +508,7 @@ omni-ai-cli/
 │   ├── grok.py               # cliente xAI, reutilizado por DeepSeek
 │   ├── deepseek.py           # cliente DeepSeek con datos personales enmascarados
 │   ├── pii.py                # enmascara y restaura datos personales
+│   ├── server/               # ai serve: API compatible con OpenAI
 │   ├── osutils.py            # diferencias entre macOS, Linux y Windows
 │   ├── profiles.json         # plantilla inicial; la tuya queda en ~/.config/smart-ai
 │   └── vendor/               # prompt_toolkit y wcwidth incluidos (sin pip)

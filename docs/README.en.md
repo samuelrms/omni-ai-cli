@@ -41,6 +41,7 @@ configured from inside the chat itself.
 - [Modes](#modes)
 - [Skills and MCP](#skills-and-mcp)
 - [Direct use, no chat](#direct-use-no-chat)
+- [Server mode](#server-mode)
 - [Where files live](#where-files-live)
 - [Project structure](#project-structure)
 - [Tests](#tests)
@@ -423,6 +424,56 @@ ai --completions zsh|bash              # shell autocomplete
 
 ---
 
+## Server mode
+
+`ai serve` exposes the router as an OpenAI-compatible API. It uses the same logins, keys, accounts, cooldowns and fallbacks as the CLI.
+
+```bash
+ai serve                       # http://127.0.0.1:8080/v1
+ai serve --host 0.0.0.0 --port 9000 --max-concurrent 4 --timeout 600
+ai serve keys [list | add NAME | remove NAME]
+```
+
+```python
+from openai import OpenAI
+client = OpenAI(base_url="http://127.0.0.1:8080/v1", api_key="omni-...")
+client.chat.completions.create(model="omni-auto", messages=[{"role": "user", "content": "Olá"}])
+```
+
+On first start, the server creates a key and shows it once. Only its hash is stored. In a container, you can also set `SMART_AI_SERVER_KEY`. There is no unauthenticated mode.
+
+| Route | Purpose |
+| --- | --- |
+| `POST /v1/chat/completions` | Full response or streaming (SSE) |
+| `GET /v1/models` | `omni-auto`, which uses the router, and `omni/<tool>` for each configured tool |
+
+| Response header | Meaning |
+| --- | --- |
+| `X-Omni-Provider` | Tool that answered |
+| `X-Omni-Usage` | `reported` (by the provider) or `estimated`. Not present when streaming |
+| `X-Omni-Ignored-Params` | Parameters received and ignored |
+
+**Security:**
+
+- Tools always run in `plan` mode, in a temporary folder, whatever `SMART_AI_MODE` says.
+- **Read-only does not prevent reading files.** Anyone with the key can ask a tool to read files on this machine. Configured MCPs may also be available. Treat the key as access to your account.
+- The default is `127.0.0.1`. To expose it on a network, use `--host` and HTTPS through a reverse proxy.
+- Sharing an instance means sharing the same accounts and subscriptions. Check each provider's terms.
+
+**Limitations:**
+
+- `temperature` only applies to OpenRouter, DeepSeek and Grok over the API. CLIs ignore it, and it shows up in `X-Omni-Ignored-Params`.
+- `max_tokens` is approximate on CLIs (about 4 characters per token).
+- `usage` is estimated when the provider does not report it.
+- Each request can use a lot of quota, because agent CLIs load their own context. On Codex, a simple "OK" used about 19 thousand input tokens.
+- On CLIs, streaming delivers the answer at once, at the end. Only OpenRouter sends pieces during generation, except when personal data was masked.
+- Fallback is transparent until the first piece of the answer. If the provider fails after that, the client gets an error.
+- `tools`/function calling and images return error 400.
+- The prompt reaches the tools as a command-line argument, so it is visible in the machine's process list. The limit is 100 KB per request.
+- Legacy Claude profiles, which swap the credentials file, limit the server to one request at a time.
+
+---
+
 ## Where files live
 
 | Path | Contents |
@@ -435,6 +486,7 @@ ai --completions zsh|bash              # shell autocomplete
 | `~/.local/share/smart-ai/sessions/` | Chat sessions |
 | `~/.cache/smart-ai/state.json` | Active cooldowns |
 | `~/.cache/smart-ai/usage.log` | Usage log, metadata only |
+| `~/.config/smart-ai/server_keys.json` | Hashes of the `ai serve` keys (permission 600) |
 | `~/.cache/smart-ai/costs.jsonl` | Cost and tokens of each chat request, no prompt or answer (day total in `/usage`) |
 
 ---
@@ -455,6 +507,7 @@ omni-ai-cli/
 │   ├── grok.py               # xAI client, reused by DeepSeek
 │   ├── deepseek.py           # DeepSeek client with personal data masked
 │   ├── pii.py                # masks and restores personal data
+│   ├── server/               # ai serve: OpenAI-compatible API
 │   ├── osutils.py            # differences between macOS, Linux and Windows
 │   ├── profiles.json         # starting template; yours lives in ~/.config/smart-ai
 │   └── vendor/               # bundled prompt_toolkit and wcwidth (no pip)
