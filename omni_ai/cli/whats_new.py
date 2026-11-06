@@ -63,7 +63,11 @@ def fetch():
 
 def render(before, after):
     """Lines to print after an update. An update never fails because of this."""
-    if not parse(before) or not parse(after) or parse(before) >= parse(after):
+    if not parse(after):
+        return []
+    if not parse(before):
+        return [f'Todas as mudanças: {RELEASES_PAGE}']  # installs that couldn't tell their version before
+    if parse(before) >= parse(after):
         return []
     try:
         notes = between(fetch(), before, after)

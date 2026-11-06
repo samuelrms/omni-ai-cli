@@ -623,7 +623,10 @@ class ReleaseTests(Base):
             self.assertEqual(chat.translate(['Translated text'], 'pt'), ['Texto traduzido'])
 
     def test_installed_version(self):
-        self.assertIsInstance(chat.installed_version(), str)
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / 'package.json').write_text('{"version": "1.2.3"}')
+            with patch.object(chat.versions, 'REPO', Path(folder)):
+                self.assertEqual(chat.installed_version(), '1.2.3')
 
     def test_newer_release_none_for_dev_build(self):
         with patch.object(chat.versions, 'installed_version', return_value=''):
