@@ -20,6 +20,31 @@ if WINDOWS:
     os.environ['NoDefaultCurrentDirectoryInExePath'] = '1'  # keeps the working directory out of executable lookup
 
 
+# Terminal commands in text from models, tools or files: they can write to the clipboard, retitle the window
+# or hide lines. Stateless on purpose: removing every ESC also defeats a sequence split across two pieces.
+_SEQUENCE = re.compile(r'\x1b\][^\x07\x1b\n]*(?:\x07|\x1b\\)?|\x1b[PX^_][^\x1b\n]*(?:\x1b\\)?|[\x9d\x90\x98\x9e\x9f][^\x07\x1b\x9c\n]*[\x07\x9c]?'
+                       r'|(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]|\x1b[ -/]*[0-~]?')
+_COLOR = re.compile(r'(?:\x1b\[|\x9b)[0-9;:]*m')
+_CONTROL = re.compile(r'[\x00-\x08\x0b-\x1f\x7f-\x9f]')
+
+
+def clean_terminal(text, colors=False):
+    """Text that is safe to print. `colors` keeps color codes, for a tool's own output in direct use."""
+    text = str(text)
+    return _keep_colors(text) if colors else _CONTROL.sub('', _SEQUENCE.sub('', text))
+
+
+def _keep_colors(text):
+    pieces, position = [], 0
+    for found in _SEQUENCE.finditer(text):
+        pieces.append(_CONTROL.sub('', text[position:found.start()]))
+        if _COLOR.fullmatch(found.group()):
+            pieces.append(found.group())
+        position = found.end()
+    pieces.append(_CONTROL.sub('', text[position:]))
+    return ''.join(pieces)
+
+
 def module_cmd(name):
     """Command line that runs one of this package's modules (python -m omni_ai.<name>)."""
     return [sys.executable, *SAFE_PATH, '-m', 'omni_ai.' + name]

@@ -406,6 +406,8 @@ comando. Fuera del chat: `ai --mode plan "pregunta"`. `/parallel` siempre corre 
 
 ## Skills y MCP
 
+Antes de ejecutar una skill del proyecto, el chat muestra su ruta. Una skill del proyecto reemplaza la tuya del mismo nombre, y los enlaces que salen del proyecto se ignoran.
+
 `ai` llama a los propios CLIs, así que cada uno usa las skills y MCPs que ya tiene.
 `/sync` reúne todo e instala en cada herramienta lo que solo existe en las otras:
 
@@ -574,6 +576,7 @@ En el primer inicio, el servidor crea una clave y la muestra una sola vez. Solo 
 - **Para crear, editar y ejecutar comandos:** `ai serve --mode edits|auto|yolo --workdir CARPETA`. La carpeta es obligatoria y nada pide aprobación. [Cada pedido trabaja aislado](#escritura-en-paralelo). Quien tiene la clave puede cambiar la carpeta y, con comandos, alcanzar los inicios de sesión de las cuentas.
 - **Solo lectura no impide leer archivos.** Quien tiene la clave puede pedirle a una herramienta que lea archivos de esta máquina. Los MCP configurados también pueden estar disponibles. Trata la clave como acceso a tu cuenta.
 - El valor predeterminado es `127.0.0.1`. Para exponerlo en red, usa `--host` y HTTPS con un proxy inverso.
+- Por encima del límite de conexiones (128 o más, según el sistema), la respuesta es 503. El inicio de cada pedido debe llegar en 30 segundos como máximo. En exposición pública, usa también los límites por origen del proxy.
 - Compartir una instancia significa compartir las mismas cuentas y suscripciones. Revisa los términos de cada proveedor.
 
 **Limitaciones:**

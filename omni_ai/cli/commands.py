@@ -5,7 +5,7 @@ import subprocess
 
 from .. import config as config_tool
 from . import whats_new
-from ..osutils import REPO, resolve_bin
+from ..osutils import REPO, clean_terminal, resolve_bin
 from ..tools import TOOLS
 from .base import (
     LOG_FILE, STATE_FILE, RED, GREEN, YELLOW, CYAN, BOLD, DIM, NC,
@@ -40,10 +40,11 @@ def history_command(args):
         if as_json:
             say(json.dumps(conv, ensure_ascii=False))
             return 0
+        conv['title'] = clean_terminal(conv['title'])
         say(f"{BOLD}{conv['title']}{NC} {DIM}· {SOURCE_LABEL.get(conv['source'], conv['source'])} · {conv.get('cwd', '')}{NC}\n")
         for m in conv['messages']:
             who = f'{CYAN}você{NC}' if m['role'] == 'user' else f'{GREEN}●{NC}'
-            say(f"{who} {m['content']}\n")
+            say(f"{who} {clean_terminal(m['content'])}\n")
         return 0
 
     items = history_mod.sessions([source] if source else None)
@@ -56,7 +57,7 @@ def history_command(args):
     import time as _time
     for it in items:
         when = _time.strftime('%d/%m %H:%M', _time.localtime(it.get('updated') or 0))
-        say(f"{SOURCE_LABEL.get(it['source'], it['source'])} {DIM}{when} · {it['count']}msg{NC}  {it['title']}")
+        say(f"{SOURCE_LABEL.get(it['source'], it['source'])} {DIM}{when} · {it['count']}msg{NC}  {clean_terminal(it['title'])}")
         say(f"  {DIM}{it['id']}{NC}")
     return 0
 

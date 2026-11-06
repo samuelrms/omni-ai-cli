@@ -6,6 +6,7 @@ import threading
 import time
 import shutil
 
+from ..osutils import clean_terminal
 from ..tools import TOOLS
 from . import color
 from . import text as txt
@@ -87,6 +88,7 @@ class View:
     def stream_line(self, line):
         """One completed line of a streaming answer, printed as it arrives (line-granular keeps the
         chat's input box intact, unlike raw partial writes). The first line carries the answer mark."""
+        line = clean_terminal(line)
         if not self._streamed:
             self._p('\n' + color.gradient(color.MARK) + ' ' + line)
             self._streamed = True
@@ -94,13 +96,15 @@ class View:
             self._p('  ' + line)
 
     def provider(self, tool, detail):
+        tool, detail = clean_terminal(tool), clean_terminal(detail) if detail else detail
         self._p(color.dim('  ') + color.rgb(color.TOOL_RGB.get(tool, (6, 182, 212)), '● ' + tool) + (color.dim(' · ' + detail) if detail else ''))
 
     def action(self, verb, target):
+        target = clean_terminal(target) if target else target
         self._p('\n' + color.green('●') + ' ' + color.bold(verb) + (' ' + txt.short(target, txt.width() - len(verb) - 6) if target else ''))
 
     def result(self, text, failed=False):
-        lines = [l for l in str(text).splitlines() if l.strip()]
+        lines = [l for l in clean_terminal(text).splitlines() if l.strip()]
         if not lines:
             self._p(color.dim('  └ ' + txt.t('no_output')))
             return
@@ -110,11 +114,12 @@ class View:
             self._p(color.dim('    ' + txt.t('more', n=len(lines) - 1)))
 
     def answer(self, text):
-        body = txt.markdown(text.strip())
+        body = txt.markdown(clean_terminal(text).strip())
         lines = body.split('\n')
         self._p('\n' + color.gradient(color.MARK) + ' ' + lines[0] + ''.join('\n  ' + l for l in lines[1:]))
 
     def note(self, text):
+        text = clean_terminal(text)
         if color.LIMIT_WORDS.search(text) or text.lstrip().startswith(('⚠', '✗', '❌')):
             self._p('  ' + color.badge(txt.t('limit') if color.LIMIT_WORDS.search(text) else txt.t('warn'), (234, 179, 8)) + ' '
                     + color.yellow(text.lstrip('⚠✗❌ ')))
@@ -122,7 +127,7 @@ class View:
             self._p(color.dim('  ' + text))
 
     def error(self, text):
-        line = txt.short(text, txt.width() - 6)
+        line = txt.short(clean_terminal(text), txt.width() - 6)
         if line == getattr(self, 'last_error', None):
             return  # tools often report the same failure twice (item + turn)
         self.last_error = line
@@ -137,7 +142,7 @@ def replay(messages, limit=40):
     if len(messages) > limit:
         out(color.dim('  ' + txt.t('older', n=len(messages) - limit)))
     for message in messages[-limit:]:
-        content = str(message.get('content') or '')  # a saved message may carry None or a non-str
+        content = clean_terminal(message.get('content') or '')  # a saved message may carry None or a non-str
         if message.get('role') == 'user':
             lines = content.split('\n')
             out('\n' + color.rgb((232, 96, 76), '❯') + ' ' + lines[0] + ''.join('\n  ' + l for l in lines[1:]))

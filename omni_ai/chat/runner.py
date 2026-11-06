@@ -10,9 +10,9 @@ import time
 from .. import agy_events
 from .. import config as config_tool
 from .. import ui
-from ..osutils import group_kwargs, kill_tree, module_cmd, module_env
+from ..osutils import clean_terminal, group_kwargs, kill_tree, module_cmd, module_env
 from ..tools import TOOLS
-from .i18n import tr, ESCAPES
+from .i18n import tr
 from .session import Session
 from .spend import spend, spend_label, record_spend
 
@@ -111,7 +111,7 @@ class Runner:
                 raise ValueError()
         except ValueError:
             # Router/CLI status lines: kept for /trace, shown only when they say something useful
-            text = ESCAPES.sub('', raw)
+            text = clean_terminal(raw)
             job['events'].append({'type': 'status', 'text': text})
             if not NOISE.search(text):
                 view.note(ui.short(text, ui.width() - 4))

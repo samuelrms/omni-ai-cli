@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .. import config as config_tool
 from .. import ui
+from ..osutils import clean_terminal
 from ..tools import KEY_NAMES, TOOLS
 
 ENGINES = {'auto', *TOOLS}
@@ -16,7 +17,7 @@ ESCAPES = re.compile(r'\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]|[\x
 
 def display(text):
     with PRINT_LOCK:
-        print(ESCAPES.sub('', str(text)), flush=True)
+        print(clean_terminal(text), flush=True)
 
 LANGS = {'pt': 'Português (Brasil)', 'en': 'English', 'es': 'Español', 'fr': 'Français'}
 T = {
@@ -33,6 +34,7 @@ T = {
                 'es': 'Comando o skill desconocido. Usa /help o /skills.', 'fr': 'Commande ou skill inconnue. Utilisez /help ou /skills.'},
     'no_skills': {'pt': 'Nenhuma skill ou comando encontrado neste projeto nem no usuário.', 'en': 'No skills or commands found in this project or user folders.',
                   'es': 'No se encontraron skills ni comandos en este proyecto ni en el usuario.', 'fr': "Aucune skill ni commande trouvée dans ce projet ni chez l'utilisateur."},
+    'skill_project': {'pt': 'Skill deste projeto: {path}', 'en': 'Skill from this project: {path}', 'es': 'Skill de este proyecto: {path}', 'fr': 'Skill de ce projet : {path}'},
     'skill_run': {'pt': '→ /{name} via {tool}', 'en': '→ /{name} via {tool}', 'es': '→ /{name} vía {tool}', 'fr': '→ /{name} via {tool}'},
     'bad_tool': {'pt': 'Ferramenta inválida: {v}', 'en': 'Invalid tool: {v}', 'es': 'Herramienta inválida: {v}', 'fr': 'Outil invalide : {v}'},
     'tool_set': {'pt': 'Ferramenta: {v}', 'en': 'Tool: {v}', 'es': 'Herramienta: {v}', 'fr': 'Outil : {v}'},

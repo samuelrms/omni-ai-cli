@@ -372,6 +372,8 @@ def main(argv=None):
                         except KeyboardInterrupt:
                             continue
                     prompt, raw = skills.build_prompt(command[1:], argument, tool, entry)
+                    if entry[tool][2] == 'projeto':
+                        display(tr('skill_project', path=entry[tool][1]))
                     display(tr('skill_run', name=command[1:], tool=tool))
                     submit(line, {'kind': 'skill', 'tool': tool, 'prompt': prompt, 'raw': raw})
                 else:

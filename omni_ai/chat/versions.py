@@ -6,7 +6,7 @@ import time
 
 from .. import config as config_tool
 from .. import ui
-from ..osutils import REPO
+from ..osutils import REPO, clean_terminal
 from .i18n import tr, display, LANG, LANG_NAMES
 from .spend import costs_file
 RELEASES = 'https://api.github.com/repos/samuelrms/omni-ai-cli/releases?per_page=15'
@@ -113,16 +113,22 @@ def announce_release():
     def check():
         latest = newer_release()
         if latest:
+            latest = _clean_release(latest)
             changes = [m.group(1) for m in map(CHANGE.match, (latest.get('body') or '').splitlines()) if m]
             summary = translate(changes[:1], LANG[0])[0] if changes else ''
             ui.out(ui.yellow(tr('new_version', v=latest['tag_name'], s=summary)))
     threading.Thread(target=check, daemon=True).start()
 
 
+def _clean_release(release):
+    """Release text comes from the network and goes to the terminal."""
+    return {key: clean_terminal(value) if isinstance(value, str) else value for key, value in release.items()}
+
+
 def show_versions(argument):
     """Timeline like a changelog page: simple view of every release, the technical note only for the one asked."""
     try:
-        items = releases()
+        items = [_clean_release(item) for item in releases()]
     except (OSError, ValueError):
         display(tr('no_versions'))
         return
