@@ -219,6 +219,38 @@ class GitWorkspace(Temp):
         self.assertEqual(git(self.folder, 'show', f'{name}:new.txt'), 'work')
         self.assertFalse(work.path.exists())
 
+    def test_commands_from_the_repository_settings_do_not_run(self):
+        proof = self.root / 'ran'
+        command = self.root / 'command.sh'
+        command.write_text(f'#!/bin/sh\ntouch "{proof}"\n')
+        command.chmod(0o755)
+        hooks = self.folder / '.git' / 'hooks'
+        hooks.mkdir(exist_ok=True)
+        for name in ('post-checkout', 'post-commit', 'reference-transaction'):
+            (hooks / name).write_text(command.read_text())
+            (hooks / name).chmod(0o755)
+        git(self.folder, 'config', 'core.fsmonitor', str(command))
+        work = self.spaces.acquire({})
+        (work.path / 'new.txt').write_text('work')
+        name = work.header[1]
+        work.finish()
+        self.assertFalse(proof.exists())
+        self.assertEqual(git(self.folder, 'show', f'{name}:new.txt'), 'work')
+
+    def test_hooks_folder_from_the_repository_settings_does_not_run(self):
+        proof = self.root / 'ran'
+        hooks = self.root / 'hooks'
+        hooks.mkdir()
+        (hooks / 'post-commit').write_text(f'#!/bin/sh\ntouch "{proof}"\n')
+        (hooks / 'post-commit').chmod(0o755)
+        git(self.folder, 'config', 'core.hooksPath', str(hooks))
+        work = self.spaces.acquire({})
+        (work.path / 'new.txt').write_text('work')
+        name = work.header[1]
+        work.finish()
+        self.assertFalse(proof.exists())
+        self.assertEqual(git(self.folder, 'show', f'{name}:new.txt'), 'work')
+
     def test_deleted_git_file_does_not_commit_to_a_repository_above(self):
         work = self.spaces.acquire({})
         (work.path / 'new.txt').write_text('work')

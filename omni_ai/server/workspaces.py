@@ -29,6 +29,7 @@ def _git(folder, *args):
     # Server-owned commands on a folder the administrator chose: a host folder's owner may differ inside a container
     command = ['git', '-c', 'safe.directory=*', '-c', 'user.name=Omni AI', '-c', 'user.email=omni-ai@localhost',
                '-c', 'commit.gpgsign=false',  # the server has no one to answer a signing prompt
+               '-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null',  # no commands from the repository's settings
                '-C', str(folder), *args]
     try:
         return subprocess.run(command, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120)

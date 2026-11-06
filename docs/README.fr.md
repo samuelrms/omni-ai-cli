@@ -529,7 +529,7 @@ Dans les modes d'écriture, les requêtes s'exécutent en parallèle, jusqu'à `
 - **Échec ou timeout :** le travail fait est conservé, et l'en-tête accompagne la réponse d'erreur. Après un plantage du serveur, les modifications sont enregistrées au démarrage suivant.
 - **Concurrence :** deux requêtes sur la même branche ou copie reçoivent 409. Seules les branches `omni/` peuvent être continuées.
 - **File d'attente :** au-delà de la limite, la requête attend jusqu'à `--queue-wait` secondes (60), avec jusqu'à `--queue-size` en file (16). Ensuite seulement, elle reçoit 429.
-- **Limites :** les modifications non validées et les fichiers ignorés par git, comme `node_modules`, ne sont pas dans le worktree. L'isolation couvre les fichiers : ports, bases de données et autres services utilisés par les commandes peuvent encore entrer en conflit, et une commande peut écrire hors du dossier. La mémoire compte aussi : chaque requête est un processus de CLI.
+- **Limites :** les modifications non validées et les fichiers ignorés par git, comme `node_modules`, ne sont pas dans le worktree. L'isolation couvre les fichiers : ports, bases de données et autres services utilisés par les commandes peuvent encore entrer en conflit, et une commande peut écrire hors du dossier. La mémoire compte aussi : chaque requête est un processus de CLI. Les commandes git du serveur lui-même n'exécutent ni les hooks ni `core.fsmonitor` du dépôt. Les filtres git, comme ceux de Git LFS, restent exécutés : ne servez que des dépôts de confiance.
 
 ```bash
 ai serve work --workdir DOSSIER                # liste
