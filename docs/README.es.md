@@ -482,12 +482,25 @@ curl -H "Authorization: Bearer omni-admin-..." http://127.0.0.1:8080/admin/healt
 | `GET /admin/accounts` | Cuentas, inicio de sesión y cooldown |
 | `GET/POST /admin/api-keys`, `DELETE /admin/api-keys/{nombre}` | Claves de los clientes de `/v1` |
 | `GET /admin/health` | Estado del servidor |
+| `POST /admin/accounts/{cuenta}/login` | Inicia el inicio de sesión por suscripción: devuelve el enlace y el id del intento |
+| `POST /admin/accounts/{cuenta}/login/complete` | Termina el inicio de sesión |
+| `DELETE /admin/accounts/{cuenta}/login` | Cancela, con el id en `X-Omni-Login-Attempt` |
 
 - **Claves separadas:** una clave de `/v1` nunca abre `/admin`, ni al revés. Sin clave de administración, `--enable-admin` no arranca.
 - **Red:** desde fuera de esta máquina, exige HTTPS con proxy inverso, que debe definir `X-Forwarded-Proto`. `--admin-allow-http` desactiva esta comprobación. En Docker, el puerto publicado cuenta como acceso externo.
 - **Secretos:** las respuestas muestran solo el final de las claves de proveedores. La excepción es la clave de cliente recién creada, mostrada una sola vez.
 - **Campos protegidos:** el modo de permisos, las rutas de binarios y `config_dir` devuelven 403.
 - **Cuidado:** esta clave puede activar modelos de pago (`openrouter_paid`) y cambiar claves de proveedores. En Docker, usa `SMART_AI_ADMIN=1`.
+
+**Inicio de sesión por la API.** `{cuenta}` es `primary` y las otras cuentas Claude, `codex`, `cursor`, `grok`, o `codex.NOMBRE` para una cuenta extra. Un intento dura 10 minutos y cada cuenta acepta uno a la vez (409).
+
+| Herramienta | Cómo terminar |
+| --- | --- |
+| Claude Code | Abre el enlace y envía `{"attempt_id": "...", "code": "..."}` con el código obtenido |
+| Codex, Grok | Abre el enlace, escribe el `user_code` y envía `{"attempt_id": "..."}`. La respuesta es 202 hasta terminar |
+| Cursor | Abre el enlace y envía `{"attempt_id": "..."}`. La respuesta es 202 hasta terminar |
+
+Antigravity y las herramientas solo con clave devuelven 400. Los códigos y tokens no aparecen en respuestas ni en logs. La excepción es `user_code`, que hay que escribir en el navegador.
 
 ### Como servicio
 

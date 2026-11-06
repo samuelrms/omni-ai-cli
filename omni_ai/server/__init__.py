@@ -151,6 +151,7 @@ def main(argv):
     except KeyboardInterrupt:
         pass
     finally:
+        server.logins.stop_all()
         running = server.stop_all(SHUTDOWN)
         deadline = time.time() + FORCE_AFTER + 1
         while time.time() < deadline and any(e.child is not None and e.child.poll() is None for e in running):

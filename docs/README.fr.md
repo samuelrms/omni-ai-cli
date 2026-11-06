@@ -491,12 +491,25 @@ curl -H "Authorization: Bearer omni-admin-..." http://127.0.0.1:8080/admin/healt
 | `GET /admin/accounts` | Comptes, connexion et cooldown |
 | `GET/POST /admin/api-keys`, `DELETE /admin/api-keys/{nom}` | Clés des clients de `/v1` |
 | `GET /admin/health` | État du serveur |
+| `POST /admin/accounts/{compte}/login` | Démarre la connexion par abonnement : renvoie le lien et l'id de la tentative |
+| `POST /admin/accounts/{compte}/login/complete` | Termine la connexion |
+| `DELETE /admin/accounts/{compte}/login` | Annule, avec l'id dans `X-Omni-Login-Attempt` |
 
 - **Clés séparées :** une clé de `/v1` n'ouvre jamais `/admin`, et inversement. Sans clé d'administration, `--enable-admin` ne démarre pas.
 - **Réseau :** depuis l'extérieur de cette machine, HTTPS via un proxy inverse est exigé, et il doit définir `X-Forwarded-Proto`. `--admin-allow-http` désactive ce contrôle. Sous Docker, le port publié compte comme un accès externe.
 - **Secrets :** les réponses n'affichent que la fin des clés des fournisseurs. L'exception est la clé client tout juste créée, affichée une seule fois.
 - **Champs protégés :** le mode de permission, les chemins des binaires et `config_dir` renvoient 403.
 - **Attention :** cette clé peut activer les modèles payants (`openrouter_paid`) et remplacer les clés des fournisseurs. Sous Docker, utilisez `SMART_AI_ADMIN=1`.
+
+**Connexion par l'API.** `{compte}` vaut `primary` et les autres comptes Claude, `codex`, `cursor`, `grok`, ou `codex.NOM` pour un compte supplémentaire. Une tentative dure 10 minutes et chaque compte en accepte une à la fois (409).
+
+| Outil | Comment terminer |
+| --- | --- |
+| Claude Code | Ouvrez le lien et envoyez `{"attempt_id": "...", "code": "..."}` avec le code obtenu |
+| Codex, Grok | Ouvrez le lien, saisissez le `user_code` et envoyez `{"attempt_id": "..."}`. La réponse est 202 jusqu'à la fin |
+| Cursor | Ouvrez le lien et envoyez `{"attempt_id": "..."}`. La réponse est 202 jusqu'à la fin |
+
+Antigravity et les outils à clé seule renvoient 400. Les codes et jetons n'apparaissent ni dans les réponses ni dans les logs. L'exception est `user_code`, qui doit être saisi dans le navigateur.
 
 ### En tant que service
 
