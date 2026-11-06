@@ -15,6 +15,7 @@ import time
 from . import auth, service
 from .execution import FORCE_AFTER, SHUTDOWN, uses_shared_credentials
 from .handler import REQUEST_LOG, Server
+from .workspaces import Workspaces
 
 
 def _loopback(host):
@@ -75,6 +76,8 @@ def main(argv):
     parser.add_argument('--host', default='127.0.0.1', help='Endereço (padrão: 127.0.0.1, só esta máquina)')
     parser.add_argument('--port', type=int, default=8080, help='Porta (padrão: 8080)')
     parser.add_argument('--max-concurrent', type=_positive, default=4, help='Pedidos simultâneos (padrão: 4)')
+    parser.add_argument('--queue-size', type=_positive, default=16, help='Modos de escrita: pedidos em espera (padrão: 16)')
+    parser.add_argument('--queue-wait', type=_positive, default=60, help='Modos de escrita: espera máxima, em segundos (padrão: 60)')
     parser.add_argument('--timeout', type=_positive, default=600, help='Limite de cada pedido, em segundos (padrão: 600)')
     parser.add_argument('--mode', choices=('plan', 'edits', 'auto', 'yolo'), default='plan',
                         help='O que as ferramentas podem fazer (padrão: plan, somente leitura)')
@@ -119,8 +122,6 @@ def main(argv):
     if not auth.configured():
         created = auth.add('default')
     concurrent = args.max_concurrent
-    if concurrent > 1 and args.mode != 'plan':
-        concurrent = 1  # requests would overwrite each other's files in the shared folder
     if concurrent > 1 and uses_shared_credentials():
         concurrent = 1
         print('Aviso: perfil Claude legado troca credenciais durante a chamada; atendendo um pedido por vez.', file=sys.stderr)
@@ -131,6 +132,9 @@ def main(argv):
         return 1
 
     server.admin_enabled, server.admin_allow_http = args.enable_admin, args.admin_allow_http
+    if args.mode != 'plan':
+        server.workspaces = Workspaces(workdir)
+        server.queue_size, server.queue_wait = args.queue_size, args.queue_wait
 
     def terminate(*_):
         raise KeyboardInterrupt
@@ -141,7 +145,8 @@ def main(argv):
     if created:
         print(f'Chave de API criada (guarde agora, ela não será mostrada de novo):\n{created}', flush=True)
     if args.mode != 'plan':
-        print(f'Aviso: modo {args.mode}. Os pedidos podem alterar arquivos em {workdir}, um por vez, sem aprovação. '
+        place = 'uma branch por pedido' if server.workspaces.uses_git else 'uma cópia da pasta por pedido, sem git'
+        print(f'Aviso: modo {args.mode}, {place}, sem aprovação. Base: {workdir}. '
               'Quem tem a chave também pode alcançar os logins das contas.', file=sys.stderr, flush=True)
     if not _loopback(args.host):
         print('Aviso: acessível pela rede. Use HTTPS com proxy reverso. Quem tem a chave usa suas contas e pode ler '

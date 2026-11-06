@@ -34,6 +34,7 @@ key="$(generated_keys | head -1)"
 [ "$(docker exec omni id -u)" != 0 ] || fail 'running as root'
 docker exec omni sh -c 'for t in claude codex cursor-agent grok; do "$t" --version >/dev/null || exit 1; done' || fail 'a tool is missing'
 docker exec omni sh -c '! touch /app/x 2>/dev/null' || fail 'the image filesystem is writable'
+docker exec omni git --version >/dev/null || fail 'git is missing'
 docker exec omni sh -c 'touch /workspace/.probe && rm /workspace/.probe' || fail 'the workspace is not writable'
 docker port omni 8080 | grep -qx "127.0.0.1:${OMNI_PORT}" || fail 'published beyond 127.0.0.1'
 

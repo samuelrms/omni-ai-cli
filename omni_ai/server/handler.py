@@ -67,6 +67,8 @@ class Server(ThreadingHTTPServer):
     block_on_close = False
 
     admin_enabled = admin_allow_http = False
+    workspaces = None
+    queue_size = queue_wait = 0
 
     def __init__(self, address, max_concurrent=4, timeout=600, mode='plan', workdir=None):
         host = address[0]
@@ -77,8 +79,24 @@ class Server(ThreadingHTTPServer):
         self.running = set()
         self.started = time.monotonic()
         self.logins = Logins()
+        self.waiting = 0
+        self.waiting_lock = threading.Lock()
         self.running_lock = threading.Lock()
         super().__init__(address, Handler)
+
+    def take_slot(self):
+        """Waits in line when a queue is set. False when the line is full or the wait ran out."""
+        if self.slots.acquire(blocking=False):
+            return True
+        with self.waiting_lock:
+            if self.waiting >= self.queue_size:
+                return False
+            self.waiting += 1
+        try:
+            return self.slots.acquire(timeout=self.queue_wait)
+        finally:
+            with self.waiting_lock:
+                self.waiting -= 1
 
     def server_bind(self):
         # HTTPServer.server_bind resolves the host name, which can block for over 30 s without working reverse DNS
@@ -126,6 +144,8 @@ class Handler(BaseHTTPRequestHandler):
         # The body may be unread at this point, and it must not be parsed as the next request
         self.close_connection = True
         headers = {'Retry-After': str(error.retry_after)} if error.retry_after else {}
+        if getattr(self, 'work_header', None):
+            headers[self.work_header[0]] = self.work_header[1]
         if error.status == 401:
             headers['WWW-Authenticate'] = 'Bearer'
         self._json(error.status, protocol.error_body(error.message, error.kind, error.param, error.code), headers)
@@ -213,7 +233,7 @@ class Handler(BaseHTTPRequestHandler):
             if request['tools'] and not capable(tool):
                 raise RequestError(400, 'No configured provider supports tools for this model. Use omni/openrouter, '
                                    'omni/deepseek or omni/grok with an API key.', param='tools', code='tools_not_supported')
-            if not self.server.slots.acquire(blocking=False):
+            if not self.server.take_slot():
                 raise RequestError(429, 'The server is busy. Try again shortly.', 'rate_limit_error',
                                    code='server_busy', retry_after=1)
             try:
@@ -240,11 +260,18 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
     def _complete(self, request, tool):
+        self.work_header = None  # a connection can carry several requests
         if request['tools']:
-            execution = Native(tool, request)
-        else:
-            execution = Execution(tool, request['prompt'], request['last_user'], request['temperature'], request['max_tokens'],
-                                  self.server.mode, self.server.workdir)
+            self._run(request, Native(tool, request))  # runs nothing locally, so it needs no folder of its own
+            return
+        workspaces = self.server.workspaces
+        work = workspaces.acquire(self.headers) if workspaces else None
+        execution = Execution(tool, request['prompt'], request['last_user'], request['temperature'], request['max_tokens'],
+                              self.server.mode, work.path if work else self.server.workdir)
+        execution.work = work
+        self._run(request, execution)
+
+    def _run(self, request, execution):
         stream = None
         if request['stream']:
             stream = Stream(self, request, execution)
@@ -262,6 +289,10 @@ class Handler(BaseHTTPRequestHandler):
             timer.cancel()
             with self.server.running_lock:
                 self.server.running.discard(execution)
+            work = getattr(execution, 'work', None)
+            if work:
+                work.finish()  # also after a failure or a timeout: what was done stays available
+                self.work_header = work.header
         if outcome == DISCONNECTED:
             self.close_connection = True
             return
@@ -291,6 +322,9 @@ def result_headers(request, execution, source=None):
     if request['temperature'] is not None and not api_provider(execution.provider):
         ignored.insert(0, 'temperature')
     headers = {'X-Omni-Provider': str(execution.provider or execution.tool)}
+    work = getattr(execution, 'work', None)
+    if work and work.header:
+        headers[work.header[0]] = work.header[1]
     if source:
         headers['X-Omni-Usage'] = source
     if ignored:

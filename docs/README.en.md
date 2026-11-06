@@ -501,6 +501,23 @@ curl -H "Authorization: Bearer omni-admin-..." http://127.0.0.1:8080/admin/healt
 
 Antigravity and key-only tools return 400. Codes and tokens do not appear in responses or logs. The exception is `user_code`, which has to be typed in the browser.
 
+### Parallel writes
+
+In write modes, requests run in parallel, up to `--max-concurrent`, without touching the original folder.
+
+| | Folder with git | Folder without git |
+| --- | --- | --- |
+| **Where it works** | Worktree on an `omni/<id>` branch, from the latest commit | Copy of the folder, up to 1 GB |
+| **Result** | Commit on the branch, named in `X-Omni-Branch`. Merging is up to you | Copy in `~/.local/share/smart-ai/runs/`, named in `X-Omni-Copy` |
+| **Continue** | Send `X-Omni-Branch` on the next request | Send `X-Omni-Copy` on the next request |
+| **Cleanup** | The worktree goes at the end. The branch stays until you delete it | The copy stays until you delete it |
+
+- **No changes:** a new branch or copy is discarded and the header is absent. When streaming, the header goes out first and may point at something discarded.
+- **Failure or timeout:** what was done is kept, and the header comes with the error response. After a server crash, changes are saved on the next start.
+- **Concurrency:** two requests on the same branch or copy get 409. Only `omni/` branches can be continued.
+- **Queue:** over the limit, a request waits up to `--queue-wait` seconds (60), with up to `--queue-size` in line (16). Only then does it get 429.
+- **Limitations:** uncommitted changes and files ignored by git, such as `node_modules`, are not in the worktree. Isolation covers files: ports, databases and other services used by commands can still collide, and a command can write outside the folder. Memory counts too: each request is one CLI process.
+
 ### As a service
 
 ```bash
@@ -540,7 +557,7 @@ On first start, the server creates a key and shows it once. Only its hash is sto
 **Security:**
 
 - By default, tools run in `plan` mode, in a temporary folder, whatever `SMART_AI_MODE` says.
-- **To create, edit and run commands:** `ai serve --mode edits|auto|yolo --workdir FOLDER`. The folder is required, requests are served one at a time (others get 429) and nothing asks for approval. Whoever has the key can change the folder and, with commands, reach the account logins.
+- **To create, edit and run commands:** `ai serve --mode edits|auto|yolo --workdir FOLDER`. The folder is required and nothing asks for approval. [Each request works in isolation](#parallel-writes). Whoever has the key can change the folder and, with commands, reach the account logins.
 - **Read-only does not prevent reading files.** Anyone with the key can ask a tool to read files on this machine. Configured MCPs may also be available. Treat the key as access to your account.
 - The default is `127.0.0.1`. To expose it on a network, use `--host` and HTTPS through a reverse proxy.
 - Sharing an instance means sharing the same accounts and subscriptions. Check each provider's terms.

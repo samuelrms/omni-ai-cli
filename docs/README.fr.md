@@ -511,6 +511,23 @@ curl -H "Authorization: Bearer omni-admin-..." http://127.0.0.1:8080/admin/healt
 
 Antigravity et les outils à clé seule renvoient 400. Les codes et jetons n'apparaissent ni dans les réponses ni dans les logs. L'exception est `user_code`, qui doit être saisi dans le navigateur.
 
+### Écriture en parallèle
+
+Dans les modes d'écriture, les requêtes s'exécutent en parallèle, jusqu'à `--max-concurrent`, sans toucher au dossier d'origine.
+
+| | Dossier avec git | Dossier sans git |
+| --- | --- | --- |
+| **Où il travaille** | Worktree sur une branche `omni/<id>`, depuis le dernier commit | Copie du dossier, jusqu'à 1 Go |
+| **Résultat** | Commit sur la branche, indiquée dans `X-Omni-Branch`. Le merge vous revient | Copie dans `~/.local/share/smart-ai/runs/`, indiquée dans `X-Omni-Copy` |
+| **Continuer** | Envoyez `X-Omni-Branch` à la requête suivante | Envoyez `X-Omni-Copy` à la requête suivante |
+| **Nettoyage** | Le worktree part à la fin. La branche reste jusqu'à sa suppression | La copie reste jusqu'à sa suppression |
+
+- **Sans modification :** une nouvelle branche ou copie est supprimée et l'en-tête est absent. En streaming, l'en-tête part au début et peut désigner quelque chose de supprimé.
+- **Échec ou timeout :** le travail fait est conservé, et l'en-tête accompagne la réponse d'erreur. Après un plantage du serveur, les modifications sont enregistrées au démarrage suivant.
+- **Concurrence :** deux requêtes sur la même branche ou copie reçoivent 409. Seules les branches `omni/` peuvent être continuées.
+- **File d'attente :** au-delà de la limite, la requête attend jusqu'à `--queue-wait` secondes (60), avec jusqu'à `--queue-size` en file (16). Ensuite seulement, elle reçoit 429.
+- **Limites :** les modifications non validées et les fichiers ignorés par git, comme `node_modules`, ne sont pas dans le worktree. L'isolation couvre les fichiers : ports, bases de données et autres services utilisés par les commandes peuvent encore entrer en conflit, et une commande peut écrire hors du dossier. La mémoire compte aussi : chaque requête est un processus de CLI.
+
 ### En tant que service
 
 ```bash
@@ -550,7 +567,7 @@ Au premier démarrage, le serveur crée une clé et ne l'affiche qu'une fois. Se
 **Sécurité :**
 
 - Par défaut, les outils s'exécutent en mode `plan`, dans un dossier temporaire, quelle que soit la valeur de `SMART_AI_MODE`.
-- **Pour créer, modifier et lancer des commandes :** `ai serve --mode edits|auto|yolo --workdir DOSSIER`. Le dossier est obligatoire, les requêtes sont traitées une par une (les autres reçoivent 429) et rien ne demande d'approbation. Qui détient la clé peut modifier le dossier et, avec des commandes, atteindre les connexions des comptes.
+- **Pour créer, modifier et lancer des commandes :** `ai serve --mode edits|auto|yolo --workdir DOSSIER`. Le dossier est obligatoire et rien ne demande d'approbation. [Chaque requête travaille isolée](#écriture-en-parallèle). Qui détient la clé peut modifier le dossier et, avec des commandes, atteindre les connexions des comptes.
 - **La lecture seule n'empêche pas de lire les fichiers.** Toute personne disposant de la clé peut demander à un outil de lire des fichiers de cette machine. Les MCP configurés peuvent aussi être disponibles. Traitez la clé comme un accès à votre compte.
 - La valeur par défaut est `127.0.0.1`. Pour l'exposer sur un réseau, utilisez `--host` et HTTPS avec un proxy inverse.
 - Partager une instance revient à partager les mêmes comptes et abonnements. Vérifiez les conditions de chaque fournisseur.
