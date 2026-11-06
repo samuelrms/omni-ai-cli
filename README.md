@@ -23,6 +23,8 @@ ferramenta falhar ou estourar a cota, passa para a próxima sem você fazer nada
 Enquanto uma resposta está sendo gerada, a caixa de entrada continua livre: você segue
 mandando pedidos, eles entram numa fila visível acima da caixa e rodam em ordem.
 
+Com `ai serve`, tudo isso também fica disponível como uma [API compatível com a OpenAI](#modo-servidor), direto ou [em Docker](#docker).
+
 Perguntas simples vão para as ferramentas mais baratas. Tarefas pesadas vão para o
 Claude, com troca automática entre várias contas quando uma bate no limite. O histórico
 fica salvo, a interface fala português, inglês, espanhol e francês, e modelos e contas
@@ -49,6 +51,7 @@ se configuram de dentro do próprio chat.
 - [Onde ficam os arquivos](#onde-ficam-os-arquivos)
 - [Estrutura do projeto](#estrutura-do-projeto)
 - [Testes](#testes)
+- [Releases e branches](#releases-e-branches)
 - [Troubleshooting](#troubleshooting)
 - [Limitações conhecidas](#limitações-conhecidas)
 - [Privacidade](#privacidade)
@@ -544,6 +547,8 @@ Inicia sozinho e reinicia em caso de falha, com launchd no macOS e systemd de us
 - **Linux:** para iniciar no boot sem sessão aberta, rode `loginctl enable-linger $USER`. A instalação avisa, mas não faz isso sozinha.
 - **Atualização:** `ai --update` reinicia o serviço. Em instalações sem git, reinstale o serviço depois.
 
+### Uso da API
+
 ```python
 from openai import OpenAI
 client = OpenAI(base_url="http://127.0.0.1:8080/v1", api_key="omni-...")
@@ -608,7 +613,7 @@ docker exec -it omni ai --account login primary
 - **Risco fora do `plan`:** os comandos rodam no mesmo usuário que guarda os logins em `omni-home`. Quem tem a chave pode ler esses logins, então use uma chave por pessoa de confiança e revogue sessões se ela vazar.
 - **Codex:** o sandbox dele não inicia no container, porque depende de recursos bloqueados pelo Docker e pelo kernel do host. Ele só usa ferramentas em `yolo`, com o container como isolamento. Em `plan`, `edits` e `auto`, ele apenas responde, sem ler nem alterar arquivos.
 - **Atualização:** `git pull && docker compose up -d --build`. `ai --update` não se aplica à imagem.
-- **Imagem pronta:** `export OMNI_IMAGE=ghcr.io/samuelrms/omni-ai-cli:latest && docker compose pull omni && docker compose up -d --no-build`. Cada release publica a versão e `latest`, para amd64 e arm64. A imagem inclui CLIs de terceiros, sujeitos aos termos de cada um; o uso da sua conta também segue esses termos.
+- **Imagem pronta:** `export OMNI_IMAGE=ghcr.io/samuelrms/omni-ai-cli:latest && docker compose pull omni && docker compose up -d --no-build`. Cada release publica a versão e `latest`, para amd64 e arm64. Para fixar uma versão, troque `latest` pelo número, como `1.23.0`. A imagem inclui CLIs de terceiros, sujeitos aos termos de cada um; o uso da sua conta também segue esses termos.
 
 Para expor em rede, use um proxy reverso com HTTPS, como o Caddy:
 
@@ -637,6 +642,8 @@ omni.example.com {
 | `~/.config/smart-ai/server_keys.json` | Hash das chaves do `ai serve` (permissão 600) |
 | `~/.config/smart-ai/admin_keys.json` | Hash das chaves da API de administração (permissão 600) |
 | `~/.cache/smart-ai/costs.jsonl` | Custo e tokens de cada pedido do chat, sem pergunta nem resposta (soma do dia no `/usage`) |
+| `~/.local/share/smart-ai/runs/` | Cópias dos pedidos de escrita em pastas sem git |
+| `~/.cache/smart-ai/serve.log` | Log do `ai serve` como serviço, com rotação |
 
 ---
 
@@ -671,6 +678,7 @@ omni-ai-cli/
 ├── tests/                    # executáveis fictícios, sem consumir cota
 ├── postman/                  # simulação HTTP do OpenRouter
 ├── get.sh / get.ps1          # instalação com um comando
+├── Dockerfile · docker-compose.yml  # imagem e Compose do ai serve
 └── package.json · LICENSE
 ```
 
@@ -687,7 +695,7 @@ python3 -m unittest discover -s tests -v
 bash -n scripts/install.sh
 ```
 
-**123 testes**: persistência e retomada de sessão, limite de contexto, permissão dos
+**Mais de 900 testes**: persistência e retomada de sessão, limite de contexto, permissão dos
 arquivos, sessão aberta em dois terminais, leitura de eventos, cancelamento da árvore de
 processos, paralelismo real, sandbox somente leitura, mascaramento de dados pessoais,
 fallback OpenRouter → Codex, validação de modelos, armazenamento das chaves e o ciclo de vida das contas. Todos os
@@ -704,9 +712,13 @@ SMART_AI_SIM_URL=http://127.0.0.1:4901/openrouter python3 -m unittest discover -
 
 ## Releases e branches
 
+Veja o que mudou em cada versão no [CHANGELOG](CHANGELOG.md) (em inglês) e nos [Releases](https://github.com/samuelrms/omni-ai-cli/releases).
+
 Publicação no npm é automática, feita pelo GitHub Actions com semantic-release. A versão
 sai das mensagens de commit (Conventional Commits) — ninguém edita `version` no
 `package.json` à mão.
+
+Cada release também publica a imagem Docker em `ghcr.io/samuelrms/omni-ai-cli`, com o número da versão. A tag `latest` só muda na `main`.
 
 | Branch | Publica como | Exemplo |
 |---|---|---|
