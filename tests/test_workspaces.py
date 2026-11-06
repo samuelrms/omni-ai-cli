@@ -195,6 +195,81 @@ class CopyWorkspace(Temp):
         self.assertFalse(Workspaces(self.folder).uses_git)
 
 
+class Cleanup(Temp):
+    def cli(self, *args):
+        out = subprocess.run([sys.executable, '-m', 'omni_ai.cli', 'serve', 'work', *args, '--workdir', str(self.folder)],
+                             env={**os.environ, 'HOME': str(self.root), 'PYTHONPATH': str(ROOT)}, capture_output=True, text=True, timeout=30)
+        return out.returncode, out.stdout + out.stderr
+
+    def make(self, content='x'):
+        import unittest.mock as mock
+        with mock.patch.dict(os.environ, {'HOME': str(self.root)}):
+            spaces = Workspaces(self.folder)
+            work = spaces.acquire({})
+            (work.path / 'new.txt').write_text(content)
+            work.finish()
+        return work
+
+    def test_list_and_nothing_goes_without_yes(self):
+        self.init_git()
+        branch = self.make().header[1]
+        code, text = self.cli('list')
+        self.assertIn(branch, text)
+        self.assertEqual(self.cli('remove', branch)[0], 0)
+        self.assertIn(branch, git(self.folder, 'branch'))
+        self.assertEqual(self.cli('remove', branch, '--yes')[0], 0)
+        self.assertNotIn(branch, git(self.folder, 'branch'))
+
+    def test_other_branches_are_out_of_reach(self):
+        self.init_git()
+        git(self.folder, 'branch', 'omni/mine')
+        git(self.folder, 'branch', 'feature')
+        for name in ('main', 'feature', 'omni/mine'):
+            self.assertEqual(self.cli('remove', name, '--yes')[0], 1, name)
+        self.assertEqual(self.cli('prune', '--merged', '--yes')[0], 0)
+        self.assertEqual(sorted(git(self.folder, 'branch', '--format=%(refname:short)').split()), ['feature', 'main', 'omni/mine'])
+
+    def test_prune_merged_keeps_unmerged(self):
+        self.init_git()
+        kept = self.make().header[1]
+        merged = self.make('y').header[1]
+        git(self.folder, 'merge', '-q', merged)
+        self.assertEqual(self.cli('prune', '--merged', '--yes')[0], 0)
+        names = git(self.folder, 'branch', '--format=%(refname:short)').split()
+        self.assertIn(kept, names)
+        self.assertNotIn(merged, names)
+
+    def test_prune_needs_a_filter(self):
+        self.init_git()
+        self.assertEqual(self.cli('prune', '--yes')[0], 2)
+
+    def test_older_than_spares_recent(self):
+        self.init_git()
+        branch = self.make().header[1]
+        self.cli('prune', '--older-than', '30', '--yes')
+        self.assertIn(branch, git(self.folder, 'branch'))
+
+    def test_recent_copy_is_kept_and_old_one_goes(self):
+        work = self.make()
+        self.assertEqual(self.cli('remove', work.id, '--yes')[0], 1)
+        self.assertTrue(work.path.exists())
+        old = time.time() - 40 * 86400
+        for root, folders, files in os.walk(work.path):
+            for name in folders + files:
+                os.utime(os.path.join(root, name), (old, old))
+        os.utime(work.path, (old, old))
+        self.assertEqual(self.cli('prune', '--older-than', '30', '--yes')[0], 0)
+        self.assertFalse(work.path.exists())
+
+    def test_prose_stays_a_prompt(self):
+        fake = self.root / 'codex'
+        fake.write_text('#!/bin/sh\necho "CALLED $*"\n')
+        fake.chmod(0o700)
+        out = subprocess.run([sys.executable, '-m', 'omni_ai.cli', '--codex', 'serve', 'work', 'done'], capture_output=True, text=True,
+                             env={**os.environ, 'HOME': str(self.root), 'PYTHONPATH': str(ROOT), 'CODEX_BIN': str(fake)})
+        self.assertIn('serve work done', out.stdout)
+
+
 class OverHttp(Temp):
     def start(self, *args):
         fake = self.root / 'codex'

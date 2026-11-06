@@ -16,7 +16,7 @@ from ..osutils import in_container
 from . import auth, service
 from .execution import FORCE_AFTER, SHUTDOWN, uses_shared_credentials
 from .handler import REQUEST_LOG, Server
-from .workspaces import Workspaces
+from .workspaces import Workspaces, list_work, remove_work
 
 
 def _loopback(host):
@@ -68,9 +68,64 @@ def keys_command(args, path=None, prefix='omni-', usage='keys'):
     return 1
 
 
+def _show_work(item):
+    size = f" · {item['size'] / 1024 ** 2:.1f} MB" if item['size'] is not None else ''
+    notes = (' · no merge' if item['merged'] else '') + (' · em uso' if item['in_use'] else '')
+    print(f"{item['id']}  {item['kind']} · {item['age_days']:.1f} dias{size}{notes}")
+
+
+def work_command(argv):
+    """Branches and copies left by write requests. Nothing is deleted without --yes, and unmerged work is always named first."""
+    parser = argparse.ArgumentParser(prog='ai serve work', description='Branches e cópias criadas pelos pedidos de escrita')
+    parser.add_argument('action', nargs='?', choices=('list', 'remove', 'prune'), default='list')
+    parser.add_argument('id', nargs='?', help='remove: o id mostrado em list')
+    parser.add_argument('--workdir', default='.', help='A mesma pasta usada no servidor (padrão: a atual)')
+    parser.add_argument('--older-than', type=_positive, help='prune: com mais de N dias')
+    parser.add_argument('--merged', action='store_true', help='prune: só branches que já estão no merge')
+    parser.add_argument('--yes', action='store_true', help='Apaga de verdade. Sem isso, só mostra o que seria apagado')
+    args = parser.parse_args(argv)
+    if not os.path.isdir(args.workdir):
+        parser.error(f'pasta não encontrada: {args.workdir}')
+    items = list_work(args.workdir)
+    if args.action == 'list':
+        for item in items:
+            _show_work(item)
+        if not items:
+            print('Nada guardado para esta pasta.')
+        return 0
+    if args.action == 'remove':
+        if not args.id:
+            parser.error('informe o id')
+        chosen = [item for item in items if item['id'] == args.id]
+        if not chosen:
+            print(f'{args.id} não encontrado.', file=sys.stderr)
+            return 1
+    else:
+        if args.older_than is None and not args.merged:
+            parser.error('prune precisa de --older-than ou --merged')
+        chosen = [item for item in items if (args.older_than is None or item['age_days'] > args.older_than)
+                  and (not args.merged or item['merged'])]
+    busy = [item for item in chosen if item['in_use']]
+    chosen = [item for item in chosen if not item['in_use']]
+    for item in busy:
+        print(f"{item['id']} parece em uso; não será apagado.", file=sys.stderr)
+    if not args.yes:
+        for item in chosen:
+            _show_work(item)
+        print(f'{len(chosen)} item(ns) seriam apagados. Para apagar de verdade, repita com --yes.')
+        return 1 if busy and args.action == 'remove' else 0
+    failed = [item['id'] for item in chosen if not remove_work(args.workdir, item)]
+    print(f'{len(chosen) - len(failed)} item(ns) apagados.')
+    if failed:
+        print('Não consegui apagar: ' + ', '.join(failed), file=sys.stderr)
+    return 1 if failed or (busy and args.action == 'remove') else 0
+
+
 def main(argv):
     if argv and argv[0] == 'keys':
         return keys_command(argv[1:])
+    if argv and argv[0] == 'work':
+        return work_command(argv[1:])
     if argv and argv[0] == 'admin-keys':
         return keys_command(argv[1:], auth.admin_keys_path(), 'omni-admin-', 'admin-keys')
     parser = argparse.ArgumentParser(prog='ai serve', description='Servidor HTTP compatível com a API da OpenAI')

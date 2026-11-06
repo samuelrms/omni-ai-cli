@@ -7,6 +7,7 @@ import secrets
 import shutil
 import subprocess
 import threading
+import time
 
 from .protocol import RequestError
 
@@ -15,6 +16,7 @@ COPY_HEADER = 'X-Omni-Copy'
 BRANCH_PREFIX = 'omni/'
 WORK_ID = re.compile(r'[a-f0-9]{16}')
 MAX_COPY_BYTES = 1024 ** 3
+IN_USE_SECONDS = 900  # a copy touched this recently may belong to a request still running
 
 
 def runs_root(workdir):
@@ -190,3 +192,44 @@ class CopyWork(Work):
                 self.header = None
         finally:
             self.owner._release(self.id)
+
+
+def _repo_of(workdir):
+    top = _git(workdir, 'rev-parse', '--show-toplevel')
+    has_commit = _git(workdir, 'rev-parse', '--verify', 'HEAD').returncode == 0
+    return Path(top.stdout.strip()).resolve() if top.returncode == 0 and has_commit else None
+
+
+def _newest(folder):
+    times = [stamp / 1e9 for _, stamp in _snapshot(folder).values()]
+    return max(times, default=os.path.getmtime(folder))
+
+
+def list_work(workdir):
+    """What requests left for this folder: branches and copies. Each item: id, kind, age in days, merged, size, in_use."""
+    workdir = Path(workdir).resolve()
+    root, repo, now, found = runs_root(workdir), _repo_of(workdir), time.time(), []
+    if repo:
+        output = _git(repo, 'for-each-ref', '--format=%(refname:short) %(committerdate:unix)', f'refs/heads/{BRANCH_PREFIX}*').stdout
+        merged = set(_git(repo, 'branch', '--merged', 'HEAD', '--format=%(refname:short)').stdout.split())
+        for line in output.splitlines():
+            name, stamp = line.split()
+            if WORK_ID.fullmatch(name[len(BRANCH_PREFIX):]):
+                found.append({'id': name, 'kind': 'branch', 'age_days': (now - int(stamp)) / 86400, 'merged': name in merged, 'size': None,
+                              'in_use': (root / name[len(BRANCH_PREFIX):]).exists()})
+    if root.is_dir():
+        for folder in sorted(root.iterdir()):
+            if WORK_ID.fullmatch(folder.name) and not repo:
+                newest = _newest(folder)
+                found.append({'id': folder.name, 'kind': 'copy', 'age_days': (now - newest) / 86400, 'merged': False,
+                              'size': _size(folder), 'in_use': now - newest < IN_USE_SECONDS})
+    return found
+
+
+def remove_work(workdir, item):
+    """Deletes one item from list_work. Only ids made here reach this point, never another branch or folder."""
+    workdir = Path(workdir).resolve()
+    if item['kind'] == 'branch':
+        return _git(_repo_of(workdir), 'branch', '-q', '-D', item['id']).returncode == 0
+    shutil.rmtree(runs_root(workdir) / item['id'], ignore_errors=True)
+    return not (runs_root(workdir) / item['id']).exists()
