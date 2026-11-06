@@ -25,14 +25,17 @@ class ExtensionTerminalLine(unittest.TestCase):
         self.cwd = self.folder / 'workspace'
         self.cwd.mkdir()
         self.proof = self.cwd / 'proof.txt'
-        tool = self.folder / 'tool.js'
-        tool.write_text('console.log(JSON.stringify(process.argv.slice(2)));\n')
-        (self.folder / 'codex.cmd').write_text(f'@"{shutil.which("node")}" "{tool}" %*\n')
+        package = self.folder / 'package'
+        package.mkdir()
+        (package / 'package.json').write_text(json.dumps({'name': 'omni-echo', 'version': '1.0.0', 'bin': {'omni-echo': 'cli.js'}}))
+        (package / 'cli.js').write_text('#!/usr/bin/env node\nconsole.log(JSON.stringify(process.argv.slice(2)));\n')
+        prefix = self.folder / 'prefix'
+        subprocess.run([shutil.which('npm'), 'install', '-g', '--prefix', str(prefix), str(package)], check=True, capture_output=True)
         launcher = self.folder / 'ai.cmd'
         launcher.write_text(f'@echo off\nset "PYTHONPATH={ROOT}"\n"{sys.executable}" -P -m omni_ai %*\n')
         self.launcher = str(launcher)
         self.env = dict(os.environ, PATH=str(self.folder) + os.pathsep + os.environ['PATH'], PYTHONUTF8='1',
-                        CODEX_BIN=str(self.folder / 'codex.cmd'))
+                        CODEX_BIN=str(prefix / 'omni-echo.cmd'))
         self.request = self.cwd / 'request.txt'
 
     def line_in(self, shell, line):
