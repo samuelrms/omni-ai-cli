@@ -69,7 +69,7 @@ def _check_models(models):
             raise RequestError(400, f"'{key}' must be a string.", param=key)
         paid = models.get('openrouter_paid', current['openrouter_paid'])
         if key == 'openrouter' and paid == 'on':
-            if not re.fullmatch(r'[A-Za-z0-9._:/@\[\]-]*', value):
+            if not re.fullmatch(r'[A-Za-z0-9._:/@\[\]-]*', value) or value.startswith('-'):
                 raise RequestError(400, f"Invalid value for '{key}'.", param=key)
             continue
         try:

@@ -25,7 +25,7 @@ def model_values():
 def validate_model(key, value):
     if key not in MODELS:
         raise SystemExit(f'Chave inválida: {key}. Use: {", ".join(MODELS)}')
-    if not re.fullmatch(r'[A-Za-z0-9._:/@\[\]-]*', value):
+    if not re.fullmatch(r'[A-Za-z0-9._:/@\[\]-]*', value) or value.startswith('-'):  # a dash would be read as an option
         raise SystemExit('Valor com caracteres inválidos.')
     if key == 'codex_effort' and value not in EFFORTS:
         raise SystemExit('Esforço inválido: ' + ', '.join(EFFORTS))

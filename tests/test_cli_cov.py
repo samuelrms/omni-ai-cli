@@ -323,6 +323,32 @@ class ProviderEventPerAttemptTests(Base):
         self.assertEqual(order, ['provider', 'run', 'provider', 'run'])
 
 
+class DashPromptTests(Base):
+    def argv_of(self, call):
+        seen = []
+        with patch.object(cli.executors, 'run', side_effect=lambda argv, *a, **k: (seen.append(argv), (0, ''))[1]), \
+                patch.object(cli.executors, 'over_ceiling', return_value=False), \
+                patch.object(cli.executors, 'cooldown_left', return_value=0), \
+                patch.object(cli.executors, 'installed', return_value=True), \
+                patch.object(cli.executors, 'mode', return_value='plan'), \
+                patch.object(cli.executors, 'models', return_value=MODELS), \
+                patch.object(cli.executors, 'profile_conf', return_value={}), \
+                patch.object(cli.config_tool, 'tool_accounts', return_value=[]), \
+                patch.object(cli.config_tool, 'stored_keys', return_value=[]):
+            self.capture(call, '--force')
+        return seen[0]
+
+    def test_no_cli_receives_the_prompt_as_an_option(self):
+        for run in (lambda p: cli.run_claude('p1', p), cli.run_agy, cli.run_cursor, cli.run_grok):
+            argv = self.argv_of(run)
+            self.assertNotIn('--force', argv, argv)
+            self.assertIn(' --force', argv)
+
+    def test_ordinary_prompts_are_unchanged(self):
+        self.assertEqual(cli.executors.plain_prompt('hello - world'), 'hello - world')
+        self.assertEqual(cli.executors.plain_prompt('- item'), ' - item')
+
+
 class RunClaudeTests(Base):
     def test_not_installed(self):
         with patch.object(cli.executors, 'installed', return_value=False):

@@ -144,6 +144,12 @@ class Config(AdminCase):
         self.assertEqual(status, 400)
         self.assertEqual(self.admin('GET', '/admin/config')[1], before)
 
+    def test_model_starting_with_a_dash_is_refused(self):
+        for models in ({'claude': '--dangerously-skip-permissions'},
+                       {'openrouter': '--x', 'openrouter_paid': 'on'}):
+            status, _ = self.admin('PUT', '/admin/config', {'models': models})
+            self.assertEqual(status, 400, models)
+
     def test_invalid_values(self):
         for body in ({'nothing': 1}, {'models': []}, {'models': {'codex': 1}}, {'models': {'codex': 'a b'}}, {'models': {'nope': 'x'}},
                      {'fallback_order': {'ghost': {'priority': 1}}}, {'fallback_order': {'main': {'priority': 'x'}}},
