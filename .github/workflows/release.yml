@@ -52,6 +52,13 @@ jobs:
         run: |
           tag=$(git tag --points-at HEAD | grep -E '^v[0-9]' | head -1 || true)
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+      # Runs before the extension job, which copies these notes to the store's "Changes" tab.
+      - name: Add the pull request's notes to the release
+        if: steps.ver.outputs.version != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/release_notes.py "v${{ steps.ver.outputs.version }}"
 
   extension:
     name: Publish the editor extension

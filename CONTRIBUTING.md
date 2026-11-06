@@ -38,6 +38,7 @@ npm run diagrams
   `fix:`, `docs:`, `chore:`, `refactor:`, `test:`. É o que gera a versão no release.
 - Título em inglês, no presente, descrevendo o que muda para quem usa.
 - Um PR por mudança perceptível. Use *squash merge*.
+- A seção `## Release notes` do PR, em inglês, entra nas notas do release e aparece em `ai --update` e na aba de mudanças da extensão.
 - A `main` é protegida: todo merge passa por PR, com o CI verde e a aprovação do mantenedor.
 
 ## Versões
