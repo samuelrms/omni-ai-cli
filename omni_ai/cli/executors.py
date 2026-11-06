@@ -1,6 +1,8 @@
 """Per-tool executors: run each CLI/API, with account + API-key fallback and rate-limit handling."""
 import os
 from pathlib import Path
+import signal
+import threading
 
 from .. import config as config_tool
 from .. import usage
@@ -18,6 +20,44 @@ def no_tools():
     return os.environ.get('SMART_AI_NO_TOOLS') == '1'
 
 
+def _write_private(path, data):
+    """Atomic, and readable only by the user from the first byte."""
+    temporary = path.with_name(f'.{path.name}.{os.getpid()}.tmp')
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, 'wb') as handle:
+        handle.write(data)
+    os.replace(temporary, path)
+
+
+def _credentials_backup(main_creds):
+    return main_creds.with_name('.credentials.omni-backup')
+
+
+def restore_credentials(main_creds):
+    """Puts the main login back after a swap. Also heals a swap left behind by a process that was killed.
+    An empty backup means there was no main login."""
+    backup = _credentials_backup(main_creds)
+    try:
+        saved = backup.read_bytes()
+    except OSError:
+        return
+    if saved:
+        _write_private(main_creds, saved)
+    else:
+        main_creds.unlink(missing_ok=True)
+    backup.unlink(missing_ok=True)
+
+
+def _swap_credentials(main_creds, creds):
+    # The backup reaches the disk before the main file changes, so no moment exists without a way back
+    _write_private(_credentials_backup(main_creds), main_creds.read_bytes() if main_creds.exists() else b'')
+    _write_private(main_creds, creds.read_bytes())
+
+
+def _stop_on_sigterm(signum, frame):
+    raise SystemExit(128 + signum)  # cancel and timeout send SIGTERM; this makes `finally` run
+
+
 def run_claude(profile, prompt):
     if not installed('claude'):
         say(f'{RED}✗ Claude Code não instalado.{NC}')
@@ -26,8 +66,9 @@ def run_claude(profile, prompt):
     env = dict(os.environ)
     env.pop('CLAUDE_CONFIG_DIR', None)
     main_creds = Path('~/.claude/.credentials.json').expanduser()
-    backup = None
-    swapped = had_main = False
+    restore_credentials(main_creds)
+    swapped = False
+    previous_handler = None
     if profile == 'api-key' or profile.startswith('api-key:'):
         wanted = profile.partition(':')[2]
         env['ANTHROPIC_API_KEY'] = next((v for n, v, _ in config_tool.stored_keys('claude') if not wanted or n == wanted),
@@ -50,9 +91,9 @@ def run_claude(profile, prompt):
                     say(f'{RED}✗ Arquivo de credenciais não encontrado: {creds}{NC}')
                     say(f'{DIM}  Execute: ai --account add {profile}{NC}')
                     return NOT_READY
-                had_main = main_creds.exists()
-                backup = main_creds.read_bytes() if had_main else None
-                main_creds.write_bytes(creds.read_bytes())
+                if threading.current_thread() is threading.main_thread():
+                    previous_handler = signal.signal(signal.SIGTERM, _stop_on_sigterm)
+                _swap_credentials(main_creds, creds)
                 swapped = True
                 say(f'{DIM}  → Credenciais trocadas para perfil: {profile}{NC}')
     emit_provider('claude', profile)
@@ -69,12 +110,9 @@ def run_claude(profile, prompt):
         code, output = run(argv, env)
     finally:
         if swapped:
-            if had_main:
-                main_creds.write_bytes(backup)
-            else:
-                # There was no main login before the swap: remove the borrowed file instead
-                # of leaving an empty one that would look like a broken login.
-                main_creds.unlink(missing_ok=True)
+            restore_credentials(main_creds)
+            if previous_handler is not None:
+                signal.signal(signal.SIGTERM, previous_handler)
     if hit_limit(output, code):
         remember_limit(f'claude:{profile}', output)
         mark_rate_limited(profile)
