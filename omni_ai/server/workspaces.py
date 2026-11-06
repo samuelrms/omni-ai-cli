@@ -83,6 +83,7 @@ class Workspaces:
     def __init__(self, workdir):
         self.workdir = Path(workdir).resolve()
         self.root = runs_root(self.workdir)
+        self.real_root = Path(os.path.realpath(self.root))
         self.lock = threading.Lock()  # git locks its own files, and a second worktree add at once would fail
         self.busy = set()
         top = _git(self.workdir, 'rev-parse', '--show-toplevel')
@@ -187,6 +188,10 @@ class Workspaces:
         """Commits what the request left. Returns False when the branch ended with nothing of its own."""
         branch = BRANCH_PREFIX + work_id
         with self.lock:
+            if Path(os.path.realpath(path)) != self.real_root / work_id:
+                # A link put in its place: git would save whatever is at the other end into this branch
+                print(f'Omni AI: request {work_id} was not saved: its folder now leads somewhere else', file=sys.stderr)
+                return True
             self._tree_git(work_id, path, 'add', '-A')
             self._tree_git(work_id, path, 'commit', '-q', '--no-verify', '-m', f'Omni AI request {work_id}')
             left = self._tree_git(work_id, path, 'status', '--porcelain')

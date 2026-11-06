@@ -229,6 +229,50 @@ class GitWorkspace(Temp):
         self.assertEqual(git(self.folder, 'show', f'{name}:new.txt'), 'work')
         self.assertEqual(git(self.folder, 'rev-parse', 'main'), before)
 
+    def private_folder(self, folder):
+        folder.mkdir(parents=True)
+        (folder / 'private.txt').write_text('private')
+        return folder
+
+    def assert_nothing_saved_from(self, folder, name):
+        self.assertNotIn('private.txt', git(self.folder, 'ls-tree', '-r', '--name-only', name))
+        self.assertEqual((folder / 'private.txt').read_text(), 'private')
+
+    def test_work_folder_replaced_by_a_link_is_not_saved(self):
+        outside = self.private_folder(self.root / 'outside')
+        work = self.spaces.acquire({})
+        name = work.header[1]
+        work.path.rename(self.root / 'moved')
+        work.path.symlink_to(outside)
+        with patch('sys.stderr', io.StringIO()) as err:
+            work.finish()
+        self.assert_nothing_saved_from(outside, name)
+        self.assertIn(work.id, err.getvalue())
+        self.assertEqual(work.header, (BRANCH_HEADER, name))
+        Workspaces(self.folder)  # nor at the next server start
+        self.assert_nothing_saved_from(outside, name)
+
+    def test_folder_of_all_requests_replaced_by_a_link_is_not_saved(self):
+        work = self.spaces.acquire({})
+        name = work.header[1]
+        outside = self.private_folder(self.root / 'outside' / work.id)
+        self.spaces.root.rename(self.root / 'moved')
+        self.spaces.root.symlink_to(outside.parent)
+        with patch('sys.stderr', io.StringIO()) as err:
+            work.finish()
+        self.assert_nothing_saved_from(outside, name)
+        self.assertIn(work.id, err.getvalue())
+
+    def test_work_folder_replaced_by_a_link_to_itself_does_not_crash(self):
+        work = self.spaces.acquire({})
+        name = work.header[1]
+        work.path.rename(self.root / 'moved')
+        work.path.symlink_to(work.path)
+        with patch('sys.stderr', io.StringIO()) as err:
+            work.finish()
+        self.assertIn(work.id, err.getvalue())
+        self.assertEqual(work.header, (BRANCH_HEADER, name))
+
     def test_crash_recovery_keeps_the_work(self):
         work = self.spaces.acquire({})
         (work.path / 'lost.txt').write_text('saved')
