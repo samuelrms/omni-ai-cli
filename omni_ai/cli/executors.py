@@ -15,6 +15,12 @@ from .base import (
 from .limits import hit_limit, remember_limit, tail_hit_limit
 
 
+def plain_prompt(prompt):
+    """A prompt starting with a dash would be read as an option by the CLI, even in plan mode.
+    A leading space keeps it text in every CLI, whether or not it supports `--`."""
+    return ' ' + prompt if prompt.startswith('-') else prompt
+
+
 def no_tools():
     """Set by the server for emulated function calling: the model may only write text."""
     return os.environ.get('SMART_AI_NO_TOOLS') == '1'
@@ -103,7 +109,7 @@ def run_claude(profile, prompt):
              'auto': ['--permission-mode', 'auto'], 'yolo': ['--permission-mode', 'bypassPermissions']}.get(mode(), [])
     if no_tools():
         argv += ['--tools', '', '--strict-mcp-config']
-    argv += ['-p', prompt, '--verbose']
+    argv += ['-p', plain_prompt(prompt), '--verbose']
     if os.environ.get('SMART_AI_EVENTS') == '1':
         argv += ['--output-format', 'stream-json']
     try:
@@ -206,7 +212,7 @@ def run_agy(prompt):
         argv += ['--model', models()['agy']]
     argv += {'plan': ['--mode', 'plan'], 'edits': ['--mode', 'accept-edits'], 'auto': ['--mode', 'auto'],
              'yolo': ['--dangerously-skip-permissions']}.get(mode(), [])
-    return run_with_key_retry('agy', argv + ['-p', prompt], 'GEMINI_API_KEY', 'Antigravity')
+    return run_with_key_retry('agy', argv + ['-p', plain_prompt(prompt)], 'GEMINI_API_KEY', 'Antigravity')
 
 
 def run_openrouter(prompt):
@@ -255,7 +261,7 @@ def run_cursor(prompt):
     # 'ask', not 'plan': in plan mode the headless agent was seen writing files anyway
     argv += {'plan': ['--mode', 'ask'], 'edits': ['--force'], 'auto': ['--force'], 'yolo': ['--force']}.get(mode(), [])
     # Subscription login first, then each saved CURSOR_API_KEY
-    return run_with_key_retry('cursor', argv + [prompt], 'CURSOR_API_KEY', 'Cursor')
+    return run_with_key_retry('cursor', argv + [plain_prompt(prompt)], 'CURSOR_API_KEY', 'Cursor')
 
 
 def run_deepseek(prompt):
@@ -296,7 +302,7 @@ def run_grok(prompt):
                  'auto': ['--permission-mode', 'auto'], 'yolo': ['--permission-mode', 'bypassPermissions']}.get(mode(), [])
         if no_tools():
             argv += ['--tools', '', '--disable-web-search']
-        return run_with_key_retry('grok', argv + ['-p', prompt], 'XAI_API_KEY', 'Grok')
+        return run_with_key_retry('grok', argv + ['-p', plain_prompt(prompt)], 'XAI_API_KEY', 'Grok')
     # No CLI: plain chat over the API, paid per use
     keys = config_tool.stored_keys('grok')
     if not keys:
