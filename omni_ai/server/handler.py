@@ -15,6 +15,7 @@ from ..cli.base import installed
 from ..tools import TOOLS
 from . import admin, auth, protocol
 from .logins import Logins
+from .native import Native, capable
 from .execution import DISCONNECTED, Execution, OK, RATE_LIMITED, SWITCHED, TIMEOUT
 from .protocol import AUTO_MODEL, RequestError, TOOL_PREFIX
 
@@ -209,6 +210,9 @@ class Handler(BaseHTTPRequestHandler):
                 raise RequestError(404, 'Unknown route.')
             request = protocol.parse_request(self._read_body())
             tool = tool_of(request['model'])
+            if request['tools'] and not capable(tool):
+                raise RequestError(400, 'No configured provider supports tools for this model. Use omni/openrouter, '
+                                   'omni/deepseek or omni/grok with an API key.', param='tools', code='tools_not_supported')
             if not self.server.slots.acquire(blocking=False):
                 raise RequestError(429, 'The server is busy. Try again shortly.', 'rate_limit_error',
                                    code='server_busy', retry_after=1)
@@ -236,8 +240,11 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
     def _complete(self, request, tool):
-        execution = Execution(tool, request['prompt'], request['last_user'], request['temperature'], request['max_tokens'],
-                              self.server.mode, self.server.workdir)
+        if request['tools']:
+            execution = Native(tool, request)
+        else:
+            execution = Execution(tool, request['prompt'], request['last_user'], request['temperature'], request['max_tokens'],
+                                  self.server.mode, self.server.workdir)
         stream = None
         if request['stream']:
             stream = Stream(self, request, execution)
@@ -265,14 +272,17 @@ class Handler(BaseHTTPRequestHandler):
         usage, source = protocol.usage_body(execution.tokens, request['prompt'], answer)
         if outcome == OK and request['max_tokens'] and usage['completion_tokens'] >= request['max_tokens']:
             finish_reason = 'length'
+        tool_calls = getattr(execution, 'tool_calls', None)
+        if tool_calls:
+            finish_reason = 'tool_calls'
         if stream:
-            stream.finish(outcome, answer, finish_reason, usage, source)
+            stream.finish(outcome, answer, finish_reason, usage, source, tool_calls)
         elif outcome != OK:
             status, message, kind, code = FAILURES.get(outcome, GENERIC_FAILURE)
             raise RequestError(status, message, kind, code=code, retry_after=60 if status == 429 else None)
         else:
             request_id = 'chatcmpl-' + uuid.uuid4().hex
-            self._json(200, protocol.completion_body(request_id, int(time.time()), request['model'], answer, finish_reason, usage),
+            self._json(200, protocol.completion_body(request_id, int(time.time()), request['model'], answer, finish_reason, usage, tool_calls),
                        result_headers(request, execution, source))
 
 
@@ -324,7 +334,7 @@ class Stream:
         self._start()
         self._chunk({'content': text})
 
-    def finish(self, outcome, answer, finish_reason, usage, source):
+    def finish(self, outcome, answer, finish_reason, usage, source, tool_calls=None):
         if outcome != OK:
             status, message, kind, code = FAILURES.get(outcome, GENERIC_FAILURE)
             if not self.started:
@@ -333,8 +343,10 @@ class Stream:
             return
         already_sent = self.started
         self._start()
-        if not already_sent:
+        if not already_sent and answer:
             self._chunk({'content': answer})
+        if tool_calls:
+            self._chunk({'tool_calls': [dict(call, index=index) for index, call in enumerate(tool_calls)]})
         self._chunk({}, finish_reason)
         if self.request['include_usage']:
             self._send(dict(protocol.chunk_body(self.id, self.created, self.request['model'], {}), choices=[], usage=usage))

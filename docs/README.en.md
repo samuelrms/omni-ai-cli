@@ -553,7 +553,8 @@ On first start, the server creates a key and shows it once. Only its hash is sto
 - Each request can use a lot of quota, because agent CLIs load their own context. On Codex, a simple "OK" used about 19 thousand input tokens.
 - On CLIs, streaming delivers the answer at once, at the end. Only OpenRouter sends pieces during generation, except when personal data was masked.
 - Fallback is transparent until the first piece of the answer. If the provider fails after that, the client gets an error.
-- `tools`/function calling and images return error 400.
+- `tools`/function calling only on API providers (OpenRouter, DeepSeek and Grok with a key). The server never runs the tools: the call goes back to your code. Other models return 400, because agent CLIs cannot hand the call back. With `omni-auto`, the order is OpenRouter, DeepSeek and Grok. On OpenRouter, without `openrouter_paid`, only free models. When streaming, the call arrives in one piece at the end. Arguments outside the schema make the server try the next provider; only the core of JSON Schema is checked (`type`, `required`, `enum`, `properties`, `items`, `additionalProperties`). `functions` (old format) returns 400.
+- Images return a 400 error.
 - The prompt reaches the tools as a command-line argument, so it is visible in the machine's process list. The limit is 100 KB per request.
 - Legacy Claude profiles, which swap the credentials file, limit the server to one request at a time.
 

@@ -1,11 +1,15 @@
 """OpenAI wire format: request validation, conversation to prompt, responses and errors."""
+import json
 import math
+import re
 import time
 
 ROLE_LABELS = {'system': 'System', 'developer': 'System', 'user': 'User', 'assistant': 'Assistant'}
 MAX_PROMPT_BYTES = 100_000  # the prompt reaches the tools as one command-line argument (Linux caps it at 128 KiB)
 UNSUPPORTED_PARAMS = ('top_p', 'stop', 'presence_penalty', 'frequency_penalty', 'logit_bias', 'seed',
                       'response_format', 'logprobs', 'top_logprobs')
+MAX_TOOLS = 128
+TOOL_NAME = re.compile(r'[A-Za-z0-9_-]{1,64}')
 AUTO_MODEL = 'omni-auto'
 TOOL_PREFIX = 'omni/'
 
@@ -58,16 +62,70 @@ def build_prompt(messages):
     return prompt, turns[-1][1]
 
 
+def _check_tools(tools):
+    if not isinstance(tools, list) or len(tools) > MAX_TOOLS:
+        raise RequestError(400, f"'tools' must be a list of at most {MAX_TOOLS} items.", param='tools')
+    names = set()
+    for index, tool in enumerate(tools):
+        function = tool.get('function') if isinstance(tool, dict) else None
+        if not isinstance(tool, dict) or tool.get('type') != 'function' or not isinstance(function, dict):
+            raise RequestError(400, 'Only function tools are supported.', param=f'tools[{index}]')
+        name = function.get('name')
+        if not isinstance(name, str) or not TOOL_NAME.fullmatch(name) or name in names:
+            raise RequestError(400, 'Each function needs a unique, valid name.', param=f'tools[{index}].function.name')
+        if not isinstance(function.get('parameters', {}), dict):
+            raise RequestError(400, "'parameters' must be an object.", param=f'tools[{index}].function.parameters')
+        names.add(name)
+    return names
+
+
+def _check_tool_choice(choice, names):
+    if choice is None or choice in ('none', 'auto', 'required'):
+        return
+    function = choice.get('function') if isinstance(choice, dict) else None
+    if not isinstance(function, dict) or choice.get('type') != 'function' or function.get('name') not in names:
+        raise RequestError(400, "'tool_choice' must be none, auto, required or one of the functions.", param='tool_choice')
+
+
+def _check_tool_messages(messages):
+    """Conversations with tools keep their structure, because the provider has to see the calls and their results."""
+    if not isinstance(messages, list) or not messages:
+        raise RequestError(400, "'messages' must be a non-empty list.", param='messages')
+    for index, message in enumerate(messages):
+        role = message.get('role') if isinstance(message, dict) else None
+        if role not in ROLE_LABELS and role != 'tool':
+            raise RequestError(400, 'Supported roles: system, developer, user, assistant and tool.', param=f'messages[{index}].role')
+        calls = message.get('tool_calls')
+        if calls is not None:
+            if role != 'assistant' or not isinstance(calls, list) or not all(
+                    isinstance(c, dict) and isinstance(c.get('function'), dict) and isinstance(c['function'].get('arguments'), str) for c in calls):
+                raise RequestError(400, "Invalid 'tool_calls'.", param=f'messages[{index}].tool_calls')
+        if role == 'tool' and not isinstance(message.get('tool_call_id'), str):
+            raise RequestError(400, "A tool message needs 'tool_call_id'.", param=f'messages[{index}].tool_call_id')
+        if not (calls and message.get('content') is None):
+            _text(message.get('content'), index)
+
+
 def parse_request(body):
-    """Validated request fields. `tools` is refused rather than ignored: a client would wait for a call that never comes."""
+    """Validated request fields."""
     if not isinstance(body, dict):
         raise RequestError(400, 'The request body must be a JSON object.')
     model = body.get('model')
     if not isinstance(model, str) or not model:
         raise RequestError(400, "'model' is required.", param='model')
-    prompt, last_user = build_prompt(body.get('messages'))
-    if body.get('tools') or body.get('functions'):
-        raise RequestError(400, 'Tools and function calling are not supported yet.', param='tools')
+    if body.get('functions'):
+        raise RequestError(400, "'functions' is not supported. Use 'tools'.", param='functions')
+    tools = body.get('tools') or None
+    if tools is not None:
+        names = _check_tools(tools)
+        _check_tool_choice(body.get('tool_choice'), names)
+        if not isinstance(body.get('parallel_tool_calls', True), bool):
+            raise RequestError(400, "'parallel_tool_calls' must be a boolean.", param='parallel_tool_calls')
+        _check_tool_messages(body.get('messages'))
+        prompt = json.dumps(body['messages'], ensure_ascii=False)  # only used to estimate tokens
+        last_user = ''
+    else:
+        prompt, last_user = build_prompt(body.get('messages'))
     if body.get('n') not in (None, 1):
         raise RequestError(400, "Only 'n' = 1 is supported.", param='n')
     temperature = body.get('temperature')
@@ -85,6 +143,8 @@ def parse_request(body):
         'model': model, 'prompt': prompt, 'last_user': last_user, 'temperature': temperature,
         'max_tokens': max_tokens, 'stream': stream,
         'include_usage': isinstance(options, dict) and options.get('include_usage') is True,
+        'tools': tools, 'tool_choice': body.get('tool_choice'), 'parallel_tool_calls': body.get('parallel_tool_calls'),
+        'messages': body.get('messages'),
         'ignored': [name for name in UNSUPPORTED_PARAMS if body.get(name) not in (None, False)],
     }
 
@@ -103,9 +163,12 @@ def usage_body(reported, prompt, answer):
             'total_tokens': prompt_tokens + completion_tokens}, 'estimated'
 
 
-def completion_body(request_id, created, model, answer, finish_reason, usage):
+def completion_body(request_id, created, model, answer, finish_reason, usage, tool_calls=None):
+    message = {'role': 'assistant', 'content': answer}
+    if tool_calls:
+        message = {'role': 'assistant', 'content': answer or None, 'tool_calls': tool_calls}
     return {'id': request_id, 'object': 'chat.completion', 'created': created, 'model': model,
-            'choices': [{'index': 0, 'message': {'role': 'assistant', 'content': answer},
+            'choices': [{'index': 0, 'message': message,
                          'logprobs': None, 'finish_reason': finish_reason}],
             'usage': usage}
 
