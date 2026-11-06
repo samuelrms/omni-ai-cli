@@ -7,7 +7,7 @@ ARG GROK_VERSION=1.0.70
 ARG CURSOR_VERSION=2026.11.05-86047df
 
 RUN apt-get update -qq \
-    && apt-get install -y -qq --no-install-recommends curl ca-certificates python3 procps >/dev/null \
+    && apt-get install -y -qq --no-install-recommends curl ca-certificates git python3 procps >/dev/null \
     && rm -rf /var/lib/apt/lists/*
 
 # The tools live outside the home folder, so the volume never hides them and an image update replaces them.

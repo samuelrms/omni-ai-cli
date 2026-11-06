@@ -509,12 +509,12 @@ class WriteMode(unittest.TestCase):
     def test_unknown_mode_is_refused(self):
         self.assertEqual(self._main('--mode', 'default'), 2)
 
-    def test_requests_run_in_the_folder_and_one_at_a_time(self):
+    def test_requests_run_in_the_folder_in_parallel(self):
         from omni_ai import server
         with tempfile.TemporaryDirectory() as folder, patch.object(server, 'Server', side_effect=OSError('stop')) as built, \
                 patch.object(server.auth, 'configured', return_value=True), patch('sys.stderr'):
             self.assertEqual(server.main(['--mode', 'edits', '--workdir', folder]), 1)
-        self.assertEqual(built.call_args.args[1:], (1, 600, 'edits', os.path.abspath(folder)))
+        self.assertEqual(built.call_args.args[1:], (4, 600, 'edits', os.path.abspath(folder)))
 
     def test_plan_keeps_parallel_requests(self):
         from omni_ai import server

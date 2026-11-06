@@ -92,6 +92,7 @@ def environment(extra):
 def server_args(args, workdir):
     argv = ['--host', args.host, '--port', str(args.port), '--max-concurrent', str(args.max_concurrent),
             '--timeout', str(args.timeout), '--mode', args.mode, '--workdir', str(workdir),
+            *(('--queue-size', str(args.queue_size), '--queue-wait', str(args.queue_wait)) if hasattr(args, 'queue_size') else ()),
             '--log-file', str(log_dir() / 'serve.log')]
     if getattr(args, 'enable_admin', False):
         argv.append('--enable-admin')
@@ -249,7 +250,7 @@ def install(args, loopback):
     if created:
         print(f'Chave de API criada (guarde agora, ela não será mostrada de novo):\n{created}')
     if args.mode != 'plan':
-        print(f'Aviso: modo {args.mode}. Os pedidos podem alterar arquivos em {workdir} sem aprovação.', file=sys.stderr)
+        print(f'Aviso: modo {args.mode}. Os pedidos alteram branches ou cópias de {workdir}, sem aprovação.', file=sys.stderr)
     for note in warnings():
         print(f'Aviso: {note}', file=sys.stderr)
     return 0

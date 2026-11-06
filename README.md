@@ -502,6 +502,23 @@ curl -H "Authorization: Bearer omni-admin-..." http://127.0.0.1:8080/admin/healt
 
 O Antigravity e as ferramentas só com chave retornam 400. Os códigos e tokens não aparecem em respostas nem em logs. A exceção é o `user_code`, que precisa ser digitado no navegador.
 
+### Escrita em paralelo
+
+Nos modos de escrita, os pedidos rodam em paralelo, até `--max-concurrent`, sem mexer na pasta original.
+
+| | Pasta com git | Pasta sem git |
+| --- | --- | --- |
+| **Onde trabalha** | Worktree em uma branch `omni/<id>`, a partir do último commit | Cópia da pasta, até 1 GB |
+| **Resultado** | Commit na branch, informada em `X-Omni-Branch`. O merge é seu | Cópia em `~/.local/share/smart-ai/runs/`, informada em `X-Omni-Copy` |
+| **Continuar** | Envie `X-Omni-Branch` no pedido seguinte | Envie `X-Omni-Copy` no pedido seguinte |
+| **Limpeza** | O worktree sai ao final. A branch fica até você apagar | A cópia fica até você apagar |
+
+- **Sem alterações:** a branch ou a cópia nova é descartada e o header não vem. Em streaming, o header sai no início e pode apontar para algo descartado.
+- **Falha ou timeout:** o que já foi feito é mantido, e o header vem na resposta de erro. Depois de uma queda do servidor, as alterações são salvas no próximo início.
+- **Concorrência:** dois pedidos na mesma branch ou cópia recebem 409. Só branches `omni/` podem ser continuadas.
+- **Fila:** acima do limite, o pedido espera até `--queue-wait` segundos (60), com até `--queue-size` na fila (16). Só então recebe 429.
+- **Limitações:** alterações sem commit e arquivos ignorados pelo git, como `node_modules`, não entram no worktree. O isolamento vale para arquivos: portas, bancos e outros serviços usados pelos comandos ainda podem colidir, e um comando pode escrever fora da pasta. A memória também conta: cada pedido é um processo de CLI.
+
 ### Como serviço
 
 ```bash
@@ -541,7 +558,7 @@ No primeiro início, o servidor cria uma chave e a mostra uma única vez. Só o 
 **Segurança:**
 
 - Por padrão, as ferramentas rodam no modo `plan`, em uma pasta temporária, seja qual for o `SMART_AI_MODE`.
-- **Para criar, editar e rodar comandos:** `ai serve --mode edits|auto|yolo --workdir PASTA`. A pasta é obrigatória, os pedidos passam a ser atendidos um por vez (os demais recebem 429) e nada pede aprovação. Quem tem a chave pode alterar a pasta e, com comandos, alcançar os logins das contas.
+- **Para criar, editar e rodar comandos:** `ai serve --mode edits|auto|yolo --workdir PASTA`. A pasta é obrigatória e nada pede aprovação. [Cada pedido trabalha isolado](#escrita-em-paralelo). Quem tem a chave pode alterar a pasta e, com comandos, alcançar os logins das contas.
 - **Somente leitura não impede ler arquivos.** Quem tem a chave pode pedir a uma ferramenta que leia arquivos desta máquina. MCPs configurados também podem estar disponíveis. Trate a chave como acesso à sua conta.
 - O padrão é `127.0.0.1`. Para expor em rede, use `--host` e HTTPS com proxy reverso.
 - Quem compartilha uma instância compartilha as mesmas contas e assinaturas. Verifique os termos de cada provedor.

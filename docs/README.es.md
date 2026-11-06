@@ -502,6 +502,23 @@ curl -H "Authorization: Bearer omni-admin-..." http://127.0.0.1:8080/admin/healt
 
 Antigravity y las herramientas solo con clave devuelven 400. Los códigos y tokens no aparecen en respuestas ni en logs. La excepción es `user_code`, que hay que escribir en el navegador.
 
+### Escritura en paralelo
+
+En los modos de escritura, los pedidos se ejecutan en paralelo, hasta `--max-concurrent`, sin tocar la carpeta original.
+
+| | Carpeta con git | Carpeta sin git |
+| --- | --- | --- |
+| **Dónde trabaja** | Worktree en una rama `omni/<id>`, desde el último commit | Copia de la carpeta, hasta 1 GB |
+| **Resultado** | Commit en la rama, indicada en `X-Omni-Branch`. El merge es tuyo | Copia en `~/.local/share/smart-ai/runs/`, indicada en `X-Omni-Copy` |
+| **Continuar** | Envía `X-Omni-Branch` en el siguiente pedido | Envía `X-Omni-Copy` en el siguiente pedido |
+| **Limpieza** | El worktree se va al final. La rama queda hasta que la borres | La copia queda hasta que la borres |
+
+- **Sin cambios:** la rama o copia nueva se descarta y el header no viene. En streaming, el header sale al inicio y puede apuntar a algo descartado.
+- **Fallo o timeout:** lo hecho se conserva y el header viene en la respuesta de error. Tras una caída del servidor, los cambios se guardan en el siguiente inicio.
+- **Concurrencia:** dos pedidos en la misma rama o copia reciben 409. Solo se pueden continuar ramas `omni/`.
+- **Cola:** por encima del límite, el pedido espera hasta `--queue-wait` segundos (60), con hasta `--queue-size` en la cola (16). Solo entonces recibe 429.
+- **Limitaciones:** los cambios sin commit y los archivos ignorados por git, como `node_modules`, no entran en el worktree. El aislamiento cubre archivos: puertos, bases de datos y otros servicios usados por los comandos aún pueden chocar, y un comando puede escribir fuera de la carpeta. La memoria también cuenta: cada pedido es un proceso de CLI.
+
 ### Como servicio
 
 ```bash
@@ -541,7 +558,7 @@ En el primer inicio, el servidor crea una clave y la muestra una sola vez. Solo 
 **Seguridad:**
 
 - Por defecto, las herramientas se ejecutan en modo `plan`, en una carpeta temporal, sea cual sea el `SMART_AI_MODE`.
-- **Para crear, editar y ejecutar comandos:** `ai serve --mode edits|auto|yolo --workdir CARPETA`. La carpeta es obligatoria, los pedidos se atienden de uno en uno (los demás reciben 429) y nada pide aprobación. Quien tiene la clave puede cambiar la carpeta y, con comandos, alcanzar los inicios de sesión de las cuentas.
+- **Para crear, editar y ejecutar comandos:** `ai serve --mode edits|auto|yolo --workdir CARPETA`. La carpeta es obligatoria y nada pide aprobación. [Cada pedido trabaja aislado](#escritura-en-paralelo). Quien tiene la clave puede cambiar la carpeta y, con comandos, alcanzar los inicios de sesión de las cuentas.
 - **Solo lectura no impide leer archivos.** Quien tiene la clave puede pedirle a una herramienta que lea archivos de esta máquina. Los MCP configurados también pueden estar disponibles. Trata la clave como acceso a tu cuenta.
 - El valor predeterminado es `127.0.0.1`. Para exponerlo en red, usa `--host` y HTTPS con un proxy inverso.
 - Compartir una instancia significa compartir las mismas cuentas y suscripciones. Revisa los términos de cada proveedor.
