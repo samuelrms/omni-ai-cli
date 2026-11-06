@@ -3,9 +3,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import logging
 import re
-import select
+import selectors
 import socket
 import socketserver
+import sys
 import threading
 import time
 import uuid
@@ -22,6 +23,10 @@ from .protocol import AUTO_MODEL, RequestError, TOOL_PREFIX
 
 MAX_BODY_BYTES = 1_000_000
 SOCKET_TIMEOUT = 30
+HEADER_DEADLINE = 30  # the socket timeout is per read, so a slow client could otherwise stay forever
+MIN_CONNECTIONS = 128
+BUSY_RESPONSE = (b'HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: 2\r\n'
+                 b'Retry-After: 5\r\nConnection: close\r\n\r\n{}')
 WATCH_INTERVAL = 1
 FAILURES = {
     RATE_LIMITED: (429, 'All accounts and providers are at their limit. Try again later.', 'rate_limit_error', 'rate_limit_exceeded'),
@@ -65,6 +70,24 @@ if not REQUEST_LOG.handlers:
     REQUEST_LOG.addHandler(logging.StreamHandler())
 
 
+def connection_limit(max_concurrent):
+    """Enough for every running and queued request, while leaving descriptors for their processes."""
+    wanted = max(MIN_CONNECTIONS, 2 * max_concurrent + 64)
+    try:
+        import resource
+        soft = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
+    except (ImportError, OSError, ValueError):
+        return wanted
+    return wanted if soft == resource.RLIM_INFINITY else max(8, min(wanted, (soft - 32) // 2))
+
+
+def has_input(connection):
+    """select.select fails for descriptors above 1024, which a busy server reaches."""
+    with selectors.DefaultSelector() as selector:
+        selector.register(connection, selectors.EVENT_READ)
+        return bool(selector.select(0))
+
+
 class Server(ThreadingHTTPServer):
     daemon_threads = True
     block_on_close = False
@@ -86,7 +109,62 @@ class Server(ThreadingHTTPServer):
         self.waiting = 0
         self.waiting_lock = threading.Lock()
         self.running_lock = threading.Lock()
+        self.connections = threading.BoundedSemaphore(connection_limit(max_concurrent))
+        self.reading = {}  # connection -> moment its request line and headers must have arrived by
+        self.reading_lock = threading.Lock()
+        self.closed = threading.Event()
         super().__init__(address, Handler)
+        threading.Thread(target=self._close_slow_readers, daemon=True).start()
+
+    def process_request(self, request, client_address):
+        if not self.connections.acquire(blocking=False):
+            try:
+                request.setblocking(False)
+                request.send(BUSY_RESPONSE)
+            except OSError:
+                pass
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self.connections.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self.connections.release()
+
+    def expect_headers(self, connection):
+        with self.reading_lock:
+            self.reading[connection] = time.monotonic() + HEADER_DEADLINE
+
+    def headers_read(self, connection):
+        with self.reading_lock:
+            self.reading.pop(connection, None)
+
+    def _close_slow_readers(self):
+        while not self.closed.wait(WATCH_INTERVAL):
+            now = time.monotonic()
+            with self.reading_lock:
+                late = [connection for connection, deadline in self.reading.items() if deadline <= now]
+            for connection in late:
+                self.headers_read(connection)
+                try:
+                    connection.shutdown(socket.SHUT_RDWR)  # the handler's read returns, and it ends
+                except OSError:
+                    pass
+
+    def handle_error(self, request, client_address):
+        # A client that left is routine, and nobody without a key should be able to fill the log with tracebacks
+        if not isinstance(sys.exc_info()[1], ConnectionError):
+            super().handle_error(request, client_address)
+
+    def server_close(self):
+        self.closed.set()
+        super().server_close()
 
     def take_slot(self):
         """Waits in line when a queue is set. False when the line is full or the wait ran out."""
@@ -120,6 +198,18 @@ class Handler(BaseHTTPRequestHandler):
     server_version = 'OmniAI'
     sys_version = ''
     timeout = SOCKET_TIMEOUT
+
+    def handle_one_request(self):
+        self.server.expect_headers(self.connection)
+        try:
+            super().handle_one_request()
+        finally:
+            self.server.headers_read(self.connection)
+
+    def parse_request(self):
+        parsed = super().parse_request()
+        self.server.headers_read(self.connection)
+        return parsed
 
     def log_message(self, fmt, *args):
         # Request line without its query, and status: never headers or bodies
@@ -257,8 +347,7 @@ class Handler(BaseHTTPRequestHandler):
         """Only a read notices a client that left while nothing is being written to it."""
         while not finished.wait(WATCH_INTERVAL):
             try:
-                ready, _, _ = select.select([self.connection], [], [], 0)
-                if ready:
+                if has_input(self.connection):
                     if not self.connection.recv(1, socket.MSG_PEEK):
                         execution.stop(DISCONNECTED)
                         return
