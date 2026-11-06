@@ -104,10 +104,8 @@ def show_status():
 
 
 def ai_version():
-    try:
-        return json.loads((REPO / 'package.json').read_text()).get('version', '?')
-    except (OSError, ValueError):
-        return '?'
+    from .whats_new import installed_version
+    return installed_version()
 
 
 def doctor():

@@ -4,6 +4,7 @@ import os
 import subprocess
 
 from .. import config as config_tool
+from . import whats_new
 from ..osutils import REPO, resolve_bin
 from ..tools import TOOLS
 from .base import (
@@ -110,9 +111,12 @@ def show_log():
 
 
 def update():
+    before = whats_new.installed_version()
     code = _update()
     if code == 0:
         _restart_service()
+        for line in whats_new.render(before, whats_new.installed_version()):
+            say(line)
     return code
 
 

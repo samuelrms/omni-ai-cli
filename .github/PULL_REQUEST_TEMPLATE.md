@@ -6,6 +6,10 @@
 
 <!-- Problema que isto resolve. -->
 
+## Release notes
+
+<!-- Em inglês, para quem usa: uma lista com o que muda. Vai para as notas do release. Apague a seção se não houver release. -->
+
 ## Checklist
 
 - [ ] Título no padrão Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`)

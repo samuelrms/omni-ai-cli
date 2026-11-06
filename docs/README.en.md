@@ -126,7 +126,7 @@ brew install samuelrms/tap/omni-ai-cli
 
 > On recent Homebrew, if it refuses the tap as "untrusted", run once: `brew trust samuelrms/tap`.
 
-To update later: `ai --update` (or `/update` in the chat).
+To update later: `ai --update` (or `/update` in the chat). When done, it shows what's new in the installed versions.
 
 From source, for development:
 
