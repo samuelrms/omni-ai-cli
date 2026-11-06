@@ -12,6 +12,7 @@ from .. import config as config_tool
 from ..chat.spend import record_spend, spend
 from ..cli.base import LIMIT_TEXT
 from ..osutils import group_kwargs, kill_tree, module_cmd, module_env
+from ..tools import TOOLS
 from .auth import SECRET_VARS
 
 FORCE_AFTER = 5  # seconds between asking a process to stop and killing it
@@ -132,7 +133,9 @@ class Execution:
             if self.sent_delta:
                 self.stop(SWITCHED)  # the client already has part of another answer
                 return
-            self.provider, self.profile = event.get('provider'), event.get('profile') or ''
+            # It ends up in a response header, and this line is whatever the tool printed
+            name = event.get('provider')
+            self.provider, self.profile = name if isinstance(name, str) and name in TOOLS else None, event.get('profile') or ''
             self.answer, self.protocol_error, self.tokens = '', False, None
         elif kind == 'smart.delta':
             self._delta(event.get('text', ''))

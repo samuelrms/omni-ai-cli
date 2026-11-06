@@ -28,6 +28,7 @@ MIN_CONNECTIONS = 128
 BUSY_RESPONSE = (b'HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: 2\r\n'
                  b'Retry-After: 5\r\nConnection: close\r\n\r\n{}')
 WATCH_INTERVAL = 1
+UNSAFE_HEADER_VALUE = re.compile(r'[^\t\x20-\x7e\xa0-\xff]')  # a line break would start a new header
 FAILURES = {
     RATE_LIMITED: (429, 'All accounts and providers are at their limit. Try again later.', 'rate_limit_error', 'rate_limit_exceeded'),
     TIMEOUT: (504, 'The request timed out.', 'timeout_error', 'timeout'),
@@ -215,6 +216,12 @@ class Handler(BaseHTTPRequestHandler):
         # Request line without its query, and status: never headers or bodies
         line = re.sub(r'[?]\S*', '', fmt % args)
         REQUEST_LOG.info(f'{self.log_date_time_string()} {line}')
+
+    def send_header(self, keyword, value):
+        if UNSAFE_HEADER_VALUE.search(str(value)):
+            REQUEST_LOG.warning('Response header %s left out: its value has characters HTTP does not allow', keyword)
+            return
+        super().send_header(keyword, value)
 
     def send_error(self, code, message=None, explain=None):
         """Malformed requests get the same error format as everything else."""
