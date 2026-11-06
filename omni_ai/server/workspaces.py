@@ -6,6 +6,7 @@ import re
 import secrets
 import shutil
 import subprocess
+import sys
 import threading
 import time
 
@@ -27,6 +28,7 @@ def runs_root(workdir):
 def _git(folder, *args):
     # Server-owned commands on a folder the administrator chose: a host folder's owner may differ inside a container
     command = ['git', '-c', 'safe.directory=*', '-c', 'user.name=Omni AI', '-c', 'user.email=omni-ai@localhost',
+               '-c', 'commit.gpgsign=false',  # the server has no one to answer a signing prompt
                '-C', str(folder), *args]
     try:
         return subprocess.run(command, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120)
@@ -90,8 +92,11 @@ class Workspaces:
             if self.uses_git:
                 _git(self.repo, 'worktree', 'prune')
             return
+        # Only worktrees: this folder can hold copies from when the project had no git, and they are the user's
+        listed = _git(self.repo, 'worktree', 'list', '--porcelain').stdout.splitlines()
+        worktrees = {Path(line[len('worktree '):]).resolve() for line in listed if line.startswith('worktree ')}
         for folder in self.root.iterdir():
-            if WORK_ID.fullmatch(folder.name):
+            if WORK_ID.fullmatch(folder.name) and folder.resolve() in worktrees:
                 self._save_and_remove(folder.name, folder)
         _git(self.repo, 'worktree', 'prune')
 
@@ -154,6 +159,11 @@ class Workspaces:
         with self.lock:
             _git(path, 'add', '-A')
             _git(path, 'commit', '-q', '--no-verify', '-m', f'Omni AI request {work_id}')
+            left = _git(path, 'status', '--porcelain')
+            if left.returncode != 0 or left.stdout.strip():
+                # Not saved: the folder is the only copy of the work, so it stays
+                print(f'Omni AI: could not commit request {work_id}; its work stays in {path}', file=sys.stderr)
+                return True
             ahead = _git(self.repo, 'rev-list', '--count', f'HEAD..{branch}').stdout.strip()
             _git(self.repo, 'worktree', 'remove', '--force', str(path))
             if path.exists():
