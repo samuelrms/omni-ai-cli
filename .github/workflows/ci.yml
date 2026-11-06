@@ -57,6 +57,7 @@ jobs:
         run: |
           node --check editor/extension.js
           node -e "JSON.parse(require('fs').readFileSync('editor/package.json','utf8'))"
+          node --test editor/test/safety.test.js
       - name: Pack
         run: npm pack --dry-run
       - name: Install tarball and run launcher

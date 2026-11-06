@@ -20,6 +20,12 @@
   "bugs": "https://github.com/samuelrms/omni-ai-cli/issues",
   "main": "./extension.js",
   "activationEvents": ["onStartupFinished"],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "The extension runs the ai command in the workspace, so the workspace must be trusted."
+    }
+  },
   "contributes": {
     "walkthroughs": [
       {
@@ -83,6 +89,7 @@
       "properties": {
         "omni-ai.binPath": {
           "type": "string",
+          "scope": "machine",
           "default": "ai",
           "description": "Path to the ai executable (leave as 'ai' if it is on your PATH)."
         },
@@ -94,6 +101,7 @@
         },
         "omni-ai.mode": {
           "type": "string",
+          "scope": "machine",
           "enum": ["default", "plan", "edits", "auto", "yolo"],
           "default": "default",
           "description": "Permission mode passed to the CLI."

@@ -32,9 +32,11 @@ Explain and Run also appear in the right-click menu when there is a selection.
 
 ## Settings
 
-- `omni-ai.binPath`: path to `ai` (default `ai`).
+- `omni-ai.binPath`: path to `ai` (default `ai`). User settings only.
 - `omni-ai.tool`: `auto` (the router decides) or a specific tool.
-- `omni-ai.mode`: permission mode (`default`, `plan`, `edits`, `auto`, `yolo`).
+- `omni-ai.mode`: permission mode (`default`, `plan`, `edits`, `auto`, `yolo`). User settings only.
+
+A repository's `.vscode/settings.json` cannot change `binPath` or `mode`. In an untrusted workspace, the extension stays off.
 
 ## Also in the CLI
 
