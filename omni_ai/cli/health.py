@@ -56,8 +56,21 @@ def version(tool):
         return '?'
 
 
+def service_lines():
+    """(healthy, text) about the `ai serve` service, or None when it is not installed."""
+    from ..server import service
+    info = service.describe()
+    if not info:
+        return None
+    running, problem, _ = info
+    return running and not problem, problem or ('rodando' if running else 'parado')
+
+
 def show_status():
     say(f'{BOLD}{CYAN}  🧠 Omni AI CLI{NC}\n')
+    line = service_lines()
+    if line:
+        say(f'  Serviço ai serve: {line[1]}\n')
     say(f'{BOLD}  Perfis Claude:{NC}\n')
     for name, conf in config_tool.ordered(config_tool.profiles()):
         left = cooldown_left(name)
@@ -160,6 +173,12 @@ def doctor():
         label = TOOLS[name].label
         say(f'  {ok} {label}: {version(name)}' if installed(name) else f'  {warn} {label}: não instalado')
     say()
+
+    line = service_lines()
+    if line:
+        say(f'{BOLD}  Serviço ai serve{NC}\n  {ok if line[0] else warn} {line[1]}\n')
+        if not line[0]:
+            problems.append(f'serviço ai serve: {line[1]}')
 
     classifiers = [p for p in ('groq', 'cerebras') if config_tool.stored_key(p)[0]]
     if classifiers:
