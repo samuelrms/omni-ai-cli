@@ -29,11 +29,30 @@ def _git(folder, *args):
     # Server-owned commands on a folder the administrator chose: a host folder's owner may differ inside a container
     command = ['git', '-c', 'safe.directory=*', '-c', 'user.name=Omni AI', '-c', 'user.email=omni-ai@localhost',
                '-c', 'commit.gpgsign=false',  # the server has no one to answer a signing prompt
+               '-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null',  # no commands from the repository's settings
                '-C', str(folder), *args]
     try:
         return subprocess.run(command, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120)
     except (OSError, subprocess.TimeoutExpired) as error:
         return subprocess.CompletedProcess(command, 1, '', str(error))
+
+
+def _relink_inside(copy, source):
+    """A copied absolute link can still point at the original folder, and writing through it would change it."""
+    for root, folders, files in os.walk(copy):
+        for name in folders + files:
+            link = Path(root) / name
+            if not link.is_symlink():
+                continue
+            target = Path(os.readlink(link))
+            if not target.is_absolute():
+                continue
+            try:
+                inside = target.resolve().relative_to(source)
+            except (OSError, ValueError):
+                continue
+            link.unlink()
+            link.symlink_to(Path(copy) / inside)
 
 
 def _snapshot(folder):
@@ -65,6 +84,7 @@ class Workspaces:
     def __init__(self, workdir):
         self.workdir = Path(workdir).resolve()
         self.root = runs_root(self.workdir)
+        self.real_root = Path(os.path.realpath(self.root))
         self.lock = threading.Lock()  # git locks its own files, and a second worktree add at once would fail
         self.busy = set()
         top = _git(self.workdir, 'rev-parse', '--show-toplevel')
@@ -127,6 +147,11 @@ class Workspaces:
                 self.busy.discard(work_id)
                 raise RequestError(500, 'Could not prepare the working folder.', 'api_error')
         inner = path / self.workdir.relative_to(self.repo)
+        if not inner.resolve().is_relative_to(path.resolve()):  # a link committed on the branch
+            with self.lock:
+                _git(self.repo, 'worktree', 'remove', '--force', str(path))
+                self.busy.discard(work_id)
+            raise RequestError(400, 'The working folder on this branch leads outside it.', param=BRANCH_HEADER)
         return GitWork(self, work_id, inner, new, path)
 
     def _acquire_copy(self, wanted):
@@ -144,6 +169,7 @@ class Workspaces:
                 if size > MAX_COPY_BYTES or size > shutil.disk_usage(self.root).free:
                     raise RequestError(507, 'The folder is too large to copy for this request.', 'api_error', code='workspace_too_large')
                 shutil.copytree(self.workdir, path, symlinks=True)
+                _relink_inside(path, self.workdir)
         except (OSError, shutil.Error):
             self._release(work_id)
             shutil.rmtree(path, ignore_errors=True)
@@ -153,13 +179,23 @@ class Workspaces:
             raise
         return CopyWork(self, work_id, path, not wanted)
 
+    def _tree_git(self, work_id, path, *args):
+        """Git on a folder the tool could write to. The repository is named here, never discovered from a `.git`
+        in that folder, whose configuration can run commands."""
+        common = self.repo / _git(self.repo, 'rev-parse', '--git-common-dir').stdout.strip()
+        return _git(path, f'--git-dir={common.resolve() / "worktrees" / work_id}', f'--work-tree={path}', *args)
+
     def _save_and_remove(self, work_id, path):
         """Commits what the request left. Returns False when the branch ended with nothing of its own."""
         branch = BRANCH_PREFIX + work_id
         with self.lock:
-            _git(path, 'add', '-A')
-            _git(path, 'commit', '-q', '--no-verify', '-m', f'Omni AI request {work_id}')
-            left = _git(path, 'status', '--porcelain')
+            if Path(os.path.realpath(path)) != self.real_root / work_id:
+                # A link put in its place: git would save whatever is at the other end into this branch
+                print(f'Omni AI: request {work_id} was not saved: its folder now leads somewhere else', file=sys.stderr)
+                return True
+            self._tree_git(work_id, path, 'add', '-A')
+            self._tree_git(work_id, path, 'commit', '-q', '--no-verify', '-m', f'Omni AI request {work_id}')
+            left = self._tree_git(work_id, path, 'status', '--porcelain')
             if left.returncode != 0 or left.stdout.strip():
                 # Not saved: the folder is the only copy of the work, so it stays
                 print(f'Omni AI: could not commit request {work_id}; its work stays in {path}', file=sys.stderr)

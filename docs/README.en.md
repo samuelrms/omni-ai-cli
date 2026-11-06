@@ -519,7 +519,7 @@ In write modes, requests run in parallel, up to `--max-concurrent`, without touc
 - **Failure or timeout:** what was done is kept, and the header comes with the error response. After a server crash, changes are saved on the next start.
 - **Concurrency:** two requests on the same branch or copy get 409. Only `omni/` branches can be continued.
 - **Queue:** over the limit, a request waits up to `--queue-wait` seconds (60), with up to `--queue-size` in line (16). Only then does it get 429.
-- **Limitations:** uncommitted changes and files ignored by git, such as `node_modules`, are not in the worktree. Isolation covers files: ports, databases and other services used by commands can still collide, and a command can write outside the folder. Memory counts too: each request is one CLI process.
+- **Limitations:** uncommitted changes and files ignored by git, such as `node_modules`, are not in the worktree. Isolation covers files: ports, databases and other services used by commands can still collide, and a command can write outside the folder. Memory counts too: each request is one CLI process. The server's own git commands do not run the repository's hooks or `core.fsmonitor`. Git filters, such as Git LFS, still run: only serve repositories you trust.
 
 ```bash
 ai serve work --workdir FOLDER                 # lists

@@ -520,7 +520,7 @@ Nos modos de escrita, os pedidos rodam em paralelo, até `--max-concurrent`, sem
 - **Falha ou timeout:** o que já foi feito é mantido, e o header vem na resposta de erro. Depois de uma queda do servidor, as alterações são salvas no próximo início.
 - **Concorrência:** dois pedidos na mesma branch ou cópia recebem 409. Só branches `omni/` podem ser continuadas.
 - **Fila:** acima do limite, o pedido espera até `--queue-wait` segundos (60), com até `--queue-size` na fila (16). Só então recebe 429.
-- **Limitações:** alterações sem commit e arquivos ignorados pelo git, como `node_modules`, não entram no worktree. O isolamento vale para arquivos: portas, bancos e outros serviços usados pelos comandos ainda podem colidir, e um comando pode escrever fora da pasta. A memória também conta: cada pedido é um processo de CLI.
+- **Limitações:** alterações sem commit e arquivos ignorados pelo git, como `node_modules`, não entram no worktree. O isolamento vale para arquivos: portas, bancos e outros serviços usados pelos comandos ainda podem colidir, e um comando pode escrever fora da pasta. A memória também conta: cada pedido é um processo de CLI. Os comandos git do próprio servidor não rodam hooks nem `core.fsmonitor` do repositório. Filtros do git, como os do Git LFS, continuam rodando: sirva só repositórios em que você confia.
 
 ```bash
 ai serve work --workdir PASTA                  # lista

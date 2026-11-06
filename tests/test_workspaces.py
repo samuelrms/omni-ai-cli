@@ -60,6 +60,44 @@ class RecoveryAfterGitInit(Temp):
         self.assertEqual((work.path / 'kept.txt').read_text(), 'copy')
 
 
+class LinksLeavingTheFolder(Temp):
+    def test_branch_cannot_move_the_working_folder_outside(self):
+        (self.folder / 'sub').mkdir()
+        (self.folder / 'sub' / 'file.txt').write_text('x')
+        self.init_git()
+        spaces = Workspaces(self.folder / 'sub')
+        work = spaces.acquire({})
+        tree = work.tree
+        name = work.header[1]
+        (tree / 'sub' / 'file.txt').unlink()
+        (tree / 'sub').rmdir()
+        (tree / 'sub').symlink_to(self.root)
+        work.finish()
+        self.assertIn('sub', git(self.folder, 'ls-tree', '--name-only', name))
+        with self.assertRaises(RequestError) as caught:
+            spaces.acquire({BRANCH_HEADER: name})
+        self.assertEqual(caught.exception.status, 400)
+        self.assertFalse(tree.exists())
+        spaces.acquire({})  # the slot and the lock were released
+
+    def test_copy_writes_do_not_reach_the_original_through_absolute_links(self):
+        data = self.folder / 'data'
+        data.mkdir()
+        (data / 'a.txt').write_text('original')
+        (self.folder / 'abslink').symlink_to(data)
+        outside = self.root / 'outside'
+        outside.mkdir()
+        (self.folder / 'external').symlink_to(outside)
+        (self.folder / 'relative').symlink_to('data')
+        work = Workspaces(self.folder).acquire({})
+        (work.path / 'abslink' / 'a.txt').write_text('changed')
+        self.assertEqual((data / 'a.txt').read_text(), 'original')
+        self.assertEqual((work.path / 'data' / 'a.txt').read_text(), 'changed')
+        self.assertEqual(os.readlink(work.path / 'relative'), 'data')
+        self.assertEqual(Path(os.readlink(work.path / 'external')), outside)
+        work.finish()
+
+
 class GitWorkspace(Temp):
     def setUp(self):
         super().setUp()
@@ -150,7 +188,7 @@ class GitWorkspace(Temp):
         (work.path / 'new.txt').write_text('work')
         real = workspaces._git
         def fail_commit(folder, *args):
-            return subprocess.CompletedProcess(args, 1, '', 'no') if args[0] == 'commit' else real(folder, *args)
+            return subprocess.CompletedProcess(args, 1, '', 'no') if 'commit' in args else real(folder, *args)
         with patch.object(workspaces, '_git', fail_commit), patch('sys.stderr', io.StringIO()) as err:
             work.finish()
         self.assertEqual((work.path / 'new.txt').read_text(), 'work')
@@ -160,6 +198,112 @@ class GitWorkspace(Temp):
         Workspaces(self.folder)  # the next server start saves it
         self.assertEqual(git(self.folder, 'show', f'{work.header[1]}:new.txt'), 'work')
         self.assertFalse(work.path.exists())
+
+    def test_git_config_written_by_the_tool_does_not_run(self):
+        proof = self.root / 'ran'
+        hook = self.root / 'hook.sh'
+        hook.write_text(f'#!/bin/sh\ntouch "{proof}"\n')
+        hook.chmod(0o755)
+        work = self.spaces.acquire({})
+        (work.path / 'new.txt').write_text('work')
+        evil = work.path / 'evilgit'
+        (evil / 'objects').mkdir(parents=True)
+        (evil / 'refs').mkdir()
+        (evil / 'HEAD').write_text('ref: refs/heads/x\n')
+        (evil / 'config').write_text(f'[core]\n\trepositoryformatversion = 0\n\tfsmonitor = {hook}\n')
+        (work.path / '.git').unlink()
+        (work.path / '.git').write_text('gitdir: evilgit\n')
+        name = work.header[1]
+        work.finish()
+        self.assertFalse(proof.exists())
+        self.assertEqual(git(self.folder, 'show', f'{name}:new.txt'), 'work')
+        self.assertFalse(work.path.exists())
+
+    def test_commands_from_the_repository_settings_do_not_run(self):
+        proof = self.root / 'ran'
+        command = self.root / 'command.sh'
+        command.write_text(f'#!/bin/sh\ntouch "{proof}"\n')
+        command.chmod(0o755)
+        hooks = self.folder / '.git' / 'hooks'
+        hooks.mkdir(exist_ok=True)
+        for name in ('post-checkout', 'post-commit', 'reference-transaction'):
+            (hooks / name).write_text(command.read_text())
+            (hooks / name).chmod(0o755)
+        git(self.folder, 'config', 'core.fsmonitor', str(command))
+        work = self.spaces.acquire({})
+        (work.path / 'new.txt').write_text('work')
+        name = work.header[1]
+        work.finish()
+        self.assertFalse(proof.exists())
+        self.assertEqual(git(self.folder, 'show', f'{name}:new.txt'), 'work')
+
+    def test_hooks_folder_from_the_repository_settings_does_not_run(self):
+        proof = self.root / 'ran'
+        hooks = self.root / 'hooks'
+        hooks.mkdir()
+        (hooks / 'post-commit').write_text(f'#!/bin/sh\ntouch "{proof}"\n')
+        (hooks / 'post-commit').chmod(0o755)
+        git(self.folder, 'config', 'core.hooksPath', str(hooks))
+        work = self.spaces.acquire({})
+        (work.path / 'new.txt').write_text('work')
+        name = work.header[1]
+        work.finish()
+        self.assertFalse(proof.exists())
+        self.assertEqual(git(self.folder, 'show', f'{name}:new.txt'), 'work')
+
+    def test_deleted_git_file_does_not_commit_to_a_repository_above(self):
+        work = self.spaces.acquire({})
+        (work.path / 'new.txt').write_text('work')
+        (work.path / '.git').unlink()
+        name = work.header[1]
+        before = git(self.folder, 'rev-parse', 'main')
+        work.finish()
+        self.assertEqual(git(self.folder, 'show', f'{name}:new.txt'), 'work')
+        self.assertEqual(git(self.folder, 'rev-parse', 'main'), before)
+
+    def private_folder(self, folder):
+        folder.mkdir(parents=True)
+        (folder / 'private.txt').write_text('private')
+        return folder
+
+    def assert_nothing_saved_from(self, folder, name):
+        self.assertNotIn('private.txt', git(self.folder, 'ls-tree', '-r', '--name-only', name))
+        self.assertEqual((folder / 'private.txt').read_text(), 'private')
+
+    def test_work_folder_replaced_by_a_link_is_not_saved(self):
+        outside = self.private_folder(self.root / 'outside')
+        work = self.spaces.acquire({})
+        name = work.header[1]
+        work.path.rename(self.root / 'moved')
+        work.path.symlink_to(outside)
+        with patch('sys.stderr', io.StringIO()) as err:
+            work.finish()
+        self.assert_nothing_saved_from(outside, name)
+        self.assertIn(work.id, err.getvalue())
+        self.assertEqual(work.header, (BRANCH_HEADER, name))
+        Workspaces(self.folder)  # nor at the next server start
+        self.assert_nothing_saved_from(outside, name)
+
+    def test_folder_of_all_requests_replaced_by_a_link_is_not_saved(self):
+        work = self.spaces.acquire({})
+        name = work.header[1]
+        outside = self.private_folder(self.root / 'outside' / work.id)
+        self.spaces.root.rename(self.root / 'moved')
+        self.spaces.root.symlink_to(outside.parent)
+        with patch('sys.stderr', io.StringIO()) as err:
+            work.finish()
+        self.assert_nothing_saved_from(outside, name)
+        self.assertIn(work.id, err.getvalue())
+
+    def test_work_folder_replaced_by_a_link_to_itself_does_not_crash(self):
+        work = self.spaces.acquire({})
+        name = work.header[1]
+        work.path.rename(self.root / 'moved')
+        work.path.symlink_to(work.path)
+        with patch('sys.stderr', io.StringIO()) as err:
+            work.finish()
+        self.assertIn(work.id, err.getvalue())
+        self.assertEqual(work.header, (BRANCH_HEADER, name))
 
     def test_crash_recovery_keeps_the_work(self):
         work = self.spaces.acquire({})
