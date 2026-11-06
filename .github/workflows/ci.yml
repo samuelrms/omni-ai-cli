@@ -48,7 +48,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Tool launch on real Windows
-        run: python -m unittest discover -s tests -p test_windows_shims.py -v
+        run: python -m unittest discover -s tests -p 'test_windows_*.py' -v
 
   docker:
     name: Docker image

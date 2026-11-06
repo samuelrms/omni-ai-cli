@@ -16,6 +16,7 @@ keeps working.
 """
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
 import time
@@ -57,6 +58,7 @@ USAGE = f'''{BOLD}Uso:{NC}
   ai "pergunta"                      Roteamento automático
   ai {TOOL_FLAGS} "pergunta"
   ai --mode plan|edits|auto|yolo "pergunta"
+  ai --prompt-file ARQUIVO           Lê o pedido de um arquivo
   ai --model [chave valor]           Modelos
   ai --account [list|add|login|sync|remove] NOME
   ai --key [{KEY_LIST}|remove X]
@@ -143,6 +145,13 @@ def main(argv):
                 print('Modo inválido: use default, plan, edits, auto ou yolo', file=sys.stderr)
                 return 1
             os.environ['SMART_AI_MODE'] = value
+            i += 1
+        elif arg == '--prompt-file':
+            try:
+                words.append(Path(argv[i + 1]).read_text(encoding='utf-8'))
+            except (IndexError, OSError, UnicodeDecodeError) as error:
+                print(f'Não foi possível ler o arquivo do pedido: {error}', file=sys.stderr)
+                return 1
             i += 1
         elif arg in ('--status', '-s'):
             show_status()

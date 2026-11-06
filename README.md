@@ -452,6 +452,7 @@ ai --cursor "corrigir o teste X"       # força Cursor
 ai --deepseek "explicar CAP theorem"   # força DeepSeek
 ai --install                           # instala as ferramentas que faltam (pergunta antes)
 ai --classify "prompt"                 # mostra como seria classificado
+ai --prompt-file pedido.txt            # lê o pedido de um arquivo
 ai --log                               # últimas chamadas
 ai doctor                              # diagnóstico de instalação, contas e chaves
 ai --version                           # versão do Omni AI CLI

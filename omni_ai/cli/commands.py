@@ -66,7 +66,7 @@ def completion_words():
     """Every top-level word `ai` accepts, for shell completion."""
     flags = ['--model', '--account', '--key', '--keys', '--sync', '--usage', '--limits', '--setup',
              '--install', '--status', '--doctor', '--reset', '--log', '--classify', '--update',
-             '--mode', '--chat', '--resume', '--sessions', '--new', '--help', '--version', '--completions', 'history', 'serve']
+             '--mode', '--prompt-file', '--chat', '--resume', '--sessions', '--new', '--help', '--version', '--completions', 'history', 'serve']
     return flags + ['--' + name for name in TOOLS] + ['doctor']
 
 
