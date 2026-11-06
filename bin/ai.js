@@ -4,6 +4,9 @@
 const { spawnSync, spawn } = require('child_process');
 const path = require('path');
 
+// Without this, Windows starts python.exe from the working directory before looking in PATH
+if (process.platform === 'win32') process.env.NoDefaultCurrentDirectoryInExePath = '1';
+
 const root = path.resolve(__dirname, '..');
 const candidates = process.env.SMART_AI_PYTHON
   ? [[process.env.SMART_AI_PYTHON]]

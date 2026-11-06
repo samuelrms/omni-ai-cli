@@ -149,6 +149,11 @@ test('user settings still apply, and odd paths are quoted', async () => {
   assert.deepEqual(state.sent, ['C:\\tools\\ai.cmd doctor']);
 });
 
+test('Windows does not look for programs in the workspace', () => {
+  const source = require('fs').readFileSync(require('path').join(__dirname, '..', 'extension.js'), 'utf8');
+  assert.match(source, /win32'\) process\.env\.NoDefaultCurrentDirectoryInExePath = '1'/);
+});
+
 test('the manifest keeps risky settings out of workspaces', () => {
   const manifest = require('../package.json');
   const props = manifest.contributes.configuration.properties;

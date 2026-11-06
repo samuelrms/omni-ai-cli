@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -43,6 +44,7 @@ PNPM_SHIM = """@SETLOCAL
 )
 """
 ATTACK = '" & echo planted> proof.txt & "'
+ROOT = Path(__file__).resolve().parent.parent
 
 
 class Temp(unittest.TestCase):
@@ -203,6 +205,42 @@ class RealWindows(Temp):
     def test_planted_tool_in_the_working_directory_is_not_picked(self):
         (self.folder / 'omni-planted.cmd').write_text('@echo planted\n')
         self.assertIsNone(osutils.resolve_bin('omni-planted'))
+
+    def without_protection(self, env=None):
+        return {key: value for key, value in (env or os.environ).items() if key.upper() != 'NODEFAULTCURRENTDIRECTORYINEXEPATH'}
+
+    def plant(self, name):
+        shutil.copy(shutil.which('node'), self.folder / name)
+
+    def test_the_risk_is_real_for_a_bare_name(self):
+        self.plant('git.exe')
+        code = "import subprocess; print(subprocess.run(['git', '--version'], capture_output=True, text=True).stdout)"
+        out = subprocess.run([sys.executable, '-c', code], env=self.without_protection(), capture_output=True, text=True).stdout
+        self.assertTrue(out.startswith('v'), out)
+
+    def test_a_bare_name_ignores_the_working_directory(self):
+        self.plant('git.exe')
+        out = subprocess.run(['git', '--version'], capture_output=True, text=True).stdout
+        self.assertTrue(out.startswith('git version'), out)
+
+    def run_launcher(self, path):
+        """A planted Python here is a copy of Node, which refuses Python's options: the launcher finds no Python and stops."""
+        self.plant('python.exe')
+        self.plant('py.exe')
+        env = dict(self.without_protection(), SMART_AI_NO_AUTO_PYTHON='1')
+        return subprocess.run([shutil.which('node'), str(path), '--version'], env=env, capture_output=True, text=True)
+
+    def test_the_risk_is_real_for_the_node_launcher(self):
+        source = (ROOT / 'bin' / 'ai.js').read_text(encoding='utf-8')
+        line = "if (process.platform === 'win32') process.env.NoDefaultCurrentDirectoryInExePath = '1';\n"
+        self.assertIn(line, source)
+        unprotected = self.folder / 'ai.js'
+        unprotected.write_text(source.replace(line, ''), encoding='utf-8')
+        self.assertEqual(self.run_launcher(unprotected).returncode, 1)
+
+    def test_the_node_launcher_ignores_the_working_directory(self):
+        out = self.run_launcher(ROOT / 'bin' / 'ai.js')
+        self.assertEqual(out.returncode, 0, out.stderr)
 
     def test_planted_node_in_the_working_directory_is_not_picked(self):
         (self.folder / 'node.cmd').write_text('@echo planted\n')

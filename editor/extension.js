@@ -8,6 +8,9 @@ const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 
+// Without this, Windows starts git.exe or ai.exe from the workspace before looking in PATH
+if (process.platform === 'win32') process.env.NoDefaultCurrentDirectoryInExePath = '1';
+
 // Paths git sees as changed right now (porcelain, relative to repo root).
 function gitStatusPaths(cwd) {
   const paths = [];
