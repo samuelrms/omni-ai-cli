@@ -3,6 +3,9 @@ const test = require('node:test');
 const assert = require('node:assert');
 const Module = require('module');
 const vm = require('vm');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 const state = { user: {}, workspace: {}, sent: [], executed: [], updates: [], providers: {}, commands: {} };
 const vscode = {
@@ -18,6 +21,7 @@ const vscode = {
     registerWebviewViewProvider: (id, provider) => { state.providers[id] = provider; return { dispose() {} }; },
     createTerminal: () => ({ show() {}, sendText: (text) => state.sent.push(text), exitStatus: undefined }),
     showWarningMessage: async () => undefined,
+    showErrorMessage: async () => undefined,
     showInformationMessage: async () => undefined,
     showInputBox: async () => 'hello',
     activeTextEditor: null,
@@ -136,6 +140,57 @@ test('repository settings do not reach the terminal or the executable', async ()
   state.commands['omni-ai.doctor']();
   await state.commands['omni-ai.ask']();
   assert.deepEqual(state.sent, ['ai doctor', "ai 'hello'"]);
+});
+
+function asWindows(fn) {
+  const real = Object.getOwnPropertyDescriptor(process, 'platform');
+  Object.defineProperty(process, 'platform', { ...real, value: 'win32' });
+  return Promise.resolve().then(fn).finally(() => Object.defineProperty(process, 'platform', real));
+}
+
+const fileOnTheLine = /^ai --prompt-file "([^"]+)"$/;
+const editorWith = (text) => ({ selection: { isEmpty: true }, document: { getText: () => text } });
+const hostile = `it's "x" & y %PATH% $(z)`;
+
+test('on Windows a typed request stays off the terminal line', () => asWindows(async () => {
+  reset();
+  const showInputBox = vscode.window.showInputBox;
+  vscode.window.showInputBox = async () => hostile;
+  try { await state.commands['omni-ai.ask'](); } finally { vscode.window.showInputBox = showInputBox; }
+  const [, file] = state.sent[0].match(fileOnTheLine);
+  assert.equal(fs.readFileSync(file, 'utf8'), hostile);
+  fs.unlinkSync(file);
+}));
+
+test('on Windows the selection stays off the terminal line', () => asWindows(async () => {
+  reset();
+  vscode.window.activeTextEditor = editorWith(hostile);
+  try { state.commands['omni-ai.explainSelection'](); } finally { vscode.window.activeTextEditor = null; }
+  const [, file] = state.sent[0].match(fileOnTheLine);
+  assert.equal(fs.readFileSync(file, 'utf8'), `Explain this code: ${hostile}`);
+  fs.unlinkSync(file);
+}));
+
+test('on Windows a temporary folder unsafe for a terminal stops the request', () => asWindows(async () => {
+  reset();
+  const tmpdir = os.tmpdir;
+  const folder = fs.mkdtempSync(path.join(tmpdir(), 'a&b'));
+  os.tmpdir = () => folder;
+  try { await state.commands['omni-ai.ask'](); } finally { os.tmpdir = tmpdir; fs.rmSync(folder, { recursive: true }); }
+  assert.deepEqual(state.sent, []);
+}));
+
+test('on Windows the remote session and the conversation stay off the terminal line', () => asWindows(async () => {
+  reset();
+  chatView().handler({ type: 'remote', name: `x' & y` });
+  assert.deepEqual(state.sent, ['claude --remote-control x----y']);
+}));
+
+test('elsewhere the request keeps going on the line', async () => {
+  reset();
+  vscode.window.activeTextEditor = editorWith('code');
+  try { state.commands['omni-ai.explainSelection'](); } finally { vscode.window.activeTextEditor = null; }
+  assert.match(state.sent[0], /^ai 'Explain this code:' "\$\(cat '.*'\)"$/);
 });
 
 test('user settings still apply, and odd paths are quoted', async () => {

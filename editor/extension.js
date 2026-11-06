@@ -100,17 +100,42 @@ function run(commandLine) {
   omniTerminal().sendText(commandLine, true);
 }
 
-/** Write text to a temp file and return a shell snippet that expands to its contents. */
-function fromTempFile(text) {
+function writeTempFile(text) {
   const file = path.join(os.tmpdir(), `omni-ai-${Date.now()}.txt`);
   fs.writeFileSync(file, text, 'utf8');
-  return `"$(cat ${shq(file)})"`;
+  return file;
+}
+
+/** Write text to a temp file and return a shell snippet that expands to its contents. */
+function fromTempFile(text) {
+  return `"$(cat ${shq(writeTempFile(text))})"`;
+}
+
+/**
+ * The request as terminal arguments, or null when it cannot go safely. On Windows no text goes on the
+ * line: quoting differs between PowerShell and cmd.exe, and ai.cmd hands its arguments to cmd.exe.
+ */
+function requestArgs(typed, selection) {
+  if (process.platform !== 'win32') {
+    return selection === undefined ? shq(typed) : `${shq(typed)} ${fromTempFile(selection)}`;
+  }
+  const file = writeTempFile(selection === undefined ? typed : `${typed} ${selection}`);
+  if (/["%$`!&|<>^]/.test(file)) {
+    vscode.window.showErrorMessage('Omni AI: the temporary folder has characters that cannot be used in a terminal.');
+    return null;
+  }
+  return `--prompt-file "${file}"`;
+}
+
+function runRequest(typed, selection) {
+  const args = requestArgs(typed, selection);
+  if (args) run(`${baseCommand()} ${args}`);
 }
 
 async function ask() {
   const prompt = await vscode.window.showInputBox({ prompt: 'Omni AI: ask', placeHolder: 'Your question' });
   if (!prompt) return;
-  run(`${baseCommand()} ${shq(prompt)}`);
+  runRequest(prompt);
 }
 
 function selectionText() {
@@ -126,7 +151,7 @@ function explainSelection() {
     vscode.window.showWarningMessage('Omni AI: nothing selected.');
     return;
   }
-  run(`${baseCommand()} ${shq('Explain this code:')} ${fromTempFile(text)}`);
+  runRequest('Explain this code:', text);
 }
 
 async function runOnSelection() {
@@ -137,7 +162,7 @@ async function runOnSelection() {
   }
   const prompt = await vscode.window.showInputBox({ prompt: 'Omni AI: prompt for the selection' });
   if (!prompt) return;
-  run(`${baseCommand()} ${shq(prompt)} ${fromTempFile(text)}`);
+  runRequest(prompt, text);
 }
 
 function openChat() {
@@ -435,11 +460,13 @@ class OmniChatView {
     const ctx = 'Continue this conversation remotely. Context:\n\n' + tail + '\n\nContinue from here.';
     const f = path.join(os.tmpdir(), 'omni-remote-' + Date.now() + '.txt');
     let seeded = false;
-    try { fs.writeFileSync(f, ctx); seeded = true; } catch (e) { /* no seed */ }
+    // On Windows the conversation stays off the terminal line: it holds model text, and the tool is a .cmd
+    const windows = process.platform === 'win32';
+    if (!windows) { try { fs.writeFileSync(f, ctx); seeded = true; } catch (e) { /* no seed */ } }
     const sess = name || ('omni-' + path.basename(workspaceCwd()));
     const term = vscode.window.createTerminal({ name: 'Omni · Remote Control', cwd: workspaceCwd() });
     term.show();
-    term.sendText(shellBin(userSetting('claudeBin', 'claude')) + ' --remote-control ' + shq(sess) + (seeded ? ' "$(cat \'' + f + '\')"' : ''));
+    term.sendText(shellBin(userSetting('claudeBin', 'claude')) + ' --remote-control ' + (windows ? sess.replace(/[^A-Za-z0-9_-]/g, '-') : shq(sess)) + (seeded ? ' "$(cat \'' + f + '\')"' : ''));
   }
 
   // Open a file referenced in the chat (click). Tries the path, then searches the workspace by basename.
