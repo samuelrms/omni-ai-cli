@@ -58,7 +58,9 @@ wait_up
 "${compose[@]}" down >/dev/null
 OMNI_MODE=auto "${compose[@]}" up -d --quiet-pull
 wait_up
-docker logs omni 2>&1 | grep -q 'modo auto' || fail 'the auto mode did not reach the server'
+# Read first: with pipefail, `grep -q` stops at the match and the cut-off `docker logs` counts as a failure
+logs="$(docker logs omni 2>&1)"
+grep -q 'modo auto' <<<"$logs" || fail 'the auto mode did not reach the server'
 
 # The administration API: its own key, and a published port counts as external access
 "${compose[@]}" down >/dev/null
