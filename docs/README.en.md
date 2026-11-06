@@ -564,6 +564,7 @@ On first start, the server creates a key and shows it once. Only its hash is sto
 
 **Limitations:**
 
+- When the server's mode refuses an action and the tool ends with an error, as Grok does, the response is `403 action_not_allowed`.
 - `temperature` only applies to OpenRouter, DeepSeek and Grok over the API. CLIs ignore it, and it shows up in `X-Omni-Ignored-Params`.
 - `max_tokens` is approximate on CLIs (about 4 characters per token).
 - `usage` is estimated when the provider does not report it.

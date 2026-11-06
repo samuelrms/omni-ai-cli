@@ -236,6 +236,13 @@ class Status(AdminCase):
         self.assertEqual(body['data'][0]['name'], 'main')
         self.assertNotIn('config_dir', json.dumps(body))
 
+    def test_main_logins_are_listed(self):
+        from omni_ai.server import admin as module
+        with patch.object(module, 'installed', lambda tool: tool == 'grok'), patch('omni_ai.onboarding.logged_in', lambda tool: True), \
+                patch.object(module.config_tool, 'profiles', lambda: {'profiles': {}, 'accounts': {}}):
+            data = module.accounts()['data']
+        self.assertEqual([(a['tool'], a['id'], a['logged_in']) for a in data], [('grok', 'grok', True)])
+
     def test_unknown_route(self):
         self.assertEqual(self.admin('GET', '/admin/nope')[0], 404)
         self.assertEqual(self.admin('PUT', '/admin/health', {})[0], 404)

@@ -18,8 +18,10 @@ FORCE_AFTER = 5  # seconds between asking a process to stop and killing it
 LIMITED = re.compile(LIMIT_TEXT.pattern + '|cooldown', re.I)
 MASKED = 'PII mascarado'  # the API clients say this when placeholders may show up in the streamed pieces
 
-OK, FAILED, RATE_LIMITED, TIMEOUT, DISCONNECTED, SHUTDOWN, SWITCHED = (
-    'ok', 'failed', 'rate_limited', 'timeout', 'disconnected', 'shutdown', 'switched')
+OK, FAILED, RATE_LIMITED, TIMEOUT, DISCONNECTED, SHUTDOWN, SWITCHED, DENIED = (
+    'ok', 'failed', 'rate_limited', 'timeout', 'disconnected', 'shutdown', 'switched', 'denied')
+# A headless CLI ends with an error when the server's mode refuses an action; Grok says it in a status line
+ACTION_REFUSED = re.compile(r'cannot ask for approval', re.I)
 
 
 class Execution:
@@ -36,6 +38,7 @@ class Execution:
         self.model = None
         self.protocol_error = False
         self.limited = False
+        self.denied = False
         self.masked = False
         self.sent_delta = False
         self.tokens = None
@@ -86,7 +89,9 @@ class Execution:
             return self.stop_reason
         if code == 0 and self.answer.strip() and not self.protocol_error:
             return OK
-        return RATE_LIMITED if self.limited else FAILED
+        if self.limited:
+            return RATE_LIMITED
+        return DENIED if self.denied else FAILED
 
     def stop(self, reason):
         """Stops the whole process tree, gently first. The first reason given is the one reported."""
@@ -117,6 +122,7 @@ class Execution:
             # Router status line: only used to tell why it failed, never sent to the client
             self.masked = self.masked or MASKED in raw
             self.limited = self.limited or bool(LIMITED.search(raw))
+            self.denied = self.denied or bool(ACTION_REFUSED.search(raw))
             return
         if agy_events.is_agy_event(event):
             self._antigravity(event)

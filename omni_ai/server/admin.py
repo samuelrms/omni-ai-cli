@@ -179,12 +179,16 @@ def delete_key(key_id):
 
 def accounts():
     claude = [{'tool': 'claude', 'name': name, 'enabled': conf.get('enabled', True),
-               'logged_in': bool(config_tool.logged_in(conf)), 'cooldown_seconds': cooldown_left(name)}
+               'logged_in': bool(config_tool.logged_in(conf)), 'id': name, 'cooldown_seconds': cooldown_left(name)}
               for name, conf in config_tool.ordered(_accounts_data())]
-    others = [{'tool': tool, 'name': name, 'enabled': conf.get('enabled', True),
+    # The main login of the other CLIs: not a profile, but what /admin/accounts/{tool}/login acts on
+    from ..onboarding import logged_in
+    mains = [{'tool': tool, 'name': 'primary', 'id': tool, 'enabled': True, 'logged_in': bool(logged_in(tool)), 'cooldown_seconds': cooldown_left(tool)}
+             for tool in CLIS if tool in config_tool.MAIN_LOGINS and tool != 'claude' and installed(tool)]
+    others = [{'tool': tool, 'name': name, 'id': f'{tool}.{name}', 'enabled': conf.get('enabled', True),
                'logged_in': bool(config_tool.tool_logged_in(tool, conf)), 'cooldown_seconds': cooldown_left(f'{tool}:{name}')}
               for tool in CLIS if tool != 'claude' for name, conf in config_tool.tool_accounts(tool)]
-    return {'data': claude + others}
+    return {'data': claude + mains + others}
 
 
 def list_client_keys():

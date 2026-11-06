@@ -17,7 +17,7 @@ from . import admin, auth, protocol
 from .emulation import Emulated, target as emulation_target
 from .logins import Logins
 from .native import Native, capable
-from .execution import DISCONNECTED, Execution, OK, RATE_LIMITED, SWITCHED, TIMEOUT
+from .execution import DENIED, DISCONNECTED, Execution, OK, RATE_LIMITED, SWITCHED, TIMEOUT
 from .protocol import AUTO_MODEL, RequestError, TOOL_PREFIX
 
 MAX_BODY_BYTES = 1_000_000
@@ -26,6 +26,8 @@ WATCH_INTERVAL = 1
 FAILURES = {
     RATE_LIMITED: (429, 'All accounts and providers are at their limit. Try again later.', 'rate_limit_error', 'rate_limit_exceeded'),
     TIMEOUT: (504, 'The request timed out.', 'timeout_error', 'timeout'),
+    DENIED: (403, "The tool tried an action that this server's mode does not allow.",
+             'permission_error', 'action_not_allowed'),
     SWITCHED: (502, 'The provider failed after the answer had started.', 'api_error', 'provider_failed'),
 }
 GENERIC_FAILURE = (502, 'No provider could answer this request.', 'api_error', 'provider_failed')

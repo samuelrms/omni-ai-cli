@@ -565,6 +565,7 @@ En el primer inicio, el servidor crea una clave y la muestra una sola vez. Solo 
 
 **Limitaciones:**
 
+- Cuando el modo del servidor niega una acción y la herramienta termina con error, como hace Grok, la respuesta es `403 action_not_allowed`.
 - `temperature` solo se aplica en OpenRouter, DeepSeek y Grok por API. Los CLI la ignoran, y aparece en `X-Omni-Ignored-Params`.
 - `max_tokens` es aproximado en los CLI (unos 4 caracteres por token).
 - `usage` es estimado cuando el proveedor no informa el consumo.
