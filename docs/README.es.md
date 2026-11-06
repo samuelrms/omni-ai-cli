@@ -465,6 +465,30 @@ ai serve --host 0.0.0.0 --port 9000 --max-concurrent 4 --timeout 600
 ai serve keys [list | add NAME | remove NAME]
 ```
 
+### API de administración
+
+Desactivada por defecto. Configura un servidor en ejecución sin acceso al shell.
+
+```bash
+ai serve admin-keys add ops                    # clave propia, mostrada una sola vez
+ai serve --enable-admin
+curl -H "Authorization: Bearer omni-admin-..." http://127.0.0.1:8080/admin/health
+```
+
+| Ruta | Función |
+| --- | --- |
+| `GET/PUT /admin/config` | Modelos, orden de fallback (`fallback_order`) y `routing` |
+| `GET/POST /admin/keys`, `DELETE /admin/keys/{id}` | Claves de proveedores. El id es `openrouter` u `openrouter.work` |
+| `GET /admin/accounts` | Cuentas, inicio de sesión y cooldown |
+| `GET/POST /admin/api-keys`, `DELETE /admin/api-keys/{nombre}` | Claves de los clientes de `/v1` |
+| `GET /admin/health` | Estado del servidor |
+
+- **Claves separadas:** una clave de `/v1` nunca abre `/admin`, ni al revés. Sin clave de administración, `--enable-admin` no arranca.
+- **Red:** desde fuera de esta máquina, exige HTTPS con proxy inverso, que debe definir `X-Forwarded-Proto`. `--admin-allow-http` desactiva esta comprobación. En Docker, el puerto publicado cuenta como acceso externo.
+- **Secretos:** las respuestas muestran solo el final de las claves de proveedores. La excepción es la clave de cliente recién creada, mostrada una sola vez.
+- **Campos protegidos:** el modo de permisos, las rutas de binarios y `config_dir` devuelven 403.
+- **Cuidado:** esta clave puede activar modelos de pago (`openrouter_paid`) y cambiar claves de proveedores. En Docker, usa `SMART_AI_ADMIN=1`.
+
 ### Como servicio
 
 ```bash
@@ -569,6 +593,7 @@ omni.example.com {
 | `~/.cache/smart-ai/state.json` | Cooldowns activos |
 | `~/.cache/smart-ai/usage.log` | Log de uso, solo metadatos |
 | `~/.config/smart-ai/server_keys.json` | Hash de las claves de `ai serve` (permiso 600) |
+| `~/.config/smart-ai/admin_keys.json` | Hash de las claves de la API de administración (permiso 600) |
 | `~/.cache/smart-ai/costs.jsonl` | Costo y tokens de cada pedido del chat, sin pregunta ni respuesta (total del día en `/usage`) |
 
 ---

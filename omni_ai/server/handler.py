@@ -2,6 +2,7 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import logging
+import re
 import select
 import socket
 import socketserver
@@ -12,7 +13,7 @@ import uuid
 from .. import config as config_tool
 from ..cli.base import installed
 from ..tools import TOOLS
-from . import auth, protocol
+from . import admin, auth, protocol
 from .execution import DISCONNECTED, Execution, OK, RATE_LIMITED, SWITCHED, TIMEOUT
 from .protocol import AUTO_MODEL, RequestError, TOOL_PREFIX
 
@@ -63,6 +64,8 @@ class Server(ThreadingHTTPServer):
     daemon_threads = True
     block_on_close = False
 
+    admin_enabled = admin_allow_http = False
+
     def __init__(self, address, max_concurrent=4, timeout=600, mode='plan', workdir=None):
         host = address[0]
         self.address_family = socket.AF_INET6 if ':' in host else socket.AF_INET
@@ -70,6 +73,7 @@ class Server(ThreadingHTTPServer):
         self.request_timeout = timeout
         self.mode, self.workdir = mode, workdir
         self.running = set()
+        self.started = time.monotonic()
         self.running_lock = threading.Lock()
         super().__init__(address, Handler)
 
@@ -93,8 +97,9 @@ class Handler(BaseHTTPRequestHandler):
     timeout = SOCKET_TIMEOUT
 
     def log_message(self, fmt, *args):
-        # Request line and status only: never headers or bodies
-        REQUEST_LOG.info(f'{self.log_date_time_string()} {fmt % args}')
+        # Request line without its query, and status: never headers or bodies
+        line = re.sub(r'[?]\S*', '', fmt % args)
+        REQUEST_LOG.info(f'{self.log_date_time_string()} {line}')
 
     def send_error(self, code, message=None, explain=None):
         """Malformed requests get the same error format as everything else."""
@@ -149,8 +154,36 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, UnicodeDecodeError):
             raise RequestError(400, 'The request body is not valid JSON.') from None
 
+    def _admin(self, method):
+        """True when this request was for an enabled administration API. Disabled, /admin is just an unknown route."""
+        path = self.path.split('?', 1)[0].rstrip('/')
+        if not self.server.admin_enabled or not (path == '/admin' or path.startswith('/admin/')):
+            return False
+        try:
+            admin.handle(self, method, path)
+        except SystemExit:  # a key file is corrupt: fail closed
+            raise RequestError(500, 'The server key file could not be read.', 'api_error') from None
+        return True
+
+    def _no_such_method(self, method):
+        try:
+            if not self._admin(method):
+                self._authenticate()
+                raise RequestError(404, 'Unknown route.')
+        except RequestError as error:
+            self._fail(error)
+
+    def do_PUT(self):
+        self._no_such_method('PUT')
+
+    def do_DELETE(self):
+        self.close_connection = bool(self.headers.get('Content-Length'))  # a body is not read here
+        self._no_such_method('DELETE')
+
     def do_GET(self):
         try:
+            if self._admin('GET'):
+                return
             self._authenticate()
             path = self.path.split('?', 1)[0].rstrip('/')
             ids = model_ids()
@@ -167,6 +200,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         try:
+            if self._admin('POST'):
+                return
             self._authenticate()
             if self.path.split('?', 1)[0].rstrip('/') != '/v1/chat/completions':
                 raise RequestError(404, 'Unknown route.')

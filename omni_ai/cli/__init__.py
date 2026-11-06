@@ -67,6 +67,7 @@ USAGE = f'''{BOLD}Uso:{NC}
   ai --status | --doctor | --reset | --log | --classify "prompt"
   ai serve [--host H] [--port P] [--mode M --workdir PASTA]   Servidor compatível com a API da OpenAI
   ai serve keys [list|add|remove]    Chaves de API do servidor
+  ai serve admin-keys [list|add|remove]   Chaves da API de administração
   ai serve --install-service | --uninstall-service | --service-status
   ai --update                        Atualizar para a versão mais nova
   ai --version                       Versão do Omni AI CLI
@@ -106,7 +107,7 @@ def main(argv):
         return history_command(argv[1:])
     # Same care as `history`: `ai serve dinner at eight` stays a prompt
     if head == '--serve' or (head == 'serve' and (
-            len(argv) == 1 or argv[1].startswith('--') or (argv[1] == 'keys' and (
+            len(argv) == 1 or argv[1].startswith('--') or (argv[1] in ('keys', 'admin-keys') and (
                 len(argv) == 2 or argv[2] in ('list', 'add', 'remove'))))):
         from .. import server
         return server.main(argv[1:])

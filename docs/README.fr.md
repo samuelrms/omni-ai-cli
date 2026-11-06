@@ -474,6 +474,30 @@ ai serve --host 0.0.0.0 --port 9000 --max-concurrent 4 --timeout 600
 ai serve keys [list | add NAME | remove NAME]
 ```
 
+### API d'administration
+
+Désactivée par défaut. Configure un serveur en marche sans accès au shell.
+
+```bash
+ai serve admin-keys add ops                    # clé dédiée, affichée une seule fois
+ai serve --enable-admin
+curl -H "Authorization: Bearer omni-admin-..." http://127.0.0.1:8080/admin/health
+```
+
+| Route | Rôle |
+| --- | --- |
+| `GET/PUT /admin/config` | Modèles, ordre de fallback (`fallback_order`) et `routing` |
+| `GET/POST /admin/keys`, `DELETE /admin/keys/{id}` | Clés des fournisseurs. L'id est `openrouter` ou `openrouter.work` |
+| `GET /admin/accounts` | Comptes, connexion et cooldown |
+| `GET/POST /admin/api-keys`, `DELETE /admin/api-keys/{nom}` | Clés des clients de `/v1` |
+| `GET /admin/health` | État du serveur |
+
+- **Clés séparées :** une clé de `/v1` n'ouvre jamais `/admin`, et inversement. Sans clé d'administration, `--enable-admin` ne démarre pas.
+- **Réseau :** depuis l'extérieur de cette machine, HTTPS via un proxy inverse est exigé, et il doit définir `X-Forwarded-Proto`. `--admin-allow-http` désactive ce contrôle. Sous Docker, le port publié compte comme un accès externe.
+- **Secrets :** les réponses n'affichent que la fin des clés des fournisseurs. L'exception est la clé client tout juste créée, affichée une seule fois.
+- **Champs protégés :** le mode de permission, les chemins des binaires et `config_dir` renvoient 403.
+- **Attention :** cette clé peut activer les modèles payants (`openrouter_paid`) et remplacer les clés des fournisseurs. Sous Docker, utilisez `SMART_AI_ADMIN=1`.
+
 ### En tant que service
 
 ```bash
@@ -578,6 +602,7 @@ omni.example.com {
 | `~/.cache/smart-ai/state.json` | Cooldowns actifs |
 | `~/.cache/smart-ai/usage.log` | Journal d'utilisation, métadonnées uniquement |
 | `~/.config/smart-ai/server_keys.json` | Hachages des clés de `ai serve` (permission 600) |
+| `~/.config/smart-ai/admin_keys.json` | Hash des clés de l'API d'administration (permission 600) |
 | `~/.cache/smart-ai/costs.jsonl` | Coût et tokens de chaque demande du chat, sans question ni réponse (total du jour dans `/usage`) |
 
 ---

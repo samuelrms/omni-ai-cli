@@ -12,7 +12,7 @@ from .. import config as config_tool
 from ..chat.spend import record_spend, spend
 from ..cli.base import LIMIT_TEXT
 from ..osutils import group_kwargs, kill_tree, module_cmd, module_env
-from .auth import ENV_KEY, ENV_KEY_FILE
+from .auth import SECRET_VARS
 
 FORCE_AFTER = 5  # seconds between asking a process to stop and killing it
 LIMITED = re.compile(LIMIT_TEXT.pattern + '|cooldown', re.I)
@@ -46,8 +46,8 @@ class Execution:
         env = dict(os.environ, SMART_AI_EVENTS='1', SMART_AI_READ_ONLY='1' if self.mode == 'plan' else '0',
                    SMART_AI_MODE=self.mode, NO_COLOR='1',
                    PYTHONUNBUFFERED='1', SMART_AI_CLASSIFY_PROMPT=self.last_user)
-        env.pop(ENV_KEY, None)  # tools have no business reading the server's own key
-        env.pop(ENV_KEY_FILE, None)
+        for name in SECRET_VARS:
+            env.pop(name, None)
         env.pop('SMART_AI_TEMPERATURE', None)
         env.pop('SMART_AI_MAX_TOKENS', None)
         if self.temperature is not None:

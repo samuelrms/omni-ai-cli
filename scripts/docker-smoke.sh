@@ -59,4 +59,14 @@ OMNI_MODE=auto "${compose[@]}" up -d --quiet-pull
 wait_up
 docker logs omni 2>&1 | grep -q 'modo auto' || fail 'the auto mode did not reach the server'
 
+# The administration API: its own key, and a published port counts as external access
+"${compose[@]}" down >/dev/null
+export SMART_AI_ADMIN=1 SMART_AI_ADMIN_KEY="admin-from-environment"
+"${compose[@]}" up -d --quiet-pull
+wait_up
+admin() { curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $1" "${@:2}" "http://127.0.0.1:${OMNI_PORT}/admin/health" || true; }
+[ "$(admin "$SMART_AI_ADMIN_KEY")" = 403 ] || fail 'the admin API answered without HTTPS'
+[ "$(admin "$SMART_AI_ADMIN_KEY" -H 'X-Forwarded-Proto: https')" = 200 ] || fail 'the admin API refused a request from the proxy'
+[ "$(admin from-environment -H 'X-Forwarded-Proto: https')" = 401 ] || fail 'a /v1 key opened the admin API'
+
 echo "Docker smoke test passed."

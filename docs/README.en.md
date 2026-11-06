@@ -464,6 +464,30 @@ ai serve --host 0.0.0.0 --port 9000 --max-concurrent 4 --timeout 600
 ai serve keys [list | add NAME | remove NAME]
 ```
 
+### Administration API
+
+Off by default. Configures a running server without shell access.
+
+```bash
+ai serve admin-keys add ops                    # its own key, shown once
+ai serve --enable-admin
+curl -H "Authorization: Bearer omni-admin-..." http://127.0.0.1:8080/admin/health
+```
+
+| Route | Purpose |
+| --- | --- |
+| `GET/PUT /admin/config` | Models, fallback order (`fallback_order`) and `routing` |
+| `GET/POST /admin/keys`, `DELETE /admin/keys/{id}` | Provider keys. The id is `openrouter` or `openrouter.work` |
+| `GET /admin/accounts` | Accounts, login and cooldown |
+| `GET/POST /admin/api-keys`, `DELETE /admin/api-keys/{name}` | Keys for `/v1` clients |
+| `GET /admin/health` | Server health |
+
+- **Separate keys:** a `/v1` key never opens `/admin`, and vice versa. Without an admin key, `--enable-admin` does not start.
+- **Network:** from outside this machine, it requires HTTPS through a reverse proxy, which must set `X-Forwarded-Proto`. `--admin-allow-http` turns this check off. In Docker, the published port counts as external access.
+- **Secrets:** responses show only the end of provider keys. The exception is a newly created client key, shown once.
+- **Protected fields:** permission mode, binary paths and `config_dir` return 403.
+- **Careful:** this key can turn on paid models (`openrouter_paid`) and replace provider keys. In Docker, use `SMART_AI_ADMIN=1`.
+
 ### As a service
 
 ```bash
@@ -568,6 +592,7 @@ omni.example.com {
 | `~/.cache/smart-ai/state.json` | Active cooldowns |
 | `~/.cache/smart-ai/usage.log` | Usage log, metadata only |
 | `~/.config/smart-ai/server_keys.json` | Hashes of the `ai serve` keys (permission 600) |
+| `~/.config/smart-ai/admin_keys.json` | Hashes of the administration API keys (mode 600) |
 | `~/.cache/smart-ai/costs.jsonl` | Cost and tokens of each chat request, no prompt or answer (day total in `/usage`) |
 
 ---
