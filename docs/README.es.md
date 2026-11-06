@@ -519,6 +519,14 @@ En los modos de escritura, los pedidos se ejecutan en paralelo, hasta `--max-con
 - **Cola:** por encima del límite, el pedido espera hasta `--queue-wait` segundos (60), con hasta `--queue-size` en la cola (16). Solo entonces recibe 429.
 - **Limitaciones:** los cambios sin commit y los archivos ignorados por git, como `node_modules`, no entran en el worktree. El aislamiento cubre archivos: puertos, bases de datos y otros servicios usados por los comandos aún pueden chocar, y un comando puede escribir fuera de la carpeta. La memoria también cuenta: cada pedido es un proceso de CLI.
 
+```bash
+ai serve work --workdir CARPETA                # lista
+ai serve work remove ID --workdir CARPETA      # muestra; con --yes, borra
+ai serve work prune --older-than 30 --workdir CARPETA  # también --merged; con --yes, borra
+```
+
+Sin `--yes`, no se borra nada. El comando solo alcanza ramas `omni/` y copias de Omni. Un elemento en uso, o una copia cambiada hace menos de 15 minutos, se conserva.
+
 ### Como servicio
 
 ```bash

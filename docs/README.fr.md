@@ -528,6 +528,14 @@ Dans les modes d'écriture, les requêtes s'exécutent en parallèle, jusqu'à `
 - **File d'attente :** au-delà de la limite, la requête attend jusqu'à `--queue-wait` secondes (60), avec jusqu'à `--queue-size` en file (16). Ensuite seulement, elle reçoit 429.
 - **Limites :** les modifications non validées et les fichiers ignorés par git, comme `node_modules`, ne sont pas dans le worktree. L'isolation couvre les fichiers : ports, bases de données et autres services utilisés par les commandes peuvent encore entrer en conflit, et une commande peut écrire hors du dossier. La mémoire compte aussi : chaque requête est un processus de CLI.
 
+```bash
+ai serve work --workdir DOSSIER                # liste
+ai serve work remove ID --workdir DOSSIER      # affiche ; avec --yes, supprime
+ai serve work prune --older-than 30 --workdir DOSSIER  # aussi --merged ; avec --yes, supprime
+```
+
+Sans `--yes`, rien n'est supprimé. La commande n'atteint que les branches `omni/` et les copies d'Omni. Un élément en cours d'utilisation, ou une copie modifiée il y a moins de 15 minutes, est conservé.
+
 ### En tant que service
 
 ```bash

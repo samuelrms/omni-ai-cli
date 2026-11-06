@@ -518,6 +518,14 @@ In write modes, requests run in parallel, up to `--max-concurrent`, without touc
 - **Queue:** over the limit, a request waits up to `--queue-wait` seconds (60), with up to `--queue-size` in line (16). Only then does it get 429.
 - **Limitations:** uncommitted changes and files ignored by git, such as `node_modules`, are not in the worktree. Isolation covers files: ports, databases and other services used by commands can still collide, and a command can write outside the folder. Memory counts too: each request is one CLI process.
 
+```bash
+ai serve work --workdir FOLDER                 # lists
+ai serve work remove ID --workdir FOLDER       # shows; with --yes, deletes
+ai serve work prune --older-than 30 --workdir FOLDER  # also --merged; with --yes, deletes
+```
+
+Without `--yes`, nothing is deleted. The command only reaches `omni/` branches and Omni's copies. An item in use, or a copy changed less than 15 minutes ago, is kept.
+
 ### As a service
 
 ```bash

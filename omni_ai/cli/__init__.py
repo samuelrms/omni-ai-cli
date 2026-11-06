@@ -68,6 +68,7 @@ USAGE = f'''{BOLD}Uso:{NC}
   ai serve [--host H] [--port P] [--mode M --workdir PASTA]   Servidor compatível com a API da OpenAI
   ai serve keys [list|add|remove]    Chaves de API do servidor
   ai serve admin-keys [list|add|remove]   Chaves da API de administração
+  ai serve work [list|remove ID|prune]   Branches e cópias dos pedidos de escrita
   ai serve --install-service | --uninstall-service | --service-status
   ai --update                        Atualizar para a versão mais nova
   ai --version                       Versão do Omni AI CLI
@@ -108,7 +109,8 @@ def main(argv):
     # Same care as `history`: `ai serve dinner at eight` stays a prompt
     if head == '--serve' or (head == 'serve' and (
             len(argv) == 1 or argv[1].startswith('--') or (argv[1] in ('keys', 'admin-keys') and (
-                len(argv) == 2 or argv[2] in ('list', 'add', 'remove'))))):
+                len(argv) == 2 or argv[2] in ('list', 'add', 'remove'))) or (argv[1] == 'work' and (
+                len(argv) == 2 or argv[2] in ('list', 'remove', 'prune') or argv[2].startswith('--'))))):
         from .. import server
         return server.main(argv[1:])
     if head == '--sync':
