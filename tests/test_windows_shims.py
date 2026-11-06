@@ -206,7 +206,7 @@ class RealWindows(Temp):
         self.assertIsNone(osutils.resolve_bin('omni-planted'))
 
     def without_protection(self, env=None):
-        return {key: value for key, value in (env or os.environ).items() if key != 'NoDefaultCurrentDirectoryInExePath'}
+        return {key: value for key, value in (env or os.environ).items() if key.upper() != 'NODEFAULTCURRENTDIRECTORYINEXEPATH'}
 
     def plant(self, name):
         shutil.copy(shutil.which('node'), self.folder / name)
