@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -168,6 +169,29 @@ class FindingTools(Temp):
             self.assertEqual(osutils._which('tool.cmd', path=str(self.folder)), str(self.folder / 'tool.cmd'))
 
 
+class StartingByName(Temp):
+    def found(self, args):
+        with patch.object(osutils, 'WINDOWS', True):
+            return osutils._found_on_path(args)
+
+    def test_a_bare_name_becomes_the_path_found(self):
+        (self.folder / 'git.exe').write_text('')
+        with patch.dict(os.environ, {'PATH': str(self.folder), 'PATHEXT': '.exe'}):
+            self.assertEqual(self.found(['git', '--version']), [str(self.folder / 'git.exe'), '--version'])
+
+    def test_a_program_outside_path_is_not_started(self):
+        with patch.dict(os.environ, {'PATH': str(self.folder)}), self.assertRaises(FileNotFoundError):
+            self.found(['git', '--version'])
+
+    def test_paths_and_empty_commands_are_left_alone(self):
+        for args in ([str(self.folder / 'x.exe'), 'y'], [os.path.join('.', 'x.exe')], 'git --version', []):
+            with self.subTest(args=args):
+                self.assertEqual(self.found(args), args)
+
+    def test_only_windows_replaces_popen(self):
+        self.assertIs(subprocess.Popen is osutils._PathOnlyPopen, os.name == 'nt')
+
+
 @unittest.skipUnless(os.name == 'nt', 'needs cmd.exe')
 class RealWindows(Temp):
     TEXTS = (ATTACK, '"&echo planted>proof.txt&"', '%PATH%', 'a"b', 'c:\\folder\\', '^&', '!x!', 'one\ntwo', 'ação 日本語', '', '-x')
@@ -203,6 +227,42 @@ class RealWindows(Temp):
     def test_planted_tool_in_the_working_directory_is_not_picked(self):
         (self.folder / 'omni-planted.cmd').write_text('@echo planted\n')
         self.assertIsNone(osutils.resolve_bin('omni-planted'))
+
+    def plant(self, name):
+        shutil.copy(shutil.which('node'), self.folder / name)
+
+    def test_the_risk_is_real_for_a_bare_name(self):
+        self.plant('git.exe')
+        code = "import subprocess; print(subprocess.run(['git', '--version'], capture_output=True, text=True).stdout)"
+        out = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True).stdout
+        self.assertTrue(out.startswith('v'), out)
+
+    def test_a_bare_name_ignores_the_working_directory(self):
+        self.plant('git.exe')
+        out = subprocess.run(['git', '--version'], capture_output=True, text=True).stdout
+        self.assertTrue(out.startswith('git version'), out)
+
+    def launcher_env(self):
+        marker = self.folder / 'planted-ran'
+        script = self.folder / 'mark.js'
+        script.write_text("const fs = require('fs'), path = require('path');\n"
+                          f"if (path.dirname(process.execPath) === {json.dumps(str(self.folder))}) fs.writeFileSync({json.dumps(str(marker))}, 'x');\n")
+        return dict(os.environ, NODE_OPTIONS=f'--require={script}'), marker
+
+    def test_the_risk_is_real_for_the_node_launcher(self):
+        self.plant('python.exe')
+        env, marker = self.launcher_env()
+        subprocess.run([shutil.which('node'), '-e', "require('child_process').spawnSync('python', ['--version'])"], env=env, capture_output=True)
+        self.assertTrue(marker.exists())
+
+    def test_the_node_launcher_ignores_the_working_directory(self):
+        self.plant('python.exe')
+        self.plant('py.exe')
+        env, marker = self.launcher_env()
+        launcher = Path(__file__).resolve().parent.parent / 'bin' / 'ai.js'
+        out = subprocess.run([shutil.which('node'), str(launcher), '--version'], env=env, capture_output=True, text=True)
+        self.assertFalse(marker.exists())
+        self.assertEqual(out.returncode, 0, out.stderr)
 
     def test_planted_node_in_the_working_directory_is_not_picked(self):
         (self.folder / 'node.cmd').write_text('@echo planted\n')

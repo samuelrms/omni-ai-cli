@@ -112,6 +112,25 @@ def resolve_bin(name):
     return _which(name) or _which(name, path=extra)
 
 
+def _found_on_path(args):
+    """Windows starts a bare name from the working directory first, where a repository can plant a git.exe."""
+    if not isinstance(args, (list, tuple)) or not args or os.path.basename(os.fspath(args[0])) != os.fspath(args[0]):
+        return args
+    found = _which(os.fspath(args[0]))
+    if not found:
+        raise FileNotFoundError(2, 'No such program', os.fspath(args[0]))
+    return [found, *args[1:]]
+
+
+class _PathOnlyPopen(subprocess.Popen):
+    def __init__(self, args, *rest, **options):
+        super().__init__(_found_on_path(args), *rest, **options)
+
+
+if WINDOWS:
+    subprocess.Popen = _PathOnlyPopen  # every process this program starts, including what is added later
+
+
 def _is_shim(path):
     return Path(path).suffix.lower() in ('.cmd', '.bat')
 
