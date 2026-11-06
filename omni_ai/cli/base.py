@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .. import config as config_tool
 from .. import usage
-from ..osutils import REPO, clean_terminal, enable_ansi, module_cmd, module_env, resolve_bin
+from ..osutils import REPO, clean_terminal, direct_argv, enable_ansi, module_cmd, module_env, resolve_bin
 from ..tools import CLIS, KEY_NAMES, TOOLS
 
 STATE_FILE = Path(os.environ.get('SMART_AI_STATE', '~/.cache/smart-ai/state.json')).expanduser()
@@ -111,7 +111,12 @@ def run(argv, env=None, stdin=None):
     if not executable:
         say(f'{RED}✗ {argv[0]} não encontrado.{NC}')
         return 127, ''
-    process = subprocess.Popen([executable] + argv[1:], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+    command = direct_argv(executable, argv[1:])
+    if not command:
+        say(f'{RED}✗ {argv[0]}: este pedido não pode ser passado com segurança pelo atalho {executable}.{NC}')
+        say(f'{DIM}  Instale a ferramenta com o npm ou aponte para o executável dela.{NC}')
+        return 126, ''
+    process = subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
                                text=True, encoding='utf-8', errors='replace')
     writer = None

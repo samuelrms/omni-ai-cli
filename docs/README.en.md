@@ -780,6 +780,7 @@ The workflow already requests `id-token: write` and `NPM_CONFIG_PROVENANCE`; the
 | `Not inside a trusted directory` (Codex) | Old install. Run the installer again. |
 | `Claude Code não instalado` | `./scripts/install.sh` (or `scripts\install.ps1` on Windows) installs it with the official installer. |
 | Windows: skill links fail | Turn on Developer Mode or run as administrator; otherwise `ai` uses folder junctions. |
+| Windows: `este pedido não pode ser passado com segurança` | The tool was installed through a `.cmd` shim `ai` does not recognize. Install it with npm or set `<TOOL>_BIN` to its executable. |
 | `/model` changes nothing | A `SMART_AI_*_MODEL` variable is set and takes precedence. |
 | `/key` changes nothing | The tool's variable (`ANTHROPIC_API_KEY` etc.) is set and takes precedence. |
 | `Sessão já aberta em outro terminal` | Close the other terminal or use `/new`. |
@@ -795,7 +796,7 @@ The workflow already requests `id-token: write` and `NPM_CONFIG_PROVENANCE`; the
   access the files. The agents do not edit the project at the same time.
 - The simple/complex classification is by keywords and length, not by a model.
 - Switching models does not renew the account's quota.
-- On Windows the code uses the native equivalents (process groups and `taskkill`, `msvcrt`, folder junctions), but it has only been tested for real on macOS.
+- On Windows the code uses the native equivalents (process groups and `taskkill`, `msvcrt`, folder junctions), but it has only been tested for real on macOS. The exception is running tools installed through npm, tested in CI on Windows.
 
 ---
 

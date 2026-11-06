@@ -791,6 +791,7 @@ Le workflow demande déjà `id-token: write` et `NPM_CONFIG_PROVENANCE` ; il n'y
 | `Not inside a trusted directory` (Codex) | Ancienne installation. Relancez l'installateur. |
 | `Claude Code não instalado` | `./scripts/install.sh` (ou `scripts\install.ps1` sous Windows) l'installe avec l'installateur officiel. |
 | Windows : les liens de skills échouent | Activez le mode développeur ou lancez en administrateur ; sinon `ai` utilise des jonctions de dossier. |
+| Windows : `este pedido não pode ser passado com segurança` | L'outil a été installé via un raccourci `.cmd` que `ai` ne reconnaît pas. Installez-le avec npm ou définissez `<OUTIL>_BIN` avec son exécutable. |
 | `/model` ne change rien | Une variable `SMART_AI_*_MODEL` est définie et elle est prioritaire. |
 | `/key` ne change rien | La variable de l'outil (`ANTHROPIC_API_KEY` etc.) est définie et elle est prioritaire. |
 | `Sessão já aberta em outro terminal` | Fermez l'autre terminal ou utilisez `/new`. |
@@ -808,7 +809,7 @@ Le workflow demande déjà `id-token: write` et `NPM_CONFIG_PROVENANCE` ; il n'y
 - La classification simple/complexe repose sur des mots-clés et la taille, pas sur un
   modèle.
 - Changer de modèle ne renouvelle pas le quota du compte.
-- Sous Windows le code utilise les équivalents natifs (groupes de processus et `taskkill`, `msvcrt`, jonctions de dossier), mais il n'a été testé pour de vrai que sous macOS.
+- Sous Windows le code utilise les équivalents natifs (groupes de processus et `taskkill`, `msvcrt`, jonctions de dossier), mais il n'a été testé pour de vrai que sous macOS. L'exception est le lancement des outils installés avec npm, testé en CI sous Windows.
 
 ---
 
