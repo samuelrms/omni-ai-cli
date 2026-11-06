@@ -86,6 +86,8 @@ def main(argv):
                         help='Liga a API de administração em /admin (exige ai serve admin-keys add NOME)')
     parser.add_argument('--admin-allow-http', action='store_true', default=os.environ.get('SMART_AI_ADMIN_ALLOW_HTTP') == '1',
                         help='Aceita /admin sem HTTPS vindo de fora desta máquina (só em rede confiável)')
+    parser.add_argument('--tool-emulation', action='store_true', default=os.environ.get('SMART_AI_TOOL_EMULATION') == '1',
+                        help='Experimental: function calling emulado em Claude Code e Grok, quando não há provedor de API')
     parser.add_argument('--log-file', help='Grava os pedidos neste arquivo, com rotação por tamanho')
     parser.add_argument('--install-service', action='store_true', help='Instala como serviço do usuário (launchd ou systemd)')
     parser.add_argument('--uninstall-service', action='store_true', help='Remove o serviço')
@@ -132,6 +134,7 @@ def main(argv):
         return 1
 
     server.admin_enabled, server.admin_allow_http = args.enable_admin, args.admin_allow_http
+    server.tool_emulation = args.tool_emulation
     if args.mode != 'plan':
         server.workspaces = Workspaces(workdir)
         server.queue_size, server.queue_wait = args.queue_size, args.queue_wait
