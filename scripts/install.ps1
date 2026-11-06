@@ -62,8 +62,9 @@ New-Item -ItemType Directory -Force -Path $Bin | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $env:USERPROFILE '.cache\smart-ai') | Out-Null
 @"
 @echo off
-set "PYTHONPATH=$Root;%PYTHONPATH%"
-"$Python" -m omni_ai %*
+set "NoDefaultCurrentDirectoryInExePath=1"
+if defined PYTHONPATH (set "PYTHONPATH=$Root;%PYTHONPATH%") else (set "PYTHONPATH=$Root")
+"$Python" -P -m omni_ai %*
 "@ | Set-Content -Encoding ASCII (Join-Path $Bin 'ai.cmd')
 Write-Host "  ok Comando criado: $Bin\ai.cmd" -ForegroundColor Green
 
@@ -80,7 +81,7 @@ if ($LASTEXITCODE -ne 0) {
     claude auth login
 }
 $env:PYTHONPATH = $Root
-& $Python -m omni_ai.config account list
+& $Python -P -m omni_ai.config account list
 
 Write-Host ""
 Write-Host "Instalação concluída!" -ForegroundColor Green

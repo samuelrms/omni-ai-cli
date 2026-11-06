@@ -9,7 +9,7 @@ import sys
 import time
 
 from .. import config as config_tool
-from ..osutils import REPO, resolve_bin
+from ..osutils import SAFE_PATH, REPO, resolve_bin
 from ..tools import CLIS, TOOLS
 from . import auth
 
@@ -72,7 +72,7 @@ def command():
     found = resolve_bin('ai')
     if found:
         return [os.path.abspath(found), 'serve'], {}
-    return [sys.executable, '-m', 'omni_ai', 'serve'], {'PYTHONPATH': str(REPO)}
+    return [sys.executable, *SAFE_PATH, '-m', 'omni_ai', 'serve'], {'PYTHONPATH': str(REPO)}
 
 
 def service_path():

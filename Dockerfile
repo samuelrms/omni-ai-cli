@@ -24,7 +24,7 @@ RUN mkdir -p /opt/tools/.local/bin \
     && chmod -R a+rX /opt/tools
 
 COPY omni_ai /app/omni_ai
-RUN printf '#!/bin/sh\nPYTHONPATH=/app exec python3 -m omni_ai "$@"\n' > /usr/local/bin/ai \
+RUN printf '#!/bin/sh\nPYTHONPATH=/app exec python3 -P -m omni_ai "$@"\n' > /usr/local/bin/ai \
     && chmod 755 /usr/local/bin/ai \
     && useradd --uid 10001 --home-dir /home/omni --no-create-home omni \
     && mkdir -p /home/omni \

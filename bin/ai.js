@@ -20,7 +20,7 @@ const dataDir = process.platform === 'win32'
 const cachedPython = path.join(home, '.config', 'smart-ai', 'python-path');
 
 function works(cmd, pre) {
-  const probe = spawnSync(cmd, [...pre, '-c', 'import sys; print(sys.version_info >= (3, 11))'], { encoding: 'utf8' });
+  const probe = spawnSync(cmd, [...pre, '-P', '-c', 'import sys; print(sys.version_info >= (3, 11))'], { encoding: 'utf8' });
   return probe.status === 0 && probe.stdout.trim() === 'True';
 }
 
@@ -73,11 +73,12 @@ if (!python) {
 
 // Claude Code installed as this package's optional dependency is used when there's no global one
 const env = { ...process.env, SMART_AI_INSTALLER: 'npm',
-  PYTHONPATH: [root, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter) };
+  // An empty entry means the working directory, even with -P
+  PYTHONPATH: [root, ...(process.env.PYTHONPATH || '').split(path.delimiter)].filter(Boolean).join(path.delimiter) };
 env.PATH = [process.env.PATH, path.join(root, 'node_modules', '.bin')].join(path.delimiter);
 
 const [cmd, pre] = python;
-const child = spawn(cmd, [...pre, '-m', 'omni_ai', ...process.argv.slice(2)], { stdio: 'inherit', env });
+const child = spawn(cmd, [...pre, '-P', '-m', 'omni_ai', ...process.argv.slice(2)], { stdio: 'inherit', env });
 // Ctrl-C reaches the child through the shared terminal; just don't die before it does
 process.on('SIGINT', () => {});
 process.on('SIGTERM', () => child.kill('SIGTERM'));
