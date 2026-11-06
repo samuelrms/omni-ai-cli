@@ -411,6 +411,15 @@ class EventStream(unittest.TestCase):
         self.assertFalse(execution.sent_delta)
         self.assertEqual(execution.answer, 'a@b.com')
 
+    def test_next_attempt_clears_a_failed_one(self):
+        execution = self.execution(lambda text: None)
+        execution._line('{"type":"turn.failed","error":{"message":"limit"}}')
+        self.assertTrue(execution.protocol_error)
+        execution._line('{"type":"smart.provider","provider":"codex"}')
+        execution._line('{"type":"item.completed","item":{"type":"agent_message","text":"answer"}}')
+        self.assertFalse(execution.protocol_error)
+        self.assertEqual(execution.answer, 'answer')
+
     def test_provider_change_after_text_stops_the_request(self):
         from omni_ai.server.execution import SWITCHED
         execution = self.execution(lambda text: None)

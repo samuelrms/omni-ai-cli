@@ -105,6 +105,7 @@ def run_with_key_retry(tool, argv, env_var, label):
             continue
         if name != 'primary':
             say(f'{YELLOW}🔄 {label}: tentando a conta {name}{NC}')
+            emit_provider(tool)  # a new attempt: the reader forgets what the previous one failed with
         code, output = run(argv, dict(os.environ, **env) if env else None)
         remember_limit(account, output if code != 0 else '')
         if code == 0:
@@ -116,6 +117,7 @@ def run_with_key_retry(tool, argv, env_var, label):
         if code == 0 or origin == 'env' or cooldown_left(account):
             continue
         say(f'{YELLOW}🔑 {label}: tentando com a chave {name}{NC}')
+        emit_provider(tool)
         code, output = run(argv, dict(os.environ, **{env_var: key}))
         remember_limit(account, output if code != 0 else '')
         if code != 0 and tail_hit_limit(output):
@@ -187,6 +189,7 @@ def run_openrouter(prompt):
     for i, (name, key, _) in enumerate(keys):
         if i:
             say(f'{YELLOW}🔑 OpenRouter: tentando com a chave {name}{NC}')
+            emit_provider('openrouter')
         env = module_env(dict(os.environ, OPENROUTER_API_KEY=key, SMART_AI_OPENROUTER_PAID=values['openrouter_paid']))
         code, _ = run(argv, env, stdin=prompt)
         if code == 0:
@@ -231,6 +234,7 @@ def run_deepseek(prompt):
     for i, (name, key, _) in enumerate(keys):
         if i:
             say(f'{YELLOW}🔑 DeepSeek: tentando com a chave {name}{NC}')
+            emit_provider('deepseek')
         code, _ = run(argv, module_env(dict(os.environ, DEEPSEEK_API_KEY=key)), stdin=prompt)
         if code == 0:
             break
@@ -269,6 +273,7 @@ def run_grok(prompt):
     for i, (name, key, _) in enumerate(keys):
         if i:
             say(f'{YELLOW}🔑 Grok: tentando com a chave {name}{NC}')
+            emit_provider('grok')
         code, _ = run(argv, module_env(dict(os.environ, XAI_API_KEY=key)), stdin=prompt)
         if code == 0:
             break

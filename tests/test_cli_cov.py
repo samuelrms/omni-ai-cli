@@ -282,6 +282,47 @@ class RunWrapperTests(Base):
 
 # ─── run_claude ──────────────────────────────────────────────────
 
+class ProviderEventPerAttemptTests(Base):
+    """Each attempt announces itself, so a reader never mixes a failed attempt with the next one."""
+    def attempts(self, call, runs):
+        order = []
+        results = iter(runs)
+        def fake_run(*args, **kwargs):
+            order.append('run')
+            return next(results)
+        with patch.dict(os.environ, {'SMART_AI_EVENTS': '1'}), \
+                patch.object(cli.executors, 'run', side_effect=fake_run), \
+                patch.object(cli.executors, 'emit_provider', side_effect=lambda *a: order.append('provider')), \
+                patch.object(cli.executors, 'over_ceiling', return_value=False), \
+                patch.object(cli.executors, 'cooldown_left', return_value=0), \
+                patch.object(cli.executors, 'installed', return_value=True), \
+                patch.object(cli.executors, 'models', return_value=dict(MODELS, openrouter='', openrouter_paid='off', deepseek='', grok='')):
+            code = call()
+        return code, order
+
+    def test_saved_key_after_a_failed_login(self):
+        with patch.object(cli.config_tool, 'tool_accounts', return_value=[]), \
+                patch.object(cli.config_tool, 'stored_keys', return_value=[('principal', 'k', 'salva')]):
+            code, order = self.attempts(lambda: cli.run_with_key_retry('codex', ['codex'], 'OPENAI_API_KEY', 'Codex'), [(1, 'x'), (0, 'ok')])
+        self.assertEqual(code, 0)
+        self.assertEqual(order, ['run', 'provider', 'run'])
+
+    def test_extra_account(self):
+        with patch.object(cli.config_tool, 'tool_accounts', return_value=[('work', {'x': 1})]), \
+                patch.object(cli.config_tool, 'tool_env', return_value={'X': '1'}), \
+                patch.object(cli.config_tool, 'stored_keys', return_value=[]):
+            code, order = self.attempts(lambda: cli.run_with_key_retry('codex', ['codex'], 'OPENAI_API_KEY', 'Codex'), [(1, 'x'), (0, 'ok')])
+        self.assertEqual(code, 0)
+        self.assertEqual(order, ['run', 'provider', 'run'])
+
+    def test_second_openrouter_key(self):
+        keys = [('principal', 'a', 'salva'), ('work', 'b', 'salva')]
+        with patch.object(cli.config_tool, 'stored_keys', return_value=keys):
+            code, order = self.attempts(lambda: cli.run_openrouter('hi'), [(1, ''), (0, '')])
+        self.assertEqual(code, 0)
+        self.assertEqual(order, ['provider', 'run', 'provider', 'run'])
+
+
 class RunClaudeTests(Base):
     def test_not_installed(self):
         with patch.object(cli.executors, 'installed', return_value=False):

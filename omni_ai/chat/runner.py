@@ -135,6 +135,8 @@ class Runner:
             job['provider'] = event['provider']
             job['answers'] = []
             job['protocol_error'] = False
+            job['streamed'] = False  # what was streamed belongs to the failed attempt
+            job['stream_buf'] = ''
             job.setdefault('dispatches', []).append({'provider': event['provider'], 'profile': event.get('profile'),
                                                     'sent': job['sent'] if event['provider'] != 'openrouter' else None})
             view.provider(event['provider'], model_label(event['provider'], event.get('profile', '')))
