@@ -1,5 +1,6 @@
 import isolation  # noqa: F401  (first: keeps the tests away from real data)
 import http.client
+import io
 import json
 import os
 from pathlib import Path
@@ -9,10 +10,12 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 from test_server import ROOT
 
 sys.path.insert(0, str(ROOT))
+from omni_ai.server import workspaces  # noqa: E402
 from omni_ai.server.protocol import RequestError  # noqa: E402
 from omni_ai.server.workspaces import BRANCH_HEADER, COPY_HEADER, Workspaces  # noqa: E402
 
@@ -44,6 +47,17 @@ class Temp(unittest.TestCase):
         git(self.folder, 'init', '-q', '-b', 'main')
         git(self.folder, 'add', '-A')
         git(self.folder, 'commit', '-qm', 'first')
+
+
+class RecoveryAfterGitInit(Temp):
+    def test_copies_survive_when_the_folder_becomes_a_repository(self):
+        work = Workspaces(self.folder).acquire({})
+        (work.path / 'kept.txt').write_text('copy')
+        work.finish()
+        self.assertEqual(work.header[0], COPY_HEADER)
+        self.init_git()
+        Workspaces(self.folder)  # the next server start
+        self.assertEqual((work.path / 'kept.txt').read_text(), 'copy')
 
 
 class GitWorkspace(Temp):
@@ -119,6 +133,33 @@ class GitWorkspace(Temp):
         self.assertEqual(work.path.name, 'pkg')
         self.assertTrue((work.path / 'f').is_file())
         work.finish()
+
+    def test_signing_configured_does_not_lose_the_work(self):
+        git(self.folder, 'config', 'commit.gpgsign', 'true')
+        git(self.folder, 'config', 'gpg.program', '/bin/false')
+        spaces = Workspaces(self.folder)
+        work = spaces.acquire({})
+        (work.path / 'new.txt').write_text('work')
+        work.finish()
+        self.assertEqual(work.header[0], BRANCH_HEADER)
+        self.assertEqual(git(self.folder, 'show', f'{work.header[1]}:new.txt'), 'work')
+
+    def test_failed_commit_keeps_the_folder_and_the_branch(self):
+        spaces = Workspaces(self.folder)
+        work = spaces.acquire({})
+        (work.path / 'new.txt').write_text('work')
+        real = workspaces._git
+        def fail_commit(folder, *args):
+            return subprocess.CompletedProcess(args, 1, '', 'no') if args[0] == 'commit' else real(folder, *args)
+        with patch.object(workspaces, '_git', fail_commit), patch('sys.stderr', io.StringIO()) as err:
+            work.finish()
+        self.assertEqual((work.path / 'new.txt').read_text(), 'work')
+        self.assertIn(str(work.path), err.getvalue())
+        self.assertEqual(work.header[0], BRANCH_HEADER)
+        self.assertIn(work.header[1], git(self.folder, 'branch', '--list', 'omni/*'))
+        Workspaces(self.folder)  # the next server start saves it
+        self.assertEqual(git(self.folder, 'show', f'{work.header[1]}:new.txt'), 'work')
+        self.assertFalse(work.path.exists())
 
     def test_crash_recovery_keeps_the_work(self):
         work = self.spaces.acquire({})
