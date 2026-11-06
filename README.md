@@ -465,6 +465,30 @@ ai serve --host 0.0.0.0 --port 9000 --max-concurrent 4 --timeout 600
 ai serve keys [list | add NAME | remove NAME]
 ```
 
+### API de administração
+
+Desligada por padrão. Configura um servidor em execução sem acesso ao shell.
+
+```bash
+ai serve admin-keys add ops                    # chave própria, mostrada uma única vez
+ai serve --enable-admin
+curl -H "Authorization: Bearer omni-admin-..." http://127.0.0.1:8080/admin/health
+```
+
+| Rota | Função |
+| --- | --- |
+| `GET/PUT /admin/config` | Modelos, ordem de fallback (`fallback_order`) e `routing` |
+| `GET/POST /admin/keys`, `DELETE /admin/keys/{id}` | Chaves dos provedores. O id é `openrouter` ou `openrouter.work` |
+| `GET /admin/accounts` | Contas, login e cooldown |
+| `GET/POST /admin/api-keys`, `DELETE /admin/api-keys/{nome}` | Chaves dos clientes de `/v1` |
+| `GET /admin/health` | Estado do servidor |
+
+- **Chaves separadas:** uma chave de `/v1` nunca abre `/admin`, e vice-versa. Sem chave de administração, `--enable-admin` não inicia.
+- **Rede:** de fora desta máquina, exige HTTPS por proxy reverso, que precisa definir `X-Forwarded-Proto`. `--admin-allow-http` desliga essa checagem. No Docker, a porta publicada conta como acesso externo.
+- **Segredos:** as respostas mostram só o final das chaves de provedores. A exceção é a chave de cliente criada, mostrada uma única vez.
+- **Campos protegidos:** modo de permissão, caminhos de binários e `config_dir` retornam 403.
+- **Cuidado:** esta chave pode ligar modelos pagos (`openrouter_paid`) e trocar chaves de provedores. No Docker, use `SMART_AI_ADMIN=1`.
+
 ### Como serviço
 
 ```bash
@@ -569,6 +593,7 @@ omni.example.com {
 | `~/.cache/smart-ai/state.json` | Cooldowns ativos |
 | `~/.cache/smart-ai/usage.log` | Log de uso, só metadados |
 | `~/.config/smart-ai/server_keys.json` | Hash das chaves do `ai serve` (permissão 600) |
+| `~/.config/smart-ai/admin_keys.json` | Hash das chaves da API de administração (permissão 600) |
 | `~/.cache/smart-ai/costs.jsonl` | Custo e tokens de cada pedido do chat, sem pergunta nem resposta (soma do dia no `/usage`) |
 
 ---

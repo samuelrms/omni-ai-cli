@@ -15,6 +15,12 @@ services:
       SMART_AI_SERVER_KEY: ${SMART_AI_SERVER_KEY:-}
       # With a Docker secret, set this to /run/secrets/omni_server_key instead.
       SMART_AI_SERVER_KEY_FILE: ${SMART_AI_SERVER_KEY_FILE:-}
+      # Administration API: 1 to enable it, with its own key (docker exec -it omni ai serve admin-keys add NAME).
+      SMART_AI_ADMIN: ${SMART_AI_ADMIN:-}
+      SMART_AI_ADMIN_KEY: ${SMART_AI_ADMIN_KEY:-}
+      SMART_AI_ADMIN_KEY_FILE: ${SMART_AI_ADMIN_KEY_FILE:-}
+      # Through a published port the client is not local. Without a proxy, 1 accepts plain HTTP.
+      SMART_AI_ADMIN_ALLOW_HTTP: ${SMART_AI_ADMIN_ALLOW_HTTP:-}
     volumes:
       - omni-home:/home/omni
       # A host folder also works: OMNI_WORKSPACE=/path/to/project, writable by uid 10001.

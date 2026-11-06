@@ -93,6 +93,10 @@ def server_args(args, workdir):
     argv = ['--host', args.host, '--port', str(args.port), '--max-concurrent', str(args.max_concurrent),
             '--timeout', str(args.timeout), '--mode', args.mode, '--workdir', str(workdir),
             '--log-file', str(log_dir() / 'serve.log')]
+    if getattr(args, 'enable_admin', False):
+        argv.append('--enable-admin')
+    if getattr(args, 'admin_allow_http', False):
+        argv.append('--admin-allow-http')
     return argv
 
 
@@ -214,6 +218,8 @@ def install(args, loopback):
         if not loopback:
             raise ServiceError('Host fora de 127.0.0.1 exige chave salva antes: `ai serve keys add NOME`.')
         created = auth.add('default')
+    if getattr(args, 'enable_admin', False) and not auth.stored(auth.admin_keys_path()):
+        raise ServiceError('--enable-admin exige uma chave salva antes: `ai serve admin-keys add NOME`.')
     path = service_file()
     existed = path.exists()
     if existed and not _generated(path) and not args.yes:

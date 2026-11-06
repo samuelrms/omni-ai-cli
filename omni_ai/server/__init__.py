@@ -39,10 +39,10 @@ def _log_to_file(path):
     REQUEST_LOG.propagate = False
 
 
-def keys_command(args):
+def keys_command(args, path=None, prefix='omni-', usage='keys'):
     action = args[0] if args else 'list'
     if action == 'list' and len(args) <= 1:
-        names = auth.stored()
+        names = auth.stored(path)
         for name, item in sorted(names.items()):
             print(f"{name}  criada em {time.strftime('%Y-%m-%d', time.localtime(item.get('created', 0)))}")
         if not names:
@@ -50,25 +50,27 @@ def keys_command(args):
         return 0
     if action == 'add' and len(args) == 2:
         try:
-            value = auth.add(args[1])
+            value = auth.add(args[1], path, prefix)
         except ValueError as error:
             print(error, file=sys.stderr)
             return 1
         print(f'Chave {args[1]} (guarde agora, ela não será mostrada de novo):\n{value}')
         return 0
     if action == 'remove' and len(args) == 2:
-        if auth.remove(args[1]):
+        if auth.remove(args[1], path):
             print(f'Chave {args[1]} removida.')
             return 0
         print(f'Chave {args[1]} não encontrada.', file=sys.stderr)
         return 1
-    print('Uso: ai serve keys [list | add NOME | remove NOME]', file=sys.stderr)
+    print(f'Uso: ai serve {usage} [list | add NOME | remove NOME]', file=sys.stderr)
     return 1
 
 
 def main(argv):
     if argv and argv[0] == 'keys':
         return keys_command(argv[1:])
+    if argv and argv[0] == 'admin-keys':
+        return keys_command(argv[1:], auth.admin_keys_path(), 'omni-admin-', 'admin-keys')
     parser = argparse.ArgumentParser(prog='ai serve', description='Servidor HTTP compatível com a API da OpenAI')
     parser.add_argument('--host', default='127.0.0.1', help='Endereço (padrão: 127.0.0.1, só esta máquina)')
     parser.add_argument('--port', type=int, default=8080, help='Porta (padrão: 8080)')
@@ -77,6 +79,10 @@ def main(argv):
     parser.add_argument('--mode', choices=('plan', 'edits', 'auto', 'yolo'), default='plan',
                         help='O que as ferramentas podem fazer (padrão: plan, somente leitura)')
     parser.add_argument('--workdir', help='Pasta de trabalho das ferramentas (obrigatória fora do modo plan)')
+    parser.add_argument('--enable-admin', action='store_true', default=os.environ.get('SMART_AI_ADMIN') == '1',
+                        help='Liga a API de administração em /admin (exige ai serve admin-keys add NOME)')
+    parser.add_argument('--admin-allow-http', action='store_true', default=os.environ.get('SMART_AI_ADMIN_ALLOW_HTTP') == '1',
+                        help='Aceita /admin sem HTTPS vindo de fora desta máquina (só em rede confiável)')
     parser.add_argument('--log-file', help='Grava os pedidos neste arquivo, com rotação por tamanho')
     parser.add_argument('--install-service', action='store_true', help='Instala como serviço do usuário (launchd ou systemd)')
     parser.add_argument('--uninstall-service', action='store_true', help='Remove o serviço')
@@ -101,6 +107,12 @@ def main(argv):
     if workdir and not os.path.isdir(workdir):
         parser.error(f'pasta de trabalho não encontrada: {workdir}')
 
+    if args.enable_admin and not auth.admin_configured():
+        print('--enable-admin exige uma chave própria: ai serve admin-keys add NOME', file=sys.stderr)
+        return service.FATAL_EXIT
+    if args.enable_admin and auth.admin_key_shared():
+        print('A chave de administração não pode ser igual a uma chave de /v1.', file=sys.stderr)
+        return service.FATAL_EXIT
     if args.log_file:
         _log_to_file(args.log_file)
     created = None
@@ -117,6 +129,8 @@ def main(argv):
     except OSError as error:
         print(f'Não foi possível abrir {args.host}:{args.port}: {error}', file=sys.stderr)
         return 1
+
+    server.admin_enabled, server.admin_allow_http = args.enable_admin, args.admin_allow_http
 
     def terminate(*_):
         raise KeyboardInterrupt
