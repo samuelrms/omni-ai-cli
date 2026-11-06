@@ -554,7 +554,8 @@ En el primer inicio, el servidor crea una clave y la muestra una sola vez. Solo 
 - Cada pedido puede consumir bastante cuota, porque los CLI de agente cargan su propio contexto. En Codex, un simple "OK" usó unos 19 mil tokens de entrada.
 - En los CLI, el streaming entrega la respuesta de una vez, al final. Solo OpenRouter envía partes durante la generación, salvo cuando hay datos personales enmascarados.
 - El fallback es transparente hasta la primera parte de la respuesta. Si el proveedor falla después, el cliente recibe un error.
-- `tools`/function calling e imágenes devuelven error 400.
+- `tools`/function calling solo en los proveedores de API (OpenRouter, DeepSeek y Grok con clave). El servidor nunca ejecuta las herramientas: la llamada vuelve a tu código. Otros modelos devuelven 400, porque los CLI de agente no pueden devolver la llamada. Con `omni-auto`, el orden es OpenRouter, DeepSeek y Grok. En OpenRouter, sin `openrouter_paid`, solo modelos gratuitos. En streaming, la llamada llega de una vez, al final. Los argumentos fuera del schema hacen que el servidor pruebe el siguiente proveedor; solo se comprueba el núcleo de JSON Schema (`type`, `required`, `enum`, `properties`, `items`, `additionalProperties`). `functions` (formato antiguo) devuelve 400.
+- Las imágenes devuelven error 400.
 - El prompt llega a las herramientas como argumento de línea de comandos y queda visible en la lista de procesos de la máquina. El límite es de 100 KB por pedido.
 - Los perfiles Claude heredados, que cambian el archivo de credenciales, limitan el servidor a un pedido a la vez.
 

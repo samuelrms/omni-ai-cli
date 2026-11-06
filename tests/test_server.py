@@ -221,7 +221,7 @@ class Completions(ServerCase):
             ({'messages': [{'role': 'user', 'content': 'x'}]}, 'model'),
             ({'model': 'omni/codex', 'messages': []}, 'messages'),
             ({'model': 'omni/codex', 'messages': [{'role': 'tool', 'content': 'x'}]}, 'messages[0].role'),
-            ({'model': 'omni/codex', 'messages': [{'role': 'user', 'content': 'x'}], 'tools': [{}]}, 'tools'),
+            ({'model': 'omni/codex', 'messages': [{'role': 'user', 'content': 'x'}], 'tools': [{}]}, 'tools[0]'),
             ({'model': 'omni/codex', 'messages': [{'role': 'user', 'content': 'x'}], 'n': 2}, 'n'),
             ({'model': 'omni/codex', 'messages': [{'role': 'user', 'content': 'x'}], 'temperature': 3}, 'temperature'),
             ({'model': 'omni/codex', 'messages': [{'role': 'user', 'content': 'x'}], 'max_tokens': 0}, 'max_tokens'),
