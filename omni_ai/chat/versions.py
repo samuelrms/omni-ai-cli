@@ -3,10 +3,10 @@ import json
 import re
 import threading
 import time
-from pathlib import Path
 
 from .. import config as config_tool
 from .. import ui
+from ..osutils import REPO
 from .i18n import tr, display, LANG, LANG_NAMES
 from .spend import costs_file
 RELEASES = 'https://api.github.com/repos/samuelrms/omni-ai-cli/releases?per_page=15'
@@ -75,7 +75,7 @@ def translate(texts, lang):
 
 def installed_version():
     try:
-        return json.loads((Path(__file__).resolve().parent.parent / 'package.json').read_text()).get('version', '')
+        return json.loads((REPO / 'package.json').read_text()).get('version', '')
     except (OSError, ValueError):
         return ''
 

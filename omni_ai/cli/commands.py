@@ -127,6 +127,14 @@ def _restart_service():
         say(f'{GREEN}✓ Serviço reiniciado.{NC}' if restarted else f'{RED}✗ Reinicie o serviço: ai serve --install-service{NC}')
 
 
+def _fetch_tags():
+    """The version comes from the latest tag: a pull doesn't bring new ones, and the first install is shallow."""
+    shallow = subprocess.run(['git', '-C', str(REPO), 'rev-parse', '--is-shallow-repository'],
+                             capture_output=True, text=True).stdout.strip() == 'true'
+    subprocess.run(['git', '-C', str(REPO), 'fetch', '-q', '--tags', *(['--unshallow'] if shallow else []), 'origin'],
+                   capture_output=True, text=True)
+
+
 def _update():
     """Pull the latest version into the install folder; settings live in ~/.config and are kept."""
     if (REPO / '.git').is_dir() and resolve_bin('git'):
@@ -136,6 +144,8 @@ def _update():
                                 capture_output=True, text=True).stdout.strip()
         ref = branch if branch and branch != 'HEAD' else 'main'
         code = subprocess.call(['git', '-C', str(REPO), 'pull', '--ff-only', 'origin', ref])
+        if code == 0:
+            _fetch_tags()
         say(f'{GREEN}✓ Omni AI atualizado.{NC}' if code == 0 else f'{RED}✗ Não consegui atualizar; veja a mensagem acima.{NC}')
         return code
     if os.environ.get('SMART_AI_INSTALLER') == 'npm':

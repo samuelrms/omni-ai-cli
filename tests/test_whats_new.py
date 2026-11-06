@@ -1,12 +1,13 @@
 import isolation  # noqa: F401
 import importlib.util
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from omni_ai.cli import whats_new
+from omni_ai.cli import commands, whats_new
 
 spec = importlib.util.spec_from_file_location(
     'release_notes', Path(__file__).resolve().parent.parent / 'scripts' / 'release_notes.py')
@@ -42,8 +43,9 @@ class Notes(unittest.TestCase):
 
     def test_no_change_or_unknown_version_does_not_fetch(self):
         with patch.object(whats_new, 'fetch') as fetch:
-            for before, after in (('1.0.0', '1.0.0'), ('1.1.0', '1.0.0'), ('?', '1.0.0'), ('1.0.0', '?')):
+            for before, after in (('1.0.0', '1.0.0'), ('1.1.0', '1.0.0'), ('1.0.0', '?'), ('?', '?')):
                 self.assertEqual(whats_new.render(before, after), [])
+            self.assertEqual(whats_new.render('0.0.0-development', '1.0.0'), [f'Todas as mudanças: {whats_new.RELEASES_PAGE}'])
         fetch.assert_not_called()
 
     def test_offline_still_gives_the_link(self):
@@ -89,6 +91,52 @@ class InstalledVersion(unittest.TestCase):
         with patch.object(whats_new, 'resolve_bin', return_value='git'), \
                 patch.object(whats_new.subprocess, 'run', return_value=MagicMock(stdout='')):
             self.assertEqual(whats_new.installed_version(), '0.0.0-development')
+
+
+class RealGitUpdate(unittest.TestCase):
+    """A real origin and clone, because a pull behaves differently from what mocks assume."""
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.origin = self.root / 'origin.git'
+        self.work = self.root / 'work'
+        subprocess.run(['git', 'init', '-q', '--bare', '-b', 'main', str(self.origin)], check=True)
+        subprocess.run(['git', 'clone', '-q', str(self.origin), str(self.work)], check=True, capture_output=True)
+        self.release('1.0.0')
+        self.release('1.0.1')
+
+    def git(self, folder, *args):
+        return subprocess.run(['git', '-C', str(folder), '-c', 'user.name=t', '-c', 'user.email=t@t', *args],
+                              check=True, capture_output=True, text=True).stdout.strip()
+
+    def release(self, version):
+        (self.work / 'package.json').write_text('{"version": "0.0.0-development"}')
+        self.git(self.work, 'add', '-A')
+        self.git(self.work, 'commit', '-q', '--allow-empty', '-m', version)
+        self.git(self.work, 'tag', 'v' + version)
+        self.git(self.work, 'push', '-q', 'origin', 'HEAD:main', '--tags')
+
+    def update(self, install):
+        with patch.object(whats_new, 'REPO', install), patch.object(commands, 'REPO', install), \
+                patch.object(commands, 'say'):
+            before = whats_new.installed_version()
+            code = commands._update()
+            return code, before, whats_new.installed_version()
+
+    def test_full_clone_sees_the_new_tag(self):
+        install = self.root / 'install'
+        subprocess.run(['git', 'clone', '-q', '-b', 'main', str(self.origin), str(install)], check=True, capture_output=True)
+        self.release('1.1.0')
+        self.assertEqual(self.update(install), (0, '1.0.1', '1.1.0'))
+
+    def test_shallow_clone_finds_its_version(self):
+        install = self.root / 'install'
+        subprocess.run(['git', 'clone', '-q', '--depth', '1', '-b', 'main', 'file://' + str(self.origin), str(install)],
+                       check=True, capture_output=True)
+        self.release('1.1.0')
+        code, _, after = self.update(install)
+        self.assertEqual((code, after), (0, '1.1.0'))
 
 
 class ReleaseNotesScript(unittest.TestCase):
