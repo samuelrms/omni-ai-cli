@@ -23,9 +23,9 @@ OK, FAILED, RATE_LIMITED, TIMEOUT, DISCONNECTED, SHUTDOWN, SWITCHED = (
 
 
 class Execution:
-    def __init__(self, tool, prompt, last_user, temperature=None, max_tokens=None, mode='plan', workdir=None):
+    def __init__(self, tool, prompt, last_user, temperature=None, max_tokens=None, mode='plan', workdir=None, no_tools=False):
         self.tool, self.prompt, self.last_user = tool, prompt, last_user
-        self.mode, self.workdir = mode, workdir
+        self.mode, self.workdir, self.no_tools = mode, workdir, no_tools
         self.temperature, self.max_tokens = temperature, max_tokens
         self.child = None
         self.lock = threading.Lock()
@@ -48,6 +48,9 @@ class Execution:
                    PYTHONUNBUFFERED='1', SMART_AI_CLASSIFY_PROMPT=self.last_user)
         for name in SECRET_VARS:
             env.pop(name, None)
+        env.pop('SMART_AI_NO_TOOLS', None)
+        if self.no_tools:
+            env['SMART_AI_NO_TOOLS'] = '1'
         env.pop('SMART_AI_TEMPERATURE', None)
         env.pop('SMART_AI_MAX_TOKENS', None)
         if self.temperature is not None:

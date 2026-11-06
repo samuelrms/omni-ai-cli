@@ -14,6 +14,7 @@ from .. import config as config_tool
 from ..cli.base import installed
 from ..tools import TOOLS
 from . import admin, auth, protocol
+from .emulation import Emulated, target as emulation_target
 from .logins import Logins
 from .native import Native, capable
 from .execution import DISCONNECTED, Execution, OK, RATE_LIMITED, SWITCHED, TIMEOUT
@@ -68,6 +69,7 @@ class Server(ThreadingHTTPServer):
 
     admin_enabled = admin_allow_http = False
     workspaces = None
+    tool_emulation = False
     queue_size = queue_wait = 0
 
     def __init__(self, address, max_concurrent=4, timeout=600, mode='plan', workdir=None):
@@ -230,9 +232,13 @@ class Handler(BaseHTTPRequestHandler):
                 raise RequestError(404, 'Unknown route.')
             request = protocol.parse_request(self._read_body())
             tool = tool_of(request['model'])
+            emulate = None
             if request['tools'] and not capable(tool):
-                raise RequestError(400, 'No configured provider supports tools for this model. Use omni/openrouter, '
-                                   'omni/deepseek or omni/grok with an API key.', param='tools', code='tools_not_supported')
+                emulate = emulation_target(tool, installed) if self.server.tool_emulation else None
+                if not emulate:
+                    raise RequestError(400, 'No configured provider supports tools for this model. Use omni/openrouter, '
+                                       'omni/deepseek or omni/grok with an API key.', param='tools', code='tools_not_supported')
+            request['emulate'] = emulate
             if not self.server.take_slot():
                 raise RequestError(429, 'The server is busy. Try again shortly.', 'rate_limit_error',
                                    code='server_busy', retry_after=1)
@@ -261,6 +267,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def _complete(self, request, tool):
         self.work_header = None  # a connection can carry several requests
+        if request['emulate']:
+            self._run(request, Emulated(request['emulate'], request))
+            return
         if request['tools']:
             self._run(request, Native(tool, request))  # runs nothing locally, so it needs no folder of its own
             return

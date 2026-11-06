@@ -94,6 +94,8 @@ def server_args(args, workdir):
             '--timeout', str(args.timeout), '--mode', args.mode, '--workdir', str(workdir),
             *(('--queue-size', str(args.queue_size), '--queue-wait', str(args.queue_wait)) if hasattr(args, 'queue_size') else ()),
             '--log-file', str(log_dir() / 'serve.log')]
+    if getattr(args, 'tool_emulation', False):
+        argv.append('--tool-emulation')
     if getattr(args, 'enable_admin', False):
         argv.append('--enable-admin')
     if getattr(args, 'admin_allow_http', False):

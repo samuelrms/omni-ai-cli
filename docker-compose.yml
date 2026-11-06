@@ -15,6 +15,8 @@ services:
       SMART_AI_SERVER_KEY: ${SMART_AI_SERVER_KEY:-}
       # With a Docker secret, set this to /run/secrets/omni_server_key instead.
       SMART_AI_SERVER_KEY_FILE: ${SMART_AI_SERVER_KEY_FILE:-}
+      # Experimental: 1 emulates function calling on Claude Code and Grok.
+      SMART_AI_TOOL_EMULATION: ${SMART_AI_TOOL_EMULATION:-}
       # Administration API: 1 to enable it, with its own key (docker exec -it omni ai serve admin-keys add NAME).
       SMART_AI_ADMIN: ${SMART_AI_ADMIN:-}
       SMART_AI_ADMIN_KEY: ${SMART_AI_ADMIN_KEY:-}

@@ -13,6 +13,11 @@ from .base import (
 from .limits import hit_limit, remember_limit, tail_hit_limit
 
 
+def no_tools():
+    """Set by the server for emulated function calling: the model may only write text."""
+    return os.environ.get('SMART_AI_NO_TOOLS') == '1'
+
+
 def run_claude(profile, prompt):
     if not installed('claude'):
         say(f'{RED}✗ Claude Code não instalado.{NC}')
@@ -55,6 +60,8 @@ def run_claude(profile, prompt):
     argv = [BINS['claude'], '--model', models()['claude']]
     argv += {'plan': ['--permission-mode', 'plan'], 'edits': ['--permission-mode', 'acceptEdits'],
              'auto': ['--permission-mode', 'auto'], 'yolo': ['--permission-mode', 'bypassPermissions']}.get(mode(), [])
+    if no_tools():
+        argv += ['--tools', '', '--strict-mcp-config']
     argv += ['-p', prompt, '--verbose']
     if os.environ.get('SMART_AI_EVENTS') == '1':
         argv += ['--output-format', 'stream-json']
@@ -132,6 +139,8 @@ def over_ceiling(key, fetch, label):
 
 
 def run_codex(prompt):
+    if no_tools():
+        return 1  # its own tools cannot be switched off
     emit_provider('codex')
     header(f'{GREEN}📦 Codex CLI{NC}', 'economizando Claude')
     values = models()
@@ -146,6 +155,8 @@ def run_codex(prompt):
 
 
 def run_agy(prompt):
+    if no_tools():
+        return 1
     emit_provider('agy')
     header(f'{MAGENTA}🚀 Antigravity{NC}', 'economizando Claude')
     argv = [BINS['agy']]
@@ -185,6 +196,8 @@ def run_openrouter(prompt):
 
 
 def run_cursor(prompt):
+    if no_tools():
+        return 1
     emit_provider('cursor')
     header(f'{DIM}▲ Cursor CLI{NC}', 'economizando Claude')
     if not installed('cursor'):
@@ -239,6 +252,8 @@ def run_grok(prompt):
         # Headless 'plan' is only a compatibility alias; dontAsk keeps it to read-only tools
         argv += {'plan': ['--permission-mode', 'dontAsk'], 'edits': ['--permission-mode', 'acceptEdits'],
                  'auto': ['--permission-mode', 'auto'], 'yolo': ['--permission-mode', 'bypassPermissions']}.get(mode(), [])
+        if no_tools():
+            argv += ['--tools', '', '--disable-web-search']
         return run_with_key_retry('grok', argv + ['-p', prompt], 'XAI_API_KEY', 'Grok')
     # No CLI: plain chat over the API, paid per use
     keys = config_tool.stored_keys('grok')
