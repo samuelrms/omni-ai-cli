@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .. import config as config_tool
 from .. import usage
-from ..osutils import REPO, enable_ansi, module_cmd, module_env, resolve_bin
+from ..osutils import REPO, clean_terminal, enable_ansi, module_cmd, module_env, resolve_bin
 from ..tools import CLIS, KEY_NAMES, TOOLS
 
 STATE_FILE = Path(os.environ.get('SMART_AI_STATE', '~/.cache/smart-ai/state.json')).expanduser()
@@ -133,7 +133,7 @@ def run(argv, env=None, stdin=None):
         writer.start()
     captured = []
     for line in process.stdout:
-        sys.stdout.write(line)
+        sys.stdout.write(clean_terminal(line, colors=True))
         sys.stdout.flush()
         captured.append(line)
     code = process.wait()

@@ -414,6 +414,8 @@ toujours en `plan`.
 
 ## Skills et MCP
 
+Avant d'exécuter une skill du projet, le chat affiche son chemin. Une skill du projet remplace la vôtre du même nom, et les liens qui sortent du projet sont ignorés.
+
 `ai` appelle les CLI eux-mêmes, donc chacun utilise les skills et MCP qu'il a déjà.
 `/sync` rassemble tout et installe dans chaque outil ce qui n'existe que dans les autres :
 
@@ -583,6 +585,7 @@ Au premier démarrage, le serveur crée une clé et ne l'affiche qu'une fois. Se
 - **Pour créer, modifier et lancer des commandes :** `ai serve --mode edits|auto|yolo --workdir DOSSIER`. Le dossier est obligatoire et rien ne demande d'approbation. [Chaque requête travaille isolée](#écriture-en-parallèle). Qui détient la clé peut modifier le dossier et, avec des commandes, atteindre les connexions des comptes.
 - **La lecture seule n'empêche pas de lire les fichiers.** Toute personne disposant de la clé peut demander à un outil de lire des fichiers de cette machine. Les MCP configurés peuvent aussi être disponibles. Traitez la clé comme un accès à votre compte.
 - La valeur par défaut est `127.0.0.1`. Pour l'exposer sur un réseau, utilisez `--host` et HTTPS avec un proxy inverse.
+- Au-delà de la limite de connexions (128 ou plus selon le système), la réponse est 503. Le début de chaque demande doit arriver en 30 secondes maximum. En exposition publique, utilisez aussi les limites par origine du proxy.
 - Partager une instance revient à partager les mêmes comptes et abonnements. Vérifiez les conditions de chaque fournisseur.
 
 **Limitations :**

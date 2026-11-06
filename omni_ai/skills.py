@@ -38,6 +38,9 @@ def discover(cwd):
         except OSError:
             continue  # an unreadable folder must not abort discovery for every other tool
         for name, path in entries:
+            # A repository's link could pull a private file into a prompt; the user's own links are theirs to make
+            if scope == 'projeto' and not path.resolve().is_relative_to(Path(cwd).resolve()):
+                continue
             found.setdefault(name, {}).setdefault(tool, (kind, path, scope))
     return found
 

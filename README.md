@@ -405,6 +405,8 @@ comando. Fora do chat: `ai --mode plan "pergunta"`. O `/parallel` roda sempre em
 
 ## Skills e MCP
 
+Antes de rodar uma skill do projeto, o chat mostra o caminho dela. Uma skill do projeto substitui a sua de mesmo nome, e links que saem do projeto são ignorados.
+
 O `ai` chama os próprios CLIs, então cada um usa as skills e os MCPs que já tem. O
 `/sync` junta tudo e instala em cada ferramenta o que só existe nas outras:
 
@@ -574,6 +576,7 @@ No primeiro início, o servidor cria uma chave e a mostra uma única vez. Só o 
 - **Para criar, editar e rodar comandos:** `ai serve --mode edits|auto|yolo --workdir PASTA`. A pasta é obrigatória e nada pede aprovação. [Cada pedido trabalha isolado](#escrita-em-paralelo). Quem tem a chave pode alterar a pasta e, com comandos, alcançar os logins das contas.
 - **Somente leitura não impede ler arquivos.** Quem tem a chave pode pedir a uma ferramenta que leia arquivos desta máquina. MCPs configurados também podem estar disponíveis. Trate a chave como acesso à sua conta.
 - O padrão é `127.0.0.1`. Para expor em rede, use `--host` e HTTPS com proxy reverso.
+- Acima do limite de conexões (128 ou mais, conforme o sistema), a resposta é 503. O início de cada pedido precisa chegar em até 30 segundos. Em exposição pública, use também os limites por origem do proxy.
 - Quem compartilha uma instância compartilha as mesmas contas e assinaturas. Verifique os termos de cada provedor.
 
 **Limitações:**

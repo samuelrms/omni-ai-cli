@@ -404,6 +404,8 @@ command. Outside the chat: `ai --mode plan "question"`. `/parallel` always runs 
 
 ## Skills and MCP
 
+Before running a project skill, the chat shows its path. A project skill replaces yours of the same name, and links leaving the project are ignored.
+
 `ai` calls the CLIs themselves, so each one uses the skills and MCPs it already has.
 `/sync` gathers everything and installs in each tool what only exists in the others:
 
@@ -573,6 +575,7 @@ On first start, the server creates a key and shows it once. Only its hash is sto
 - **To create, edit and run commands:** `ai serve --mode edits|auto|yolo --workdir FOLDER`. The folder is required and nothing asks for approval. [Each request works in isolation](#parallel-writes). Whoever has the key can change the folder and, with commands, reach the account logins.
 - **Read-only does not prevent reading files.** Anyone with the key can ask a tool to read files on this machine. Configured MCPs may also be available. Treat the key as access to your account.
 - The default is `127.0.0.1`. To expose it on a network, use `--host` and HTTPS through a reverse proxy.
+- Above the connection limit (128 or more, depending on the system), the answer is 503. The start of each request must arrive within 30 seconds. On public exposure, also use the proxy's per-origin limits.
 - Sharing an instance means sharing the same accounts and subscriptions. Check each provider's terms.
 
 **Limitations:**
