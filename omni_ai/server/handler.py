@@ -14,6 +14,7 @@ from .. import config as config_tool
 from ..cli.base import installed
 from ..tools import TOOLS
 from . import admin, auth, protocol
+from .logins import Logins
 from .execution import DISCONNECTED, Execution, OK, RATE_LIMITED, SWITCHED, TIMEOUT
 from .protocol import AUTO_MODEL, RequestError, TOOL_PREFIX
 
@@ -74,6 +75,7 @@ class Server(ThreadingHTTPServer):
         self.mode, self.workdir = mode, workdir
         self.running = set()
         self.started = time.monotonic()
+        self.logins = Logins()
         self.running_lock = threading.Lock()
         super().__init__(address, Handler)
 

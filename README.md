@@ -482,12 +482,25 @@ curl -H "Authorization: Bearer omni-admin-..." http://127.0.0.1:8080/admin/healt
 | `GET /admin/accounts` | Contas, login e cooldown |
 | `GET/POST /admin/api-keys`, `DELETE /admin/api-keys/{nome}` | Chaves dos clientes de `/v1` |
 | `GET /admin/health` | Estado do servidor |
+| `POST /admin/accounts/{conta}/login` | Inicia o login por assinatura: devolve o link e o id da tentativa |
+| `POST /admin/accounts/{conta}/login/complete` | Conclui o login |
+| `DELETE /admin/accounts/{conta}/login` | Cancela, com o id em `X-Omni-Login-Attempt` |
 
 - **Chaves separadas:** uma chave de `/v1` nunca abre `/admin`, e vice-versa. Sem chave de administração, `--enable-admin` não inicia.
 - **Rede:** de fora desta máquina, exige HTTPS por proxy reverso, que precisa definir `X-Forwarded-Proto`. `--admin-allow-http` desliga essa checagem. No Docker, a porta publicada conta como acesso externo.
 - **Segredos:** as respostas mostram só o final das chaves de provedores. A exceção é a chave de cliente criada, mostrada uma única vez.
 - **Campos protegidos:** modo de permissão, caminhos de binários e `config_dir` retornam 403.
 - **Cuidado:** esta chave pode ligar modelos pagos (`openrouter_paid`) e trocar chaves de provedores. No Docker, use `SMART_AI_ADMIN=1`.
+
+**Login pela API.** `{conta}` é `primary` e as outras contas Claude, `codex`, `cursor`, `grok`, ou `codex.NOME` para uma conta extra. Uma tentativa vale 10 minutos e cada conta aceita uma por vez (409).
+
+| Ferramenta | Como concluir |
+| --- | --- |
+| Claude Code | Abra o link e envie `{"attempt_id": "...", "code": "..."}` com o código obtido |
+| Codex, Grok | Abra o link, digite o `user_code` e envie `{"attempt_id": "..."}`. A resposta é 202 até concluir |
+| Cursor | Abra o link e envie `{"attempt_id": "..."}`. A resposta é 202 até concluir |
+
+O Antigravity e as ferramentas só com chave retornam 400. Os códigos e tokens não aparecem em respostas nem em logs. A exceção é o `user_code`, que precisa ser digitado no navegador.
 
 ### Como serviço
 

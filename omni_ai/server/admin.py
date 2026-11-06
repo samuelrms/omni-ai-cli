@@ -15,6 +15,7 @@ PROTECTED = re.compile(r'(^|_)(mode|bin|path|dir|file|config_dir|credentials_fil
 ROUTING_FIELDS = ('usage_skip_percent', 'usage_alert_percent')
 MAX_KEY_LENGTH = 512
 KEY_VALUE = re.compile(r'[\x21-\x7e]+')
+LOGIN_ROUTE = re.compile(r'/admin/accounts/([a-z0-9][a-z0-9_-]*(?:\.[a-z0-9][a-z0-9_-]*)?)/login(/complete)?')
 KEY_ID = re.compile(r'([a-z]+)(?:\.([a-z0-9][a-z0-9_-]{0,14}))?')
 
 
@@ -231,6 +232,17 @@ def handle(handler, method, path):
         handler._json(200, {'deleted': True})
     elif path == '/admin/accounts' and method == 'GET':
         handler._json(200, accounts())
+    elif (match := LOGIN_ROUTE.fullmatch(path)) and method == 'POST':
+        logins = handler.server.logins
+        if match.group(2):
+            status, body = logins.complete(match.group(1), handler._read_body())
+            handler._json(status, body)
+        else:
+            handler._json(201, logins.start(match.group(1)))
+    elif (match := LOGIN_ROUTE.fullmatch(path)) and method == 'DELETE' and not match.group(2):
+        logins = handler.server.logins
+        logins.cancel(match.group(1), handler.headers.get('X-Omni-Login-Attempt'))
+        handler._json(200, {'cancelled': True})
     elif path == '/admin/api-keys' and method == 'GET':
         handler._json(200, list_client_keys())
     elif path == '/admin/api-keys' and method == 'POST':

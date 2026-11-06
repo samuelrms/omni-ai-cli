@@ -18,7 +18,7 @@ from .store import (
 from .models import MODELS, EFFORTS, model_values, validate_model, cmd_model, cmd_env
 from .profiles import profiles, ordered, enabled_profiles, cmd_profiles
 from .accounts import (
-    logged_in, SHARED, share_claude_setup, login, cmd_account,
+    logged_in, SHARED, share_claude_setup, login, cmd_account, MAIN_LOGINS, share_tool_setup,
     TOOL_HOMES, TOOL_ACCOUNTS_DIR, tool_accounts, tool_env, tool_logged_in,
     share_tool_setup, tool_login, cmd_tool_account,
 )

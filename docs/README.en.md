@@ -481,12 +481,25 @@ curl -H "Authorization: Bearer omni-admin-..." http://127.0.0.1:8080/admin/healt
 | `GET /admin/accounts` | Accounts, login and cooldown |
 | `GET/POST /admin/api-keys`, `DELETE /admin/api-keys/{name}` | Keys for `/v1` clients |
 | `GET /admin/health` | Server health |
+| `POST /admin/accounts/{account}/login` | Starts a subscription login: returns the link and the attempt id |
+| `POST /admin/accounts/{account}/login/complete` | Finishes the login |
+| `DELETE /admin/accounts/{account}/login` | Cancels, with the id in `X-Omni-Login-Attempt` |
 
 - **Separate keys:** a `/v1` key never opens `/admin`, and vice versa. Without an admin key, `--enable-admin` does not start.
 - **Network:** from outside this machine, it requires HTTPS through a reverse proxy, which must set `X-Forwarded-Proto`. `--admin-allow-http` turns this check off. In Docker, the published port counts as external access.
 - **Secrets:** responses show only the end of provider keys. The exception is a newly created client key, shown once.
 - **Protected fields:** permission mode, binary paths and `config_dir` return 403.
 - **Careful:** this key can turn on paid models (`openrouter_paid`) and replace provider keys. In Docker, use `SMART_AI_ADMIN=1`.
+
+**Login through the API.** `{account}` is `primary` and the other Claude accounts, `codex`, `cursor`, `grok`, or `codex.NAME` for an extra account. An attempt lasts 10 minutes and each account takes one at a time (409).
+
+| Tool | How to finish |
+| --- | --- |
+| Claude Code | Open the link and send `{"attempt_id": "...", "code": "..."}` with the code you get |
+| Codex, Grok | Open the link, type the `user_code` and send `{"attempt_id": "..."}`. The answer is 202 until it finishes |
+| Cursor | Open the link and send `{"attempt_id": "..."}`. The answer is 202 until it finishes |
+
+Antigravity and key-only tools return 400. Codes and tokens do not appear in responses or logs. The exception is `user_code`, which has to be typed in the browser.
 
 ### As a service
 
