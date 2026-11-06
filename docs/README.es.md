@@ -782,6 +782,7 @@ guardar ni rotar.
 | `Not inside a trusted directory` (Codex) | Instalación antigua. Ejecuta el instalador de nuevo. |
 | `Claude Code não instalado` | `./scripts/install.sh` (o `scripts\install.ps1` en Windows) lo instala con el instalador oficial. |
 | Windows: fallan los enlaces de skills | Activa el Modo de desarrollador o ejecuta como administrador; si no, `ai` usa uniones de carpeta. |
+| Windows: `este pedido não pode ser passado com segurança` | La herramienta se instaló con un acceso `.cmd` que `ai` no reconoce. Instálala con npm o define `<HERRAMIENTA>_BIN` con su ejecutable. |
 | `/model` no cambia nada | Hay una variable `SMART_AI_*_MODEL` definida y tiene precedencia. |
 | `/key` no cambia nada | La variable de la herramienta (`ANTHROPIC_API_KEY`, etc.) está definida y tiene precedencia. |
 | `Sessão já aberta em outro terminal` | Cierra la otra terminal o usa `/new`. |
@@ -798,7 +799,7 @@ guardar ni rotar.
   a los archivos. Los agentes no editan el proyecto al mismo tiempo.
 - La clasificación simple/compleja se hace por palabras clave y tamaño, no con un modelo.
 - Cambiar de modelo no renueva la cuota de la cuenta.
-- En Windows el código usa los equivalentes nativos (grupos de procesos y `taskkill`, `msvcrt`, uniones de carpeta), pero solo se probó de verdad en macOS.
+- En Windows el código usa los equivalentes nativos (grupos de procesos y `taskkill`, `msvcrt`, uniones de carpeta), pero solo se probó de verdad en macOS. La excepción es ejecutar herramientas instaladas con npm, probado en CI en Windows.
 
 ---
 

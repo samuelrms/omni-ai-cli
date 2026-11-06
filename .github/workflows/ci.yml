@@ -32,6 +32,24 @@ jobs:
       - name: Shell installer syntax
         run: bash -n scripts/install.sh
 
+  windows:
+    name: Windows shims (Python ${{ matrix.python }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Tool launch on real Windows
+        run: python -m unittest discover -s tests -p test_windows_shims.py -v
+
   docker:
     name: Docker image
     runs-on: ubuntu-latest

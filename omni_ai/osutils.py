@@ -16,6 +16,9 @@ OLD_POSIX_LAUNCHER = re.compile(
     r'#!/usr/bin/env sh\nPYTHONPATH="(?P<root>[^\n]*)\$\{PYTHONPATH:\+:\$PYTHONPATH\}" exec "[^\n]*" -m omni_ai "\$@"\n')
 OLD_WINDOWS_LAUNCHER = re.compile(
     r'@echo off\nset "PYTHONPATH=(?P<root>[^\n]*);%PYTHONPATH%"\n"(?P<python>[^\n]*)" -m omni_ai %\*\n')
+# The last line of a shim: optionally Node, then a path next to the shim, then every argument
+_SHIM_LAUNCH = re.compile(r'''(?:("%_prog%"|"%~?dp0%?\\node\.exe"|\bnode(?:\.exe)?)\s+)?"%~?dp0%?\\([^"%\r\n]+)"\s+%\*[ \t]*\r?$''', re.M)
+_CMD_SAFE = re.compile(r'[A-Za-z0-9_./:=@,+\\ -]*')
 if WINDOWS:
     os.environ['NoDefaultCurrentDirectoryInExePath'] = '1'  # keeps the working directory out of executable lookup
 
@@ -86,13 +89,64 @@ def module_env(env=None):
     return env
 
 
+def _which(name, path=None):
+    if not WINDOWS:
+        return shutil.which(name, path=path)
+    # Python 3.11 always searches the working directory on Windows, where a repository can plant a claude.cmd
+    folders = (os.environ.get('PATH', '') if path is None else path).split(os.pathsep)
+    suffixes = ['', *os.environ.get('PATHEXT', '.COM;.EXE;.BAT;.CMD').split(';')]
+    for folder in filter(os.path.isabs, (folder.strip('"') for folder in folders)):
+        for suffix in suffixes[1 if not Path(name).suffix else 0:]:
+            found = os.path.join(folder, name + suffix)
+            if os.path.isfile(found):
+                return found
+    return None
+
+
 def resolve_bin(name):
     """Full path of an executable; on Windows this finds npm's claude.cmd / codex.cmd shims."""
     if os.path.sep in name or (os.altsep and os.altsep in name):
         return name if os.path.exists(name) else None
     # Installers put tools in ~/.local/bin or ~/.grok/bin, which the shell only adds to PATH after a restart
     extra = os.pathsep.join(str(Path.home() / folder) for folder in ('.local/bin', '.grok/bin'))
-    return shutil.which(name) or shutil.which(name, path=extra)
+    return _which(name) or _which(name, path=extra)
+
+
+def _is_shim(path):
+    return Path(path).suffix.lower() in ('.cmd', '.bat')
+
+
+def _shim_command(shim):
+    """What an npm, pnpm or yarn .cmd shim really launches, or None when it is not one we recognize."""
+    try:
+        text = Path(shim).read_text(encoding='utf-8', errors='replace')
+    except OSError:
+        return None
+    launches = {(bool(runner), target) for runner, target in _SHIM_LAUNCH.findall(text)}
+    if len(launches) != 1:
+        return None
+    needs_node, target = launches.pop()
+    folder = os.path.dirname(shim)
+    target = os.path.normpath(os.path.join(folder, target.replace('\\', os.sep)))
+    if not os.path.isfile(target):
+        return None
+    if not needs_node:
+        return [target] if target.lower().endswith('.exe') else None
+    beside = os.path.join(folder, 'node.exe')
+    node = beside if os.path.isfile(beside) else resolve_bin('node')
+    return [node, target] if node and not _is_shim(node) else None
+
+
+def direct_argv(executable, args):
+    """The command line for a tool, or None when it cannot be run safely with these arguments.
+    Windows hands a .cmd to cmd.exe, whose rules differ from the quoting Python applies, so text in `args`
+    could become a command. Running what the shim launches skips cmd.exe altogether."""
+    if not WINDOWS or not _is_shim(executable):
+        return [executable, *args]
+    command = _shim_command(executable)
+    if command:
+        return [*command, *args]
+    return [executable, *args] if all(_CMD_SAFE.fullmatch(arg) for arg in args) else None
 
 
 def in_container():
