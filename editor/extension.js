@@ -2,6 +2,7 @@
 // Thin wrapper around the `ai` CLI: it never reimplements routing, it just drives the command
 // in an integrated terminal so logins, streaming and the chat work exactly as in a real terminal.
 const vscode = require('vscode');
+const crypto = require('crypto');
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
@@ -52,13 +53,32 @@ function config() {
   return vscode.workspace.getConfiguration('omni-ai');
 }
 
+const MODES = ['default', 'plan', 'edits', 'auto', 'yolo'];
+const TOOL_NAME = /^[a-z0-9][a-z0-9_-]*$/;
+const SHELL_SAFE = /^[A-Za-z0-9_.\/:\\-]+$/;
+// What the webview may ask for. Its content comes from models and repositories, so it isn't trusted.
+const CLI_FLAGS = new Set(['--usage', '--status', '--doctor', '--model', '--account', '--key', '--keys',
+  '--sync', '--update', '--reset', '--setup', '--version', '--log']);
+const WEBVIEW_COMMANDS = new Set(['omni-ai.history.focus', 'workbench.extensions.action.checkForUpdates']);
+
+/** A setting from the user's own configuration. A repository's .vscode/settings.json never counts. */
+function userSetting(key, fallback) {
+  const found = config().inspect(key);
+  return (found && found.globalValue) || fallback;
+}
+function binPath() { return userSetting('binPath', 'ai'); }
+function modeSetting() { return validMode(userSetting('mode', 'default')); }
+function validMode(mode) { return MODES.includes(mode) ? mode : 'default'; }
+function validTool(tool) { return typeof tool === 'string' && TOOL_NAME.test(tool) ? tool : 'auto'; }
+/** An executable for a terminal line. Plain names stay unquoted, which also works outside POSIX shells. */
+function shellBin(bin) { return SHELL_SAFE.test(bin) ? bin : shq(bin); }
+function scriptNonce() { return crypto.randomBytes(16).toString('base64'); }
+
 /** The base command with the configured tool and mode flags. */
 function baseCommand() {
-  const cfg = config();
-  const bin = cfg.get('binPath', 'ai');
-  const tool = cfg.get('tool', 'auto');
-  const mode = cfg.get('mode', 'default');
-  let cmd = bin;
+  const tool = validTool(config().get('tool', 'auto'));
+  const mode = modeSetting();
+  let cmd = shellBin(binPath());
   if (tool && tool !== 'auto') cmd += ' --' + tool;
   if (mode && mode !== 'default') cmd += ' --mode ' + mode;
   return cmd;
@@ -118,20 +138,18 @@ async function runOnSelection() {
 }
 
 function openChat() {
-  const cfg = config();
-  run(cfg.get('binPath', 'ai'));
+  run(shellBin(binPath()));
 }
 
 function doctor() {
-  run(`${config().get('binPath', 'ai')} doctor`);
+  run(`${shellBin(binPath())} doctor`);
 }
 
 /** Tool/mode flags as an argv array, for spawning the CLI directly (no shell). */
 function baseArgs() {
-  const cfg = config();
   const args = [];
-  const tool = cfg.get('tool', 'auto');
-  const mode = cfg.get('mode', 'default');
+  const tool = validTool(config().get('tool', 'auto'));
+  const mode = modeSetting();
   if (tool && tool !== 'auto') args.push('--' + tool);
   if (mode && mode !== 'default') args.push('--mode', mode);
   return args;
@@ -141,7 +159,7 @@ function baseArgs() {
 function runCapture(args) {
   return new Promise((resolve) => {
     const cfg = config();
-    const bin = cfg.get('binPath', 'ai');
+    const bin = binPath();
     const cwd = (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0])
       ? vscode.workspace.workspaceFolders[0].uri.fsPath : os.homedir();
     let out = '';
@@ -187,8 +205,9 @@ class OmniHistoryView {
   }
 
   html() {
+    const nonce = scriptNonce();
     return `<!doctype html><html><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <style>
   body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); margin: 0; }
   #search { width: 100%; box-sizing: border-box; padding: 6px 8px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: none; border-bottom: 1px solid var(--vscode-panel-border); }
@@ -208,7 +227,7 @@ class OmniHistoryView {
 <div id="list"></div>
 <div id="bar"><button id="back">← Back</button><button id="continue">Continue in chat</button></div>
 <div id="transcript"></div>
-<script>
+<script nonce="${nonce}">
   const vs = acquireVsCodeApi();
   const list = document.getElementById('list'), tr = document.getElementById('transcript');
   const bar = document.getElementById('bar'), search = document.getElementById('search');
@@ -219,10 +238,10 @@ class OmniHistoryView {
       if (filter && !(it.title || '').toLowerCase().includes(filter)) continue;
       const d = document.createElement('div'); d.className = 'item';
       const when = new Date((it.updated || 0) * 1000).toLocaleString();
-      d.innerHTML = '<span class="src ' + it.source + '">' + it.source + '</span>' +
-        '<span class="meta">' + it.count + ' msg · ' + when + '</span>' +
-        '<span class="title"></span>';
-      d.querySelector('.title').textContent = it.title || '(no title)';
+      const source = document.createElement('span'); source.className = 'src ' + it.source; source.textContent = it.source;
+      const meta = document.createElement('span'); meta.className = 'meta'; meta.textContent = it.count + ' msg · ' + when;
+      const title = document.createElement('span'); title.className = 'title'; title.textContent = it.title || '(no title)';
+      d.append(source, meta, title);
       d.onclick = () => vs.postMessage({ type: 'open', id: it.id });
       list.appendChild(d);
     }
@@ -314,9 +333,12 @@ class OmniChatView {
       else if (msg.type === 'cancel') this.cancel();
       else if (msg.type === 'attach') this.attachFiles();
       else if (msg.type === 'doctor') this.runCli(['--doctor'], '/doctor');
-      else if (msg.type === 'cli') this.runCli(msg.args, msg.label);
+      else if (msg.type === 'cli') { if (Array.isArray(msg.args) && CLI_FLAGS.has(msg.args[0])) this.runCli(msg.args.map(String), msg.label); }
       else if (msg.type === 'openFile') this.openFile(msg.path);
-      else if (msg.type === 'setDefault') { try { config().update(msg.key, msg.value, true); } catch (e) {} }
+      else if (msg.type === 'setDefault') {
+        const valid = (msg.key === 'tool' && validTool(msg.value) === msg.value) || (msg.key === 'mode' && validMode(msg.value) === msg.value);
+        if (valid) { try { config().update(msg.key, msg.value, true); } catch (e) {} }
+      }
       else if (msg.type === 'newConversation') this.clearConv();
       else if (msg.type === 'remote') this.remoteControl(msg.name);
       else if (msg.type === 'export') this.exportConv(msg.mode, msg.model);
@@ -324,7 +346,7 @@ class OmniChatView {
       else if (msg.type === 'diffInline') this.getDiff(msg.path);
       else if (msg.type === 'setDecision') { const dec = this.loadDec(); dec[msg.path] = msg.state; this.saveDec(dec); }
       else if (msg.type === 'revert') this.revertFile(msg.path);
-      else if (msg.type === 'command') vscode.commands.executeCommand(msg.id);
+      else if (msg.type === 'command') { if (WEBVIEW_COMMANDS.has(msg.id)) vscode.commands.executeCommand(msg.id); }
       else if (msg.type === 'ready') { this.sendDefaults(); this.sendMenu(); this.loadLast(); }
     });
   }
@@ -362,7 +384,11 @@ class OmniChatView {
         let text = r.out;
         if (!text.trim()) {
           // No git diff (e.g. not a repo / no changes): fall back to showing the file content.
-          try { text = fs.readFileSync(path.isAbsolute(p) ? p : path.join(root, p), 'utf8'); }
+          try {
+            const file = path.resolve(root, p);
+            if (path.relative(root, file).startsWith('..') || path.isAbsolute(path.relative(root, file))) throw new Error('outside the workspace');
+            text = fs.readFileSync(file, 'utf8');
+          }
           catch (e) { text = '(no diff available' + (r.err ? ': ' + r.err.trim() : '') + ')'; }
         }
         this.post({ type: 'diffText', path: p, text });
@@ -410,8 +436,7 @@ class OmniChatView {
     const sess = name || ('omni-' + path.basename(workspaceCwd()));
     const term = vscode.window.createTerminal({ name: 'Omni · Remote Control', cwd: workspaceCwd() });
     term.show();
-    const bin = config().get('claudeBin', 'claude');
-    term.sendText(bin + ' --remote-control ' + sess + (seeded ? ' "$(cat \'' + f + '\')"' : ''));
+    term.sendText(shellBin(userSetting('claudeBin', 'claude')) + ' --remote-control ' + shq(sess) + (seeded ? ' "$(cat \'' + f + '\')"' : ''));
   }
 
   // Open a file referenced in the chat (click). Tries the path, then searches the workspace by basename.
@@ -444,7 +469,7 @@ class OmniChatView {
   runCli(args, label) {
     if (this.child) return;
     if (!Array.isArray(args) || !args.length) { this.post({ type: 'done', code: 0 }); return; }
-    const bin = config().get('binPath', 'ai');
+    const bin = binPath();
     label = label || ('/' + args.join(' ').replace(/^--/, ''));
     let acc = '';
     this.post({ type: 'cliBegin', label });
@@ -483,7 +508,7 @@ class OmniChatView {
     const args = mode === 'print'
       ? ['--print', '--from', tmp, '--out', out]
       : ['--export'].concat(model ? [model] : []).concat(['--from', tmp, '--out', out]);
-    const bin = config().get('binPath', 'ai');
+    const bin = binPath();
     this.post({ type: 'cliBegin', label: '/' + mode + (model ? ' ' + model : '') });
     let child;
     try { child = spawn(bin, args, { cwd: workspaceCwd(), env: { ...process.env, NO_COLOR: '1' } }); }
@@ -555,12 +580,12 @@ class OmniChatView {
   // Tell the webview the configured defaults so the mode/tool pickers start in sync.
   sendDefaults() {
     const cfg = config();
-    this.post({ type: 'defaults', tool: cfg.get('tool', 'auto'), mode: cfg.get('mode', 'default') });
+    this.post({ type: 'defaults', tool: cfg.get('tool', 'auto'), mode: modeSetting() });
   }
 
   // Ask the CLI for its live tools/modes/langs/skills so the chat menus match the terminal.
   sendMenu() {
-    const bin = config().get('binPath', 'ai');
+    const bin = binPath();
     let out = '';
     let child;
     try { child = spawn(bin, ['--menu-json'], { cwd: workspaceCwd(), env: { ...process.env, NO_COLOR: '1' } }); }
@@ -577,9 +602,9 @@ class OmniChatView {
     if (this.child) return; // one request at a time
     opts = opts || {};
     const cfg = config();
-    const bin = cfg.get('binPath', 'ai');
-    const tool = opts.tool || cfg.get('tool', 'auto');
-    const mode = opts.mode || cfg.get('mode', 'default');
+    const bin = binPath();
+    const tool = validTool(opts.tool || cfg.get('tool', 'auto'));
+    const mode = opts.mode ? validMode(opts.mode) : modeSetting();
     const args = [];
     if (tool && tool !== 'auto') args.push('--' + tool);
     if (mode && mode !== 'default') args.push('--mode', mode);
@@ -700,6 +725,7 @@ class OmniChatView {
   }
 
   html() {
+    const nonce = scriptNonce();
     const LOGO = `<svg class="mark" viewBox="0 0 48 48" width="56" height="56" aria-hidden="true">
       <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
         <stop offset="0" stop-color="#f7a63b"/><stop offset=".5" stop-color="#ff5c5c"/><stop offset="1" stop-color="#7c5cff"/>
@@ -709,7 +735,7 @@ class OmniChatView {
       <path fill="#ff5c5c" d="M24 17l2.3 4.7L31 24l-4.7 2.3L24 31l-2.3-4.7L17 24l4.7-2.3z"/>
     </svg>`;
     return `<!doctype html><html><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <style>
   :root { --brand1:#f7a63b; --brand2:#7c5cff; --col: 820px; }
   * { box-sizing: border-box; }
@@ -857,7 +883,7 @@ class OmniChatView {
   </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.3/dist/mermaid.min.js"></script>
-<script>
+<script nonce="${nonce}">
   var vs = acquireVsCodeApi();
   try { if (window.mermaid) window.mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'default' }); } catch (e) {}
   var log = document.getElementById('log'), q = document.getElementById('q');
@@ -906,9 +932,10 @@ class OmniChatView {
   var SKILLS = [];
   var F = String.fromCharCode(96);
   function isPath(t){ return /\\.(ts|tsx|js|jsx|py|go|rs|java|rb|json|md|ya?ml|sh|css|scss|html|sql|toml|txt)$/i.test(t) || (/\\//.test(t) && /\\.[a-z0-9]+$/i.test(t)); }
-  function esc(t){ return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function esc(t){ return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
   function md(s){
     var codes = [];
+    s = String(s).replace(/\\u0000/g, '');
     s = s.replace(new RegExp(F+F+F+'([\\\\s\\\\S]*?)'+F+F+F,'g'), function(_,c){ codes.push(c); return '\\u0000'+(codes.length-1)+'\\u0000'; });
     s = esc(s);
     s = s.replace(/^#{4,6} (.*)$/gm,'<h4>$1</h4>').replace(/^### (.*)$/gm,'<h3>$1</h3>').replace(/^## (.*)$/gm,'<h2>$1</h2>').replace(/^# (.*)$/gm,'<h1>$1</h1>');
@@ -918,7 +945,7 @@ class OmniChatView {
     s = s.replace(/^\\s*\\d+\\. (.*)$/gm,'<oli>$1</oli>');
     s = s.replace(/(<oli>[\\s\\S]*?<\\/oli>)/g, function(m){ return '<ol>'+m.replace(/<oli>/g,'<li>').replace(/<\\/oli>/g,'</li>')+'</ol>'; });
     s = s.replace(new RegExp(F+'([^'+F+']+)'+F,'g'), function(_, c){
-      return isPath(c) ? '<code class="file" title="Open file" data-p="' + c.replace(/"/g,'&quot;') + '">' + c + '</code>' : '<code>' + c + '</code>';
+      return isPath(c) && c.indexOf('\\u0000') < 0 ? '<code class="file" title="Open file" data-p="' + c + '">' + c + '</code>' : '<code>' + c + '</code>';
     });
     s = s.replace(/\\*\\*([^*]+)\\*\\*/g,'<b>$1</b>').replace(/\\*([^*]+)\\*/g,'<i>$1</i>');
     s = s.replace(/\\[([^\\]]+)\\]\\((https?:[^)]+)\\)/g,'<span class="link">$1</span>');
@@ -1178,7 +1205,9 @@ class OmniChatView {
     menu.innerHTML = '';
     list.slice(0, 12).forEach(function(c, i){
       var el = document.createElement('div'); el.className = 'mi' + (i === menuIdx ? ' sel' : '');
-      el.innerHTML = '<b>' + c.cmd + '</b><span style="opacity:.6">' + c.desc + '</span>';
+      var name = document.createElement('b'); name.textContent = c.cmd;
+      var about = document.createElement('span'); about.style.opacity = '.6'; about.textContent = c.desc;
+      el.appendChild(name); el.appendChild(about);
       el.onclick = function(){ menuPick(c); };
       menu.appendChild(el);
     });
@@ -1308,7 +1337,7 @@ function installCli(manager) {
 
 // If the `ai` CLI is missing, offer to install it (the extension only drives the CLI).
 function ensureCli(context) {
-  const bin = config().get('binPath', 'ai');
+  const bin = binPath();
   let child;
   try { child = spawn(bin, ['--version'], { env: process.env }); } catch (e) { child = null; }
   const offer = () => {
