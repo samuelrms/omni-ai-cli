@@ -617,6 +617,7 @@ docker exec -it omni ai --account login primary
 - **Risque hors de `plan` :** les commandes tournent avec l'utilisateur qui détient les connexions dans `omni-home`. Qui détient la clé peut les lire : ne donnez de clés qu'à des personnes de confiance et révoquez les sessions en cas de fuite.
 - **Codex :** son sandbox ne démarre pas dans le conteneur, car il a besoin de fonctions bloquées par Docker et le noyau de l'hôte. Il n'utilise des outils qu'en `yolo`, avec le conteneur comme isolation. En `plan`, `edits` et `auto`, il répond seulement, sans lire ni modifier de fichiers.
 - **Mise à jour :** `git pull && docker compose up -d --build`. `ai --update` ne s'applique pas à l'image.
+- **Image prête :** `export OMNI_IMAGE=ghcr.io/samuelrms/omni-ai-cli:latest && docker compose pull omni && docker compose up -d --no-build`. Chaque release publie sa version et `latest`, pour amd64 et arm64. L'image inclut des CLI tiers, soumis à leurs propres conditions ; l'utilisation de votre compte suit aussi ces conditions.
 
 Pour l'exposer sur un réseau, utilisez un proxy inverse avec HTTPS, comme Caddy :
 
