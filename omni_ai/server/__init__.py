@@ -5,14 +5,16 @@ handler (HTTP).
 """
 import argparse
 import ipaddress
+import logging
+import logging.handlers
 import os
 import signal
 import sys
 import time
 
-from . import auth
+from . import auth, service
 from .execution import FORCE_AFTER, SHUTDOWN, uses_shared_credentials
-from .handler import Server
+from .handler import REQUEST_LOG, Server
 
 
 def _loopback(host):
@@ -29,6 +31,12 @@ def _positive(text):
     if value < 1:
         raise argparse.ArgumentTypeError('deve ser maior que zero')
     return value
+
+
+def _log_to_file(path):
+    handler = logging.handlers.RotatingFileHandler(path, maxBytes=5_000_000, backupCount=3, encoding='utf-8')
+    REQUEST_LOG.addHandler(handler)
+    REQUEST_LOG.propagate = False
 
 
 def keys_command(args):
@@ -69,15 +77,32 @@ def main(argv):
     parser.add_argument('--mode', choices=('plan', 'edits', 'auto', 'yolo'), default='plan',
                         help='O que as ferramentas podem fazer (padrão: plan, somente leitura)')
     parser.add_argument('--workdir', help='Pasta de trabalho das ferramentas (obrigatória fora do modo plan)')
+    parser.add_argument('--log-file', help='Grava os pedidos neste arquivo, com rotação por tamanho')
+    parser.add_argument('--install-service', action='store_true', help='Instala como serviço do usuário (launchd ou systemd)')
+    parser.add_argument('--uninstall-service', action='store_true', help='Remove o serviço')
+    parser.add_argument('--service-status', action='store_true', help='Mostra o estado do serviço')
+    parser.add_argument('--yes', action='store_true', help='Confirma --mode yolo e arquivo de serviço não gerado pelo Omni')
     args = parser.parse_args(argv)
     if not 0 <= args.port <= 65535:
         parser.error('porta inválida')
     workdir = os.path.abspath(args.workdir) if args.workdir else None
+    if args.service_status or args.uninstall_service or args.install_service:
+        try:
+            if args.service_status:
+                return service.status()
+            if args.uninstall_service:
+                return service.uninstall(args)
+            return service.install(args, _loopback(args.host))
+        except service.ServiceError as error:
+            print(error, file=sys.stderr)
+            return 1
     if args.mode != 'plan' and not workdir:
         parser.error(f'--mode {args.mode} exige --workdir')
     if workdir and not os.path.isdir(workdir):
         parser.error(f'pasta de trabalho não encontrada: {workdir}')
 
+    if args.log_file:
+        _log_to_file(args.log_file)
     created = None
     if not auth.configured():
         created = auth.add('default')

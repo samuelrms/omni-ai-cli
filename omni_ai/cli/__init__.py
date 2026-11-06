@@ -67,6 +67,7 @@ USAGE = f'''{BOLD}Uso:{NC}
   ai --status | --doctor | --reset | --log | --classify "prompt"
   ai serve [--host H] [--port P] [--mode M --workdir PASTA]   Servidor compatível com a API da OpenAI
   ai serve keys [list|add|remove]    Chaves de API do servidor
+  ai serve --install-service | --uninstall-service | --service-status
   ai --update                        Atualizar para a versão mais nova
   ai --version                       Versão do Omni AI CLI
   ai --completions zsh|bash          Script de autocomplete do shell

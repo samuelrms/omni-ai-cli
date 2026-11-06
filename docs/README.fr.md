@@ -474,6 +474,23 @@ ai serve --host 0.0.0.0 --port 9000 --max-concurrent 4 --timeout 600
 ai serve keys [list | add NAME | remove NAME]
 ```
 
+### En tant que service
+
+```bash
+ai serve --install-service [--host H] [--port P] [--mode M] [--workdir DOSSIER]
+ai serve --service-status
+ai serve --uninstall-service
+```
+
+Démarre tout seul et redémarre en cas d'échec, avec launchd sur macOS et systemd utilisateur sur Linux. Sous Windows, dans les conteneurs et sous WSL sans systemd, la commande le signale et n'installe rien ; lancez `ai serve` manuellement.
+
+- **Secrets :** le fichier du service ne contient aucune clé. Sans clé enregistrée, l'installation en crée une et l'affiche une seule fois. Hors de `127.0.0.1`, une clé enregistrée est exigée d'abord.
+- **Environnement :** seuls `PATH` et les dossiers d'Omni parviennent au service. Les clés présentes uniquement dans votre shell n'y parviennent pas : enregistrez-les avec `ai --key`. L'installation les liste, ainsi que les CLI introuvables.
+- **Dossier et mode :** par défaut `plan`, dans `~/.local/share/smart-ai/serve`. `--mode yolo` et l'écrasement d'un fichier non généré par Omni exigent `--yes`.
+- **Logs :** `~/.cache/smart-ai/serve.log`, avec rotation, et `serve.out.log`, vidé à chaque installation.
+- **Linux :** pour démarrer au boot sans session ouverte, lancez `loginctl enable-linger $USER`. L'installation le signale, mais ne le fait pas pour vous.
+- **Mise à jour :** `ai --update` redémarre le service. Sur les installations sans git, réinstallez le service ensuite.
+
 ```python
 from openai import OpenAI
 client = OpenAI(base_url="http://127.0.0.1:8080/v1", api_key="omni-...")

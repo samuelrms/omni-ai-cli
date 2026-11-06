@@ -110,6 +110,20 @@ def show_log():
 
 
 def update():
+    code = _update()
+    if code == 0:
+        _restart_service()
+    return code
+
+
+def _restart_service():
+    from ..server import service
+    restarted = service.after_update()
+    if restarted is not None:
+        say(f'{GREEN}✓ Serviço reiniciado.{NC}' if restarted else f'{RED}✗ Reinicie o serviço: ai serve --install-service{NC}')
+
+
+def _update():
     """Pull the latest version into the install folder; settings live in ~/.config and are kept."""
     if (REPO / '.git').is_dir() and resolve_bin('git'):
         # Pull the current branch from origin explicitly, so it works even when the branch has no
@@ -130,4 +144,5 @@ def update():
     else:
         command = 'curl -fsSL https://raw.githubusercontent.com/samuelrms/omni-ai-cli/main/get.sh | bash'
     say(f'Instalação sem git. Para atualizar, rode:\n  {command}')
+    say('Com o serviço instalado, reinicie depois: ai serve --install-service')
     return 1

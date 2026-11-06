@@ -1,10 +1,10 @@
 """HTTP layer: authentication, limits, disconnect detection, JSON and SSE responses."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import logging
 import select
 import socket
 import socketserver
-import sys
 import threading
 import time
 import uuid
@@ -53,6 +53,12 @@ def api_provider(name):
     return name in ('openrouter', 'deepseek') or (name == 'grok' and not installed('grok'))
 
 
+REQUEST_LOG = logging.getLogger('omni_ai.server.requests')
+REQUEST_LOG.setLevel(logging.INFO)
+if not REQUEST_LOG.handlers:
+    REQUEST_LOG.addHandler(logging.StreamHandler())
+
+
 class Server(ThreadingHTTPServer):
     daemon_threads = True
     block_on_close = False
@@ -88,7 +94,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
         # Request line and status only: never headers or bodies
-        print(f'{self.log_date_time_string()} {fmt % args}', file=sys.stderr, flush=True)
+        REQUEST_LOG.info(f'{self.log_date_time_string()} {fmt % args}')
 
     def send_error(self, code, message=None, explain=None):
         """Malformed requests get the same error format as everything else."""
