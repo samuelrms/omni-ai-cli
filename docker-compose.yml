@@ -1,7 +1,8 @@
 services:
   omni:
     build: .
-    image: omni-ai-cli:local
+    # To use the published image: OMNI_IMAGE=ghcr.io/samuelrms/omni-ai-cli:latest, then `pull` and `up -d --no-build`.
+    image: ${OMNI_IMAGE:-omni-ai-cli:local}
     container_name: omni
     init: true
     # plan: read-only. edits, auto or yolo let requests change files in /workspace.
