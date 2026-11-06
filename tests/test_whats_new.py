@@ -1,6 +1,8 @@
 import isolation  # noqa: F401
 import importlib.util
+import io
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -162,6 +164,61 @@ class ReleaseNotesScript(unittest.TestCase):
     def test_pull_number(self):
         self.assertEqual(release_notes.pull_number('feat: thing (#80)\n'), '80')
         self.assertIsNone(release_notes.pull_number('feat: thing'))
+
+
+class ReleaseWithSeveralPullRequests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(tmp.name)
+        self.git('init', '-q')
+        self.commit('first')
+        self.git('tag', 'v1.0.0')
+        self.bodies = {}
+
+    def git(self, *args):
+        subprocess.run(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', *args], check=True, capture_output=True)
+
+    def commit(self, title):
+        self.git('commit', '-q', '--allow-empty', '-m', title)
+
+    def run_script(self, tag):
+        """Runs main() with GitHub replaced; returns what was written to the release, if anything."""
+        written = []
+        def gh(*args):
+            if args[0] == 'pr':
+                return json.dumps({'body': self.bodies[args[2]]})
+            if args[:2] == ('release', 'view'):
+                return json.dumps({'body': '## [1.0.1](x)\n\n### Bug Fixes\n\n* raw\n'})
+            written.append(args[args.index('--notes') + 1])
+            return ''
+        with patch.object(release_notes, 'gh', gh), patch('sys.stdout', io.StringIO()):
+            self.assertEqual(release_notes.main(tag), 0)
+        return written
+
+    def test_every_pull_request_since_the_last_release_is_listed_in_order(self):
+        self.commit('fix: old (#1)')
+        self.git('tag', 'v1.0.1')
+        for number in ('2', '3', '4'):
+            self.commit(f'fix: thing (#{number})')
+            self.bodies[number] = f'## Release notes\n\n- Note {number}\n\n## Checklist\n'
+        self.commit('chore: no pull request')
+        self.git('tag', 'v1.0.2')
+        written = self.run_script('v1.0.2')
+        self.assertEqual(whats_new.summary(written[0]), ['Note 2', 'Note 3', 'Note 4'])
+
+    def test_a_pull_request_without_notes_does_not_leave_a_gap(self):
+        self.commit('fix: thing (#2)')
+        self.commit('fix: thing (#3)')
+        self.bodies.update({'2': '## O que muda\n', '3': '## Release notes\n\n- Note 3\n'})
+        self.git('tag', 'v1.0.1')
+        self.assertIn('### What changes for you\n\n- Note 3\n\n###', self.run_script('v1.0.1')[0])
+
+    def test_nothing_to_add(self):
+        self.commit('chore: no pull request')
+        self.git('tag', 'v1.0.1')
+        self.assertEqual(self.run_script('v1.0.1'), [])
 
 
 if __name__ == '__main__':

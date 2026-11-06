@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add the merged pull request's `## Release notes` section to a GitHub release. Usage: release_notes.py vX.Y.Z"""
+"""Add the `## Release notes` section of every pull request in a release to its GitHub page. Usage: release_notes.py vX.Y.Z"""
 import json
 import re
 import subprocess
@@ -31,20 +31,30 @@ def gh(*args):
     return subprocess.run(['gh', *args], check=True, capture_output=True, text=True).stdout
 
 
+def git(*args):
+    return subprocess.run(['git', *args], check=True, capture_output=True, text=True).stdout
+
+
+def pull_numbers(tag):
+    """Oldest first. Merges close together share one release, so its last commit is not enough."""
+    previous = git('describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*', f'{tag}^').strip()
+    subjects = git('log', '--reverse', '--format=%s', f'{previous}..{tag}').splitlines()
+    return [number for number in map(pull_number, subjects) if number]
+
+
 def main(tag):
-    subject = subprocess.run(['git', 'log', '-1', '--format=%s'], check=True, capture_output=True, text=True).stdout
-    number = pull_number(subject)
-    if not number:
-        print('No pull request in the commit title; keeping the generated notes.')
+    numbers = pull_numbers(tag)
+    if not numbers:
+        print('No pull request in the commit titles; keeping the generated notes.')
         return 0
-    body = json.loads(gh('pr', 'view', number, '--json', 'body'))['body']
+    sections = [section(json.loads(gh('pr', 'view', number, '--json', 'body'))['body']) for number in numbers]
     current = json.loads(gh('release', 'view', tag, '--json', 'body'))['body']
-    updated = merged(current, section(body))
+    updated = merged(current, '\n'.join(filter(None, sections)))
     if updated == current:
         print('Nothing to add.')
         return 0
     gh('release', 'edit', tag, '--notes', updated)
-    print(f'Added the notes from #{number} to {tag}.')
+    print(f'Added the notes from {", ".join("#" + number for number in numbers)} to {tag}.')
     return 0
 
 
