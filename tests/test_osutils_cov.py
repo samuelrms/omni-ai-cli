@@ -15,7 +15,7 @@ from omni_ai import osutils
 
 class ModuleHelpersTests(unittest.TestCase):
     def test_module_cmd(self):
-        self.assertEqual(osutils.module_cmd('cli'), [sys.executable, '-m', 'omni_ai.cli'])
+        self.assertEqual(osutils.module_cmd('cli'), [sys.executable, '-P', '-m', 'omni_ai.cli'])
 
     def test_module_env_from_none_adds_repo_to_pythonpath(self):
         env = osutils.module_env()

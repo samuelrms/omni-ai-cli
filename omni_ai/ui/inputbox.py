@@ -15,7 +15,7 @@ def project_files(cwd, limit=4000):
     """Files for @mentions: git's list when it's a repo (respects .gitignore), else a bounded walk."""
     import subprocess
     try:
-        out = subprocess.run(['git', '-C', str(cwd), 'ls-files', '--cached', '--others', '--exclude-standard'],
+        out = subprocess.run(['git', '-c', 'core.fsmonitor=false', '-C', str(cwd), 'ls-files', '--cached', '--others', '--exclude-standard'],
                              capture_output=True, text=True, timeout=3)
         if out.returncode == 0 and out.stdout:
             return out.stdout.splitlines()[:limit]

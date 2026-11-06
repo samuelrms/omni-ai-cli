@@ -118,10 +118,11 @@ if [[ -L "$LINK_TARGET" || -f "$LINK_TARGET" ]]; then
 fi
 
 # Small launcher instead of a symlink, so it always uses the Python chosen above
-cat > "$LINK_TARGET" <<LAUNCHER
-#!/usr/bin/env sh
-PYTHONPATH="$REPO\${PYTHONPATH:+:\$PYTHONPATH}" exec "$PYTHON" -m omni_ai "\$@"
-LAUNCHER
+# -P keeps the working directory out of Python's imports; %q keeps the paths from being read as commands
+{
+    printf '#!/usr/bin/env bash\n'
+    printf 'PYTHONPATH=%q${PYTHONPATH:+:$PYTHONPATH} exec %q -P -m omni_ai "$@"\n' "$REPO" "$PYTHON"
+} > "$LINK_TARGET"
 chmod +x "$LINK_TARGET"
 echo -e "  ${GREEN}✓${NC} Comando criado: $LINK_TARGET → $REPO/omni_ai"
 
@@ -144,7 +145,7 @@ elif [[ -t 0 ]]; then
 else
     echo -e "  ${YELLOW}⚠${NC} Conta principal sem login: rode ${CYAN}claude auth login${NC}"
 fi
-PYTHONPATH="$REPO" "$PYTHON" -m omni_ai.config account list | sed 's/^/  /'
+PYTHONPATH="$REPO" "$PYTHON" -P -m omni_ai.config account list | sed 's/^/  /'
 
 echo ""
 echo -e "${GREEN}${BOLD}✓ Instalação concluída!${NC}"
