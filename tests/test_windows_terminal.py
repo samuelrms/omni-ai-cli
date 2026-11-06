@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
-SHELLS = {'powershell': ['powershell', '-NoProfile', '-Command'], 'pwsh': ['pwsh', '-NoProfile', '-Command'], 'cmd': ['cmd', '/d', '/s', '/c']}
+SHELLS = {'powershell': ['powershell', '-NoProfile', '-Command'], 'pwsh': ['pwsh', '-NoProfile', '-Command'], 'cmd': None}
 TEXTS = ('x&(echo.planted)>proof.txt&y', 'a b"&(echo.planted)>proof.txt&"c d', '" & echo planted> proof.txt & "',
          "it's; echo planted> proof.txt; 'y", '%PATH% !x! ^& $(echo planted> proof.txt)', 'ação\nsecond line')
 
@@ -39,7 +39,9 @@ class ExtensionTerminalLine(unittest.TestCase):
         self.request = self.cwd / 'request.txt'
 
     def line_in(self, shell, line):
-        return subprocess.run(SHELLS[shell] + [line], cwd=self.cwd, env=self.env, capture_output=True, text=True,
+        # cmd.exe gets the line as typed: a list would escape its quotes in a way only other programs understand
+        command = f'cmd /d /s /c "{line}"' if shell == 'cmd' else SHELLS[shell] + [line]
+        return subprocess.run(command, cwd=self.cwd, env=self.env, capture_output=True, text=True,
                               encoding='utf-8', errors='replace')
 
     def test_the_old_line_ran_text_as_a_command(self):
@@ -49,12 +51,10 @@ class ExtensionTerminalLine(unittest.TestCase):
 
     def test_the_request_reaches_the_tool_as_written_and_runs_nothing(self):
         for shell in SHELLS:
-            call = '& ' if shell != 'cmd' else ''
-            quoted = f"'{self.launcher}'" if shell != 'cmd' else f'"{self.launcher}"'
             for text in TEXTS:
                 with self.subTest(shell=shell, text=text):
                     self.request.write_text(text, encoding='utf-8')
-                    out = self.line_in(shell, f'{call}{quoted} --codex --prompt-file "{self.request}"')
+                    out = self.line_in(shell, f'ai --codex --prompt-file "{self.request}"')
                     self.assertFalse(self.proof.exists(), out.stdout + out.stderr)
                     sent = [line for line in out.stdout.splitlines() if line.startswith('[')]
                     self.assertTrue(sent, out.stdout + out.stderr)
