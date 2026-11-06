@@ -12,6 +12,7 @@ import signal
 import sys
 import time
 
+from ..osutils import in_container
 from . import auth, service
 from .execution import FORCE_AFTER, SHUTDOWN, uses_shared_credentials
 from .handler import REQUEST_LOG, Server
@@ -152,8 +153,10 @@ def main(argv):
         print(f'Aviso: modo {args.mode}, {place}, sem aprovação. Base: {workdir}. '
               'Quem tem a chave também pode alcançar os logins das contas.', file=sys.stderr, flush=True)
     if not _loopback(args.host):
-        print('Aviso: acessível pela rede. Use HTTPS com proxy reverso. Quem tem a chave usa suas contas e pode ler '
-              'arquivos desta máquina por meio das ferramentas.', file=sys.stderr, flush=True)
+        exposure = ('Dentro de um container, quem decide o acesso é a porta publicada.' if in_container()
+                    else 'Acessível pela rede. Use HTTPS com proxy reverso.')
+        print(f'Aviso: {exposure} Quem tem a chave usa suas contas e pode ler arquivos deste ambiente por meio das ferramentas.',
+              file=sys.stderr, flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

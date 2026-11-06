@@ -535,6 +535,61 @@ class CursorReadOnly(unittest.TestCase):
         self.assertEqual(argv[argv.index('--mode') + 1], 'ask')
 
 
+class Denied(unittest.TestCase):
+    def outcome(self, text):
+        from omni_ai.server.execution import Execution
+        run = Execution('grok', 'p', 'p')
+        run._line(text)  # what the real CLI prints, before a result event with no text
+        run._line(json.dumps({'type': 'result', 'subtype': 'error_during_execution', 'is_error': True, 'result': ''}))
+        return run.denied, run.protocol_error
+
+    def test_refused_action_is_told_apart(self):
+        self.assertEqual(self.outcome('permission required: Write `/x` was not run, as a headless run cannot ask for approval'), (True, True))
+        self.assertEqual(self.outcome('provider exploded'), (False, True))
+
+    def test_response(self):
+        from omni_ai.server import handler
+        self.assertEqual(handler.FAILURES[handler.DENIED][0], 403)
+
+
+class ContainerWarning(unittest.TestCase):
+    def warning(self, inside):
+        from omni_ai import server
+        import io
+        err = io.StringIO()
+
+        class Fake:
+            server_address = ('0.0.0.0', 1)
+            workspaces = None
+
+            def __init__(self, *a):
+                pass
+
+            def serve_forever(self):
+                raise KeyboardInterrupt
+
+            def stop_all(self, _):
+                return []
+
+            def server_close(self):
+                pass
+
+            class logins:
+                stop_all = staticmethod(lambda: None)
+        with patch.object(server, 'Server', Fake), patch.object(server, 'in_container', lambda: inside), \
+                patch.object(server.auth, 'configured', return_value=True), patch.object(server, 'uses_shared_credentials', return_value=False), \
+                patch.object(server.signal, 'signal'), patch('sys.stderr', err), patch('sys.stdout'):
+            server.main(['--host', '0.0.0.0'])
+        return err.getvalue()
+
+    def test_container_does_not_claim_network_access(self):
+        self.assertNotIn('Acessível pela rede', self.warning(True))
+        self.assertIn('porta publicada', self.warning(True))
+
+    def test_host_still_warns(self):
+        self.assertIn('Acessível pela rede', self.warning(False))
+
+
 class SharedCredentials(unittest.TestCase):
     def check(self, conf):
         from omni_ai.server import execution

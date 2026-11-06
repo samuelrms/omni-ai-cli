@@ -574,6 +574,7 @@ Au premier démarrage, le serveur crée une clé et ne l'affiche qu'une fois. Se
 
 **Limitations :**
 
+- Quand le mode du serveur refuse une action et que l'outil se termine en erreur, comme Grok, la réponse est `403 action_not_allowed`.
 - `temperature` ne s'applique qu'à OpenRouter, DeepSeek et Grok via l'API. Les CLI l'ignorent, et elle apparaît dans `X-Omni-Ignored-Params`.
 - `max_tokens` est approximatif sur les CLI (environ 4 caractères par token).
 - `usage` est estimé lorsque le fournisseur ne le communique pas.
