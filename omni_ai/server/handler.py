@@ -208,8 +208,14 @@ class Handler(BaseHTTPRequestHandler):
             self.server.headers_read(self.connection)
 
     def parse_request(self):
+        self.work_header = None  # a connection can carry several requests
         parsed = super().parse_request()
         self.server.headers_read(self.connection)
+        if parsed:
+            # A body left unread would be parsed as the next request, so only reading it keeps the connection
+            self.close_after_body = self.close_connection
+            if self.headers.get('Content-Length', '0') != '0' or self.headers.get('Transfer-Encoding'):
+                self.close_connection = True
         return parsed
 
     def log_message(self, fmt, *args):
@@ -261,6 +267,9 @@ class Handler(BaseHTTPRequestHandler):
             raise RequestError(401, 'Invalid or missing API key.', 'authentication_error', code='invalid_api_key')
 
     def _read_body(self):
+        # A proxy may disagree with us on where the body ends if it has two possible lengths
+        if self.headers.get('Transfer-Encoding') or len(self.headers.get_all('Content-Length', [])) > 1:
+            raise RequestError(400, 'Use a single Content-Length, without Transfer-Encoding.')
         try:
             length = int(self.headers.get('Content-Length', ''))
         except ValueError:
@@ -273,6 +282,7 @@ class Handler(BaseHTTPRequestHandler):
             raise RequestError(408, 'Timed out reading the request body.') from None
         if len(data) != length:
             raise RequestError(400, 'The request body is incomplete.')
+        self.close_connection = self.close_after_body
         try:
             return json.loads(data.decode('utf-8'))
         except (ValueError, UnicodeDecodeError):
@@ -301,7 +311,6 @@ class Handler(BaseHTTPRequestHandler):
         self._no_such_method('PUT')
 
     def do_DELETE(self):
-        self.close_connection = bool(self.headers.get('Content-Length'))  # a body is not read here
         self._no_such_method('DELETE')
 
     def do_GET(self):
@@ -355,16 +364,16 @@ class Handler(BaseHTTPRequestHandler):
         while not finished.wait(WATCH_INTERVAL):
             try:
                 if has_input(self.connection):
-                    if not self.connection.recv(1, socket.MSG_PEEK):
+                    if not self.connection.recv(65536):
                         execution.stop(DISCONNECTED)
                         return
-                    return  # bytes of a pipelined request: the client is alive, leave them for later
+                    # Pipelined bytes: left in place they would hide the client leaving. They are not answered
+                    self.close_connection = True
             except (OSError, ValueError):
                 execution.stop(DISCONNECTED)
                 return
 
     def _complete(self, request, tool):
-        self.work_header = None  # a connection can carry several requests
         if request['emulate']:
             self._run(request, Emulated(request['emulate'], request))
             return
