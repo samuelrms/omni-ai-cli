@@ -2,6 +2,7 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import logging
+from pathlib import Path
 import re
 import selectors
 import socket
@@ -9,6 +10,7 @@ import socketserver
 import sys
 import threading
 import time
+import traceback
 import uuid
 
 from .. import config as config_tool
@@ -201,9 +203,14 @@ class Handler(BaseHTTPRequestHandler):
     timeout = SOCKET_TIMEOUT
 
     def handle_one_request(self):
+        self.response_started = False
         self.server.expect_headers(self.connection)
         try:
             super().handle_one_request()
+        except OSError:
+            raise
+        except Exception as error:  # a bug here must not end as a dropped connection with no answer
+            self._unexpected(error)
         finally:
             self.server.headers_read(self.connection)
 
@@ -217,6 +224,18 @@ class Handler(BaseHTTPRequestHandler):
         line = re.sub(r'[?]\S*', '', fmt % args)
         REQUEST_LOG.info(f'{self.log_date_time_string()} {line}')
 
+    def _unexpected(self, error):
+        # The type and the place: the message of an exception can quote the request
+        where = traceback.extract_tb(error.__traceback__)[-1]
+        REQUEST_LOG.error('Unexpected %s at %s:%s', type(error).__name__, Path(where.filename).name, where.lineno)
+        self.close_connection = True
+        if not self.response_started:  # too late to answer otherwise: closing tells the client it is incomplete
+            self._fail(RequestError(500, 'The server could not process this request.', 'api_error'))
+
+    def send_response(self, code, message=None):
+        self.response_started = True
+        super().send_response(code, message)
+
     def send_header(self, keyword, value):
         if UNSAFE_HEADER_VALUE.search(str(value)):
             REQUEST_LOG.warning('Response header %s left out: its value has characters HTTP does not allow', keyword)
@@ -229,7 +248,7 @@ class Handler(BaseHTTPRequestHandler):
         self._json(code, protocol.error_body(message or self.responses.get(code, ('Error',))[0]))
 
     def _json(self, status, body, headers=None):
-        data = json.dumps(body, ensure_ascii=False).encode('utf-8')
+        data = json.dumps(body, ensure_ascii=False).encode('utf-8', 'replace')
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(data)))
@@ -275,7 +294,7 @@ class Handler(BaseHTTPRequestHandler):
             raise RequestError(400, 'The request body is incomplete.')
         try:
             return json.loads(data.decode('utf-8'))
-        except (ValueError, UnicodeDecodeError):
+        except (ValueError, UnicodeDecodeError, RecursionError):
             raise RequestError(400, 'The request body is not valid JSON.') from None
 
     def _admin(self, method):

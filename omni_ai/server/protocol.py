@@ -1,6 +1,5 @@
 """OpenAI wire format: request validation, conversation to prompt, responses and errors."""
 import json
-import math
 import re
 import time
 
@@ -45,7 +44,7 @@ def build_prompt(messages):
         raise RequestError(400, "'messages' must be a non-empty list.", param='messages')
     turns = []
     for index, message in enumerate(messages):
-        if not isinstance(message, dict) or message.get('role') not in ROLE_LABELS:
+        if not isinstance(message, dict) or not isinstance(message.get('role'), str) or message['role'] not in ROLE_LABELS:
             raise RequestError(400, 'Supported roles: system, developer, user and assistant.',
                                param=f'messages[{index}].role')
         turns.append((message['role'], _text(message.get('content'), index)))
@@ -60,6 +59,24 @@ def build_prompt(messages):
         raise RequestError(400, f'The conversation exceeds the limit of {MAX_PROMPT_BYTES} bytes.',
                            param='messages', code='context_length_exceeded')
     return prompt, turns[-1][1]
+
+
+def _check_text(body):
+    """Valid JSON can hold text that cannot be sent on: half of an emoji has no UTF-8, and NUL ends a process argument."""
+    pending = [body]
+    while pending:
+        value = pending.pop()
+        if isinstance(value, dict):
+            pending += [*value, *value.values()]
+        elif isinstance(value, list):
+            pending += value
+        elif isinstance(value, str):
+            try:
+                value.encode('utf-8')
+            except UnicodeEncodeError:
+                raise RequestError(400, 'The request has text that is not valid Unicode.') from None
+            if '\x00' in value:
+                raise RequestError(400, 'The request has a NUL character in its text.')
 
 
 def _check_tools(tools):
@@ -83,7 +100,7 @@ def _check_tool_choice(choice, names):
     if choice is None or choice in ('none', 'auto', 'required'):
         return
     function = choice.get('function') if isinstance(choice, dict) else None
-    if not isinstance(function, dict) or choice.get('type') != 'function' or function.get('name') not in names:
+    if not isinstance(function, dict) or choice.get('type') != 'function' or not isinstance(function.get('name'), str) or function['name'] not in names:
         raise RequestError(400, "'tool_choice' must be none, auto, required or one of the functions.", param='tool_choice')
 
 
@@ -93,7 +110,7 @@ def _check_tool_messages(messages):
         raise RequestError(400, "'messages' must be a non-empty list.", param='messages')
     for index, message in enumerate(messages):
         role = message.get('role') if isinstance(message, dict) else None
-        if role not in ROLE_LABELS and role != 'tool':
+        if not isinstance(role, str) or (role not in ROLE_LABELS and role != 'tool'):
             raise RequestError(400, 'Supported roles: system, developer, user, assistant and tool.', param=f'messages[{index}].role')
         calls = message.get('tool_calls')
         if calls is not None:
@@ -110,6 +127,7 @@ def parse_request(body):
     """Validated request fields."""
     if not isinstance(body, dict):
         raise RequestError(400, 'The request body must be a JSON object.')
+    _check_text(body)
     model = body.get('model')
     if not isinstance(model, str) or not model:
         raise RequestError(400, "'model' is required.", param='model')
@@ -130,7 +148,7 @@ def parse_request(body):
         raise RequestError(400, "Only 'n' = 1 is supported.", param='n')
     temperature = body.get('temperature')
     if temperature is not None and (isinstance(temperature, bool) or not isinstance(temperature, (int, float))
-                                    or not math.isfinite(temperature) or not 0 <= temperature <= 2):
+                                    or not 0 <= temperature <= 2):  # also false for NaN and infinity
         raise RequestError(400, "'temperature' must be between 0 and 2.", param='temperature')
     max_tokens = body.get('max_completion_tokens', body.get('max_tokens'))
     if max_tokens is not None and (isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or max_tokens < 1):
