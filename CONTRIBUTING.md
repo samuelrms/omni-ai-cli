@@ -40,6 +40,7 @@ npm run diagrams
 - Um PR por mudança perceptível. Use *squash merge*.
 - A seção `## Release notes` do PR, em inglês, entra nas notas do release e aparece em `ai --update` e na aba de mudanças da extensão.
 - A `main` é protegida: todo merge passa por PR, com o CI verde e a aprovação do mantenedor.
+- Actions nos workflows vão fixadas pelo SHA do commit, com a versão em comentário (`uses: actions/checkout@<sha> # v7.0.1`). Uma tag pode passar a apontar para outro código; um commit, não. O Dependabot atualiza os dois juntos, e um teste recusa action sem SHA.
 
 ## Versões
 
