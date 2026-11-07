@@ -74,7 +74,7 @@ Tres detalles que el diagrama deja explícitos:
 
 - **Cada cuenta de Claude tiene su propia carpeta de login.** Las cuentas adicionales
   corren con `CLAUDE_CONFIG_DIR` apuntando a `~/.claude-accounts/<nombre>`. La cuenta
-  principal nunca se desloguea, y ninguna credencial se copia de un lugar a otro. Copiar
+  principal nunca se desloguea, y ninguna credencial se copia de un lugar a otro. La excepción son los perfiles antiguos con `credentials_file`, que cambian el archivo de credenciales durante la llamada. Copiar
   el `.credentials.json` no funciona de forma confiable en macOS, donde el login queda
   en el Keychain.
 - **Ctrl-C mata todo el árbol de procesos.** El enrutador corre en un grupo de procesos
@@ -802,7 +802,7 @@ guardar ni rotar.
   el CLI nativo.
 - `/parallel` solo analiza: Codex con `--sandbox read-only` u OpenRouter, que no accede
   a los archivos. Los agentes no editan el proyecto al mismo tiempo.
-- La clasificación simple/compleja se hace por palabras clave y tamaño, no con un modelo.
+- La clasificación simple/compleja usa un modelo cuando hay clave de Groq, Cerebras, OpenRouter o Grok. Sin ninguna, o si todas fallan, usa palabras clave y tamaño. Puede equivocarse en ambos casos.
 - Cambiar de modelo no renueva la cuota de la cuenta.
 - En Windows el código usa los equivalentes nativos (grupos de procesos y `taskkill`, `msvcrt`, uniones de carpeta), pero solo se probó de verdad en macOS. La excepción es ejecutar herramientas instaladas con npm, probado en CI en Windows.
 
@@ -816,7 +816,8 @@ guardar ni rotar.
 - Antes de ir a OpenRouter, los correos, teléfonos, documentos y otros datos personales
   se cambian por marcadores y se restauran en la respuesta. El enmascaramiento es por
   patrones y no garantiza un anonimato total.
-- Claude, Codex y Antigravity reciben el texto original, bajo los términos de cada servicio.
+- Claude, Codex, Cursor, Antigravity y Grok Build reciben el texto original, bajo los términos de cada servicio.
+- Para clasificar pedidos y decidir sobre la cola, una parte enmascarada del pedido, y de la respuesta anterior en el caso de la cola, va al servicio configurado: Groq, Cerebras u OpenRouter. Si los gratuitos fallan, la clasificación puede usar xAI, que es de pago.
 
 ---
 
