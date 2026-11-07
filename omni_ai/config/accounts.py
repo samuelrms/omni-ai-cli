@@ -23,7 +23,7 @@ def logged_in(profile):
         return False
     try:
         result = subprocess.run([resolve_bin(os.environ.get('CLAUDE_BIN', 'claude')) or 'claude', 'auth', 'status', '--json'],
-                                env=env, capture_output=True, text=True, timeout=20)
+                                env=env, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=20)
     except (OSError, subprocess.TimeoutExpired):
         return None
     try:

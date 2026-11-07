@@ -278,7 +278,7 @@ class RunWrapperTests(Base):
                 patch.object(cli.subprocess, 'Popen', return_value=fake), \
                 patch.object(cli.sys.stdout, 'write'), patch.object(cli.sys.stdout, 'flush'):
             cli.run(['tool'], stdin='data')
-        fake.stdin.write.assert_called_once_with('data')
+        fake.stdin.buffer.write.assert_called_once_with(b'data')  # bytes: a Windows text pipe would add \r
 
 
 # ─── run_claude ──────────────────────────────────────────────────

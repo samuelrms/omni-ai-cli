@@ -27,7 +27,7 @@ class ServiceError(Exception):
 
 def run(*args):
     try:
-        return subprocess.run(args, capture_output=True, text=True, timeout=30)
+        return subprocess.run(args, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30)
     except (OSError, subprocess.TimeoutExpired) as error:
         return subprocess.CompletedProcess(args, 1, '', str(error))
 

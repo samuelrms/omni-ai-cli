@@ -30,7 +30,7 @@ def claude_account(conf):
         env['CLAUDE_CONFIG_DIR'] = str(Path(conf['config_dir']).expanduser())
     try:
         result = subprocess.run([resolve_bin(os.environ.get('CLAUDE_BIN', 'claude')) or 'claude', 'auth', 'status', '--json'],
-                                env=env, capture_output=True, text=True, timeout=20)
+                                env=env, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=20)
         status = json.loads(result.stdout)
     except (OSError, subprocess.TimeoutExpired, ValueError):
         return None
@@ -43,7 +43,8 @@ def codex_status(env=None, timeout=15):
     """Ask `codex app-server` for the account and its rate-limit windows."""
     try:
         proc = subprocess.Popen([resolve_bin('codex') or 'codex', 'app-server'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                stderr=subprocess.DEVNULL, text=True, env=dict(os.environ, **(env or {})))
+                                stderr=subprocess.DEVNULL, text=True, encoding='utf-8', errors='replace',
+                                env=dict(os.environ, **(env or {})))
     except OSError:
         return None
     answers, reader = {}, None
@@ -148,7 +149,7 @@ def claude_token(conf):
             service += '-' + hashlib.sha256(str(folder).encode()).hexdigest()[:8]
         try:
             raw = subprocess.run(['security', 'find-generic-password', '-s', service, '-w'],
-                                 capture_output=True, text=True, timeout=10).stdout.strip()
+                                 capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=10).stdout.strip()
         except (OSError, subprocess.TimeoutExpired):
             raw = ''
     try:

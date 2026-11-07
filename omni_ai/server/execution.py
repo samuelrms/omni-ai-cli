@@ -11,7 +11,7 @@ from .. import agy_events
 from .. import config as config_tool
 from ..chat.spend import record_spend, spend
 from ..cli.base import LIMIT_TEXT
-from ..osutils import group_kwargs, module_cmd, module_env, stop_tree
+from ..osutils import group_kwargs, module_cmd, module_env, send_prompt, stop_tree
 from ..tools import TOOLS
 from .auth import SECRET_VARS
 
@@ -66,16 +66,18 @@ class Execution:
     def run(self, on_delta=None):
         """Blocks until the router exits. Returns the outcome; `on_delta` gets streamed text as it arrives."""
         self.on_delta = on_delta
-        args = module_cmd('cli') + ([] if self.tool == 'auto' else ['--' + self.tool]) + ['--', self.prompt]
+        # stdin: a command line can't hold a long prompt on Windows
+        args = module_cmd('cli') + ([] if self.tool == 'auto' else ['--' + self.tool]) + ['--prompt-file', '-']
         with tempfile.TemporaryDirectory(prefix='omni-serve-', ignore_cleanup_errors=True) as folder:
             try:
                 with self.lock:
                     if self.stop_reason:
                         return self.stop_reason
-                    self.child = subprocess.Popen(args, cwd=self.workdir or folder, env=self._env(), stdin=subprocess.DEVNULL,
+                    self.child = subprocess.Popen(args, cwd=self.workdir or folder, env=self._env(), stdin=subprocess.PIPE,
                                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                                   encoding='utf-8', errors='replace', **group_kwargs())
                 try:
+                    send_prompt(self.child, self.prompt)
                     for raw in self.child.stdout:
                         self._line(raw.rstrip())
                     code = self.child.wait()

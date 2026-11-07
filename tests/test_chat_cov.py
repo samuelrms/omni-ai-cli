@@ -324,11 +324,18 @@ class EventTests(Base):
 # --------------------------------------------------------------------------- Runner.run
 
 
+class Sent(io.StringIO):
+    def close(self):
+        self.text = self.getvalue()
+        super().close()
+
+
 class FakePopen:
     def __init__(self, lines, code=0, raise_os=False):
         if raise_os:
             raise OSError('cannot start')
         self.stdout = io.StringIO('\n'.join(lines) + '\n')
+        self.stdin = Sent()
         self._code = code
 
     def wait(self):
@@ -340,8 +347,11 @@ class RunnerRunTests(Base):
         runner = chat.Runner(str(self.root))
         job = {'id': 'agente-1', 'engine': 'codex', 'sent': 'do it'}
         lines = [json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'A'}})]
-        with patch.object(chat.subprocess, 'Popen', return_value=FakePopen(lines)):
+        child = FakePopen(lines)
+        with patch.object(chat.subprocess, 'Popen', return_value=child) as popen:
             runner.run(job, 'classify')
+        self.assertEqual(popen.call_args.args[0][-2:], ['--prompt-file', '-'])
+        self.assertEqual(child.stdin.text, 'do it')
         self.assertEqual(job['status'], 'done')
         self.assertEqual(job['answers'], ['A'])
 
