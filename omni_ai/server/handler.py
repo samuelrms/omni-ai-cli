@@ -209,7 +209,7 @@ class Handler(BaseHTTPRequestHandler):
             super().handle_one_request()
         except OSError:
             raise
-        except Exception as error:  # a bug here must not end as a dropped connection with no answer
+        except (Exception, SystemExit) as error:  # a bug or broken file here must not end as a dropped connection with no answer
             self._unexpected(error)
         finally:
             self.server.headers_read(self.connection)

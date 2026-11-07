@@ -108,7 +108,7 @@ def show_log():
         say(f'{DIM}Nenhum log encontrado ainda.{NC}')
         return
     say(f'{BOLD}Últimas 20 entradas do log:{NC}\n')
-    say('\n'.join(LOG_FILE.read_text(errors='replace').splitlines()[-20:]))
+    say('\n'.join(LOG_FILE.read_text(encoding='utf-8', errors='replace').splitlines()[-20:]))
 
 
 def update():

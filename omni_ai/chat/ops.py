@@ -181,7 +181,7 @@ def setup_completion(cwd):
 def list_sessions():
     for path in sorted(session_dir().glob('*.json'), key=lambda p: p.stat().st_mtime, reverse=True)[:20]:
         try:
-            data = json.loads(path.read_text())
+            data = json.loads(path.read_text(encoding='utf-8'))
             display(f"{data['id']} · {data.get('title') or '—'} · {len(data['messages'])} mensagens · {ui.home_path(data['cwd'])}")
         except (ValueError, KeyError):
             continue

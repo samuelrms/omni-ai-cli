@@ -28,19 +28,32 @@ class Session:
         self.path = session_dir() / (self.id + '.json')
         if identifier and not self.path.exists():
             raise ValueError('Sessão não encontrada')
-        self.lock = os.fdopen(os.open(str(self.path) + '.lock', os.O_CREAT | os.O_RDWR, 0o600), 'w')
+        self.lock = os.fdopen(os.open(str(self.path) + '.lock', os.O_CREAT | os.O_RDWR, 0o600), 'w', encoding='utf-8')
         try:
             lock_exclusive(self.lock)
         except BlockingIOError:
             self.lock.close()
             raise ValueError('Sessão já aberta em outro terminal') from None
-        self.data = json.loads(self.path.read_text()) if identifier else {
+        self.data = self._load() if identifier else {
             'id': self.id, 'cwd': os.getcwd(), 'engine': 'auto', 'messages': [], 'requests': [], 'created': time.time()
         }
         for job in self.data['requests']:
-            if job['status'] == 'running':
+            if isinstance(job, dict) and job.get('status') == 'running':
                 job['status'] = 'interrupted'
         self.save()
+
+    def _load(self):
+        """Old or hand-edited sessions may lack fields; the rest of what they hold is still worth resuming."""
+        data = json.loads(self.path.read_text(encoding='utf-8'))
+        if not isinstance(data, dict):
+            raise ValueError('Sessão corrompida')
+        for field, default in (('messages', []), ('requests', [])):
+            if not isinstance(data.get(field), list):
+                data[field] = default
+        data.setdefault('id', self.id)
+        data.setdefault('cwd', os.getcwd())
+        data.setdefault('engine', 'auto')
+        return data
 
     def save(self):
         # the queue worker and the input loop both save
@@ -57,7 +70,7 @@ class Session:
                 return
             fd, name = tempfile.mkstemp(dir=self.path.parent, prefix='.session-')
             try:
-                with os.fdopen(fd, 'w') as stream:
+                with os.fdopen(fd, 'w', encoding='utf-8') as stream:
                     stream.write(text)
                 os.replace(name, self.path)
             finally:
