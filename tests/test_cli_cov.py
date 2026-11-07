@@ -74,7 +74,8 @@ class PureHelperTests(Base):
     def test_key_account(self):
         self.assertEqual(cli.key_account('codex', 'principal'), 'codex:api-key')
         self.assertEqual(cli.key_account('codex', 'extra'), 'codex:api-key:extra')
-        self.assertEqual(cli.key_account('', 'env'), 'api-key')
+        self.assertEqual(cli.key_account('', 'env'), 'api-key:env')
+        self.assertEqual(cli.key_account('', 'principal'), 'api-key')
         self.assertEqual(cli.key_account('', 'foo'), 'api-key:foo')
 
     def test_ago(self):
@@ -578,14 +579,17 @@ class ClaudeFallbackTests(Base):
         self.assertEqual(code, 0)
         self.assertIn('último recurso', text)
 
-    def test_hard_error_returns_immediately(self):
+    def test_hard_error_tries_the_rest_and_keeps_its_exit_code(self):
         with patch.object(cli.config_tool, 'enabled_profiles', return_value=['p1']), \
                 patch.object(cli.config_tool, 'profiles', return_value={'profiles': {'p1': {}}}), \
+                patch.object(cli.config_tool, 'stored_keys', return_value=[]), \
+                patch.object(cli.routing, 'installed', return_value=False), \
                 patch.object(cli.routing, 'cooldown_left', return_value=0), \
                 patch.object(cli.routing, 'over_ceiling', return_value=False), \
                 patch.object(cli.routing, 'run_claude', return_value=42):
-            code, _ = self.capture(cli.claude_with_fallback, 'hi')
+            code, text = self.capture(cli.claude_with_fallback, 'hi')
         self.assertEqual(code, 42)
+        self.assertNotIn('rate limit', text)
 
     def test_nothing_available(self):
         with patch.object(cli.config_tool, 'enabled_profiles', return_value=[]), \
@@ -627,7 +631,7 @@ class RouteTests(Base):
 
     def test_simple_skips_and_final_claude(self):
         claude_called = []
-        fakes = {'claude': lambda p: claude_called.append(1) or 0, 'deepseek': lambda p: 0,
+        fakes = {'claude': lambda p, tried=(): claude_called.append(1) or 0, 'deepseek': lambda p: 0,
                  'grok': lambda p: 0}
         with patch.object(cli.routing, 'runners', return_value=fakes), \
                 patch.object(cli.routing, 'classify', return_value='simple'), \

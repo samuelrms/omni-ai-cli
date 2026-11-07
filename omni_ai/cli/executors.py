@@ -76,8 +76,8 @@ def run_claude(profile, prompt):
     swapped = False
     previous_handler = None
     if profile == 'api-key' or profile.startswith('api-key:'):
-        wanted = profile.partition(':')[2]
-        env['ANTHROPIC_API_KEY'] = next((v for n, v, _ in config_tool.stored_keys('claude') if not wanted or n == wanted),
+        wanted = profile.partition(':')[2] or 'principal'
+        env['ANTHROPIC_API_KEY'] = next((v for n, v, _ in config_tool.stored_keys('claude') if n == wanted),
                                         config_tool.stored_key('claude')[0])
     else:
         conf = profile_conf(profile)
@@ -131,9 +131,9 @@ def run_claude(profile, prompt):
 
 
 def key_account(tool, name):
-    """Limit/cooldown id of an API key: '<tool>:api-key' for the main one, '<tool>:api-key:<name>' for extras."""
+    """Limit/cooldown id of an API key: '<tool>:api-key' for the main saved one, '<tool>:api-key:<name>' for the others."""
     base = f'{tool}:api-key' if tool else 'api-key'
-    return base if name in ('principal', 'env') else f'{base}:{name}'
+    return base if name == 'principal' else f'{base}:{name}'
 
 
 def run_with_key_retry(tool, argv, env_var, label):

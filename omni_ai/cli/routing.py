@@ -13,7 +13,13 @@ from .executors import (
 )
 
 
-def claude_with_fallback(prompt):
+# Stopped on purpose (Ctrl-C, cancel, timeout): nobody wants the next tool to start
+INTERRUPTED = (130, 143, -2, -15)
+
+
+def claude_with_fallback(prompt, tried=()):
+    """Every account, then every key, then the other tools. `tried` holds tools this request already used."""
+    failure, seen = 0, set()
     for profile in config_tool.enabled_profiles():
         left = cooldown_left(profile)
         if left:
@@ -23,30 +29,30 @@ def claude_with_fallback(prompt):
         if over_ceiling(f'claude:{profile}', lambda conf=conf: usage.claude_reading(conf), f'Claude {profile}'):
             continue
         result = run_claude(profile, prompt)
-        if result == 0:
-            return 0
-        if result not in (RATE_LIMITED, NOT_READY):
+        if result == 0 or result in INTERRUPTED:
             return result
+        failure = result if result not in (RATE_LIMITED, NOT_READY) else failure
         say(f'{YELLOW}🔄 Tentando próximo perfil...{NC}')
-    for name, _, _ in config_tool.stored_keys('claude'):
+    for name, key, _ in config_tool.stored_keys('claude'):
         account = key_account('', name)
-        if cooldown_left(account):
+        if key in seen or cooldown_left(account):
             continue
+        seen.add(key)
         say(f'{YELLOW}🔑 Claude: tentando com a chave {name}{NC}')
         result = run_claude(account, prompt)
-        if result == 0:
-            return 0
-        if result != RATE_LIMITED:
+        if result == 0 or result in INTERRUPTED:
             return result
-    say(f'\n{RED}✗ Todas as contas Claude estão em rate limit!{NC}')
+        failure = result if result not in (RATE_LIMITED, NOT_READY) else failure
+    say(f'\n{RED}✗ ' + ('O Claude não respondeu.' if failure else 'Todas as contas Claude estão em rate limit!') + NC)
     say(f'{YELLOW}  Tentando resolver com ferramentas alternativas...{NC}\n')
     for tool, runner in (('codex', run_codex), ('agy', run_agy)):
-        if installed(tool):
+        if tool not in tried and installed(tool):
             say(f'{YELLOW}↪ Forçando {tool} como último recurso...{NC}')
-            if runner(prompt) == 0:
-                return 0
-    say(f'\n{RED}✗ Nenhuma ferramenta disponível. Aguarde o cooldown.{NC}')
-    return 1
+            result = runner(prompt)
+            if result == 0 or result in INTERRUPTED:
+                return result
+    say(f'\n{RED}✗ Nenhuma ferramenta disponível.' + ('' if failure else ' Aguarde o cooldown.') + NC)
+    return failure or 1
 
 
 def runners():
@@ -69,6 +75,7 @@ def route(prompt, tool='auto'):
     routing = config().get('routing', {})
     order = [routing.get('prefer_tool_for_simple', 'codex')] + routing.get('fallback_order', ['openrouter', 'codex', 'agy'])
     # Grok, DeepSeek and Cursor cost money, so auto mode only uses them when listed in routing.fallback_order
+    tried = []
     for name in dict.fromkeys(t for t in order if t in forced and t != 'claude'):
         if name == 'grok' and not (installed('grok') or config_tool.stored_key('grok')[0]):
             continue
@@ -77,7 +84,9 @@ def route(prompt, tool='auto'):
         # grok also answers over its API key (checked above); the other CLIs need to be installed
         if name in CLIS and name != 'grok' and not installed(name):
             continue
-        if forced[name](prompt) == 0:
-            return 0
+        result = forced[name](prompt)
+        if result == 0 or result in INTERRUPTED:
+            return result
+        tried.append(name)
     say(f'\n{DIM}→ Usando Claude como fallback final{NC}')
-    return forced['claude'](prompt)
+    return forced['claude'](prompt, tried=tried)

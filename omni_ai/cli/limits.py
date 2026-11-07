@@ -80,6 +80,8 @@ def hit_limit(output, code):
             continue
         if not isinstance(event, dict):
             continue
+        if event.get('type') == 'result' and not event.get('is_error') and code == 0:
+            return False  # the answer is finished: a warning about usage on the way there is not a limit
         if event.get('type') == 'result' and event.get('is_error'):
             verdicts.append(str(event.get('result', '')))
         elif event.get('type') == 'rate_limit_event' and \
