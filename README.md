@@ -647,6 +647,7 @@ omni.example.com {
 | `~/.config/smart-ai/admin_keys.json` | Hash das chaves da API de administração (permissão 600) |
 | `~/.cache/smart-ai/costs.jsonl` | Custo e tokens de cada pedido do chat, sem pergunta nem resposta (soma do dia no `/usage`) |
 | `~/.local/share/smart-ai/runs/` | Cópias dos pedidos de escrita em pastas sem git |
+| `~/.local/share/smart-ai/partial/` | Cópia do que uma tentativa deixou antes de falhar, das 10 últimas vezes |
 | `~/.cache/smart-ai/serve.log` | Log do `ai serve` como serviço, com rotação |
 
 ---
@@ -792,6 +793,7 @@ guardar nem rotacionar.
 
 ## Limitações conhecidas
 
+- Se uma ferramenta falhar depois de alterar arquivos, a próxima recebe a lista deles e continua a partir dali. Nada é desfeito: ela pode herdar algo incompleto, e efeitos fora da pasta, como comandos já executados, não são detectados.
 - O chat usa os modos não interativos dos CLIs. Pedidos de aprovação nativos (por
   exemplo, "posso editar este arquivo?") não aparecem; nesses casos, use o CLI nativo.
 - `/parallel` só analisa: Codex em `--sandbox read-only` ou OpenRouter, que não acessa os
@@ -804,6 +806,7 @@ guardar nem rotacionar.
 
 ## Privacidade
 
+- Se uma ferramenta falhar depois de alterar arquivos, uma cópia deles fica só na sua máquina, com permissão restrita ao seu usuário.
 - Sessões, chaves de API e logs ficam só na sua máquina, com permissão restrita ao seu usuário.
 - O log de uso grava ferramenta, conta e status, **nunca o texto da pergunta**.
 - Antes de ir para o OpenRouter, e-mails, telefones, documentos e outros dados pessoais

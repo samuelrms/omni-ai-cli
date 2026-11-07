@@ -1,6 +1,7 @@
 """Routing: Claude with account/key fallback, the runner map, and auto classify-then-route."""
 from .. import config as config_tool
 from .. import usage
+from . import attempts
 from ..tools import CLIS
 from .base import (
     RATE_LIMITED, NOT_READY, RED, GREEN, YELLOW, CYAN, DIM, NC,
@@ -62,6 +63,7 @@ def runners():
 
 
 def route(prompt, tool='auto'):
+    attempts.begin(prompt)
     forced = runners()
     if tool in forced:
         return forced[tool](prompt)
