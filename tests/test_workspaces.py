@@ -493,9 +493,13 @@ class OverHttp(Temp):
     def test_parallel_requests_do_not_touch_each_other(self):
         self.init_git()
         self.start()
-        responses, spent = self.parallel(4)
+        # Each request only finishes once all four have started, so one at a time could never pass, on any machine
+        all_started = (': > "$FAKE_LOG.$$"; tries=0; '
+                       'while [ "$(ls "$FAKE_LOG".* | wc -l)" -lt 4 ] && [ "$tries" -lt 600 ]; do sleep 0.05; tries=$((tries + 1)); done; '
+                       '[ "$(ls "$FAKE_LOG".* | wc -l)" -ge 4 ] || { echo "ran one at a time"; exit 1; }')
+        (self.root / 'codex').write_text(CODEX.replace('sleep 1', all_started))
+        responses, _ = self.parallel(4)
         self.assertEqual([r.status for r in responses], [200] * 4)
-        self.assertLess(spent, 3.5)  # four 1 s requests, not one after the other
         names = {r.headers[BRANCH_HEADER] for r in responses}
         self.assertEqual(len(names), 4)
         for name in names:
