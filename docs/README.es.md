@@ -495,7 +495,7 @@ curl -H "Authorization: Bearer omni-admin-..." http://127.0.0.1:8080/admin/healt
 | `DELETE /admin/accounts/{cuenta}/login` | Cancela, con el id en `X-Omni-Login-Attempt` |
 
 - **Claves separadas:** una clave de `/v1` nunca abre `/admin`, ni al revés. Sin clave de administración, `--enable-admin` no arranca.
-- **Red:** desde fuera de esta máquina, exige HTTPS con proxy inverso, que debe definir `X-Forwarded-Proto`. `--admin-allow-http` desactiva esta comprobación. En Docker, el puerto publicado cuenta como acceso externo.
+- **Red:** desde fuera de esta máquina, exige HTTPS con proxy inverso, que debe definir `X-Forwarded-Proto`. `--admin-allow-http` desactiva esta comprobación. Solo evita la exposición por error: quien llegue directo al puerto puede falsificar la cabecera, así que deja el puerto abierto solo para el proxy. En Docker, el puerto publicado cuenta como acceso externo.
 - **Secretos:** las respuestas muestran solo el final de las claves de proveedores. La excepción es la clave de cliente recién creada, mostrada una sola vez.
 - **Campos protegidos:** el modo de permisos, las rutas de binarios y `config_dir` devuelven 403.
 - **Cuidado:** esta clave puede activar modelos de pago (`openrouter_paid`) y cambiar claves de proveedores. En Docker, usa `SMART_AI_ADMIN=1`.

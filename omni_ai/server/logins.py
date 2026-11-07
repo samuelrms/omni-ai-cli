@@ -106,7 +106,8 @@ class Logins:
                 self._close(account, attempt)
 
     def _close(self, account, attempt):
-        self.attempts.pop(account, None)
+        if self.attempts.get(account) is attempt:  # a new attempt may have taken this account's place
+            del self.attempts[account]
         if attempt.process.poll() is None:
             kill_tree(attempt.process, force=True)
         if attempt.process.stdin and not attempt.process.stdin.closed:

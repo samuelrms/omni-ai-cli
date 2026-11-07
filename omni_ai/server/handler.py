@@ -228,6 +228,7 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         # Request line without its query, and status: never headers or bodies
         line = re.sub(r'[?]\S*', '', fmt % args)
+        line = re.sub(r'[\x00-\x1f\x7f-\x9f]', lambda found: f'\\x{ord(found.group()):02x}', line)  # sent before any key
         REQUEST_LOG.info(f'{self.log_date_time_string()} {line}')
 
     def _unexpected(self, error):
