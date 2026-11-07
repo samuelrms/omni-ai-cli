@@ -18,12 +18,15 @@ sys.path.insert(0, str(ROOT))
 from omni_ai import chat, cli  # noqa: E402
 from omni_ai.chat import Queue, Session, activity, already_answered, execute, queue_command, run_spec  # noqa: E402
 
-# Fake Codex: logs each call, waits TEST_DELAY seconds, answers
+# Fake Codex: logs each call, waits TEST_DELAY seconds and until the TEST_GATE file is gone, answers
 FAKE = '''#!/usr/bin/env python3
 import json, os, sys, time
 with open(os.environ['TEST_CALLS'], 'a') as out:
     out.write(json.dumps({'prompt': sys.argv[-1], 'start': time.time()}) + '\\n')
 time.sleep(float(os.environ.get('TEST_DELAY', '0')))
+end = time.time() + 120
+while os.path.exists(os.environ.get('TEST_GATE', '')) and time.time() < end:
+    time.sleep(0.05)
 print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':'FAKE ANSWER'}}), flush=True)
 '''
 
@@ -425,13 +428,15 @@ class QueueResumeTerminalTests(ChatQueueTerminalTests):
 
     @flaky_pty()
     def test_queue_left_on_exit_runs_again_on_resume(self):
-        self.env['TEST_DELAY'] = '10'  # still running when the chat is closed
+        # still running when the chat is closed, however slowly the lines get typed
+        (self.root / 'gate').touch()
+        self.env['TEST_GATE'] = str(self.root / 'gate')
         self.run_chat(['/tool codex', 'first', 'second', 'third'], done=lambda out: self.saved_queue() == 3)
         # What matters is that all three (the running one plus the two waiting) are persisted in order;
         # the on-screen "N saved" line is transient and raced the capture on slow CI runners.
         saved = json.loads(next((self.root / 'sessions').glob('*.json')).read_text())
         self.assertEqual([spec['label'] for spec in saved['queue']], ['first', 'second', 'third'])
-        self.env['TEST_DELAY'] = '0'
+        (self.root / 'gate').unlink()
         (self.root / 'calls').unlink(missing_ok=True)
         self.env_args = ['--resume', saved['id']]
         text = self.run_chat(['', '/queue'], done=lambda out: out.count('Levou') >= 3)
@@ -443,7 +448,9 @@ class QueueResumeTerminalTests(ChatQueueTerminalTests):
 
     @flaky_pty()
     def test_declining_resume_drops_the_saved_queue(self):
-        self.env['TEST_DELAY'] = '10'  # still running when the chat is closed
+        # still running when the chat is closed, however slowly the lines get typed
+        (self.root / 'gate').touch()
+        self.env['TEST_GATE'] = str(self.root / 'gate')
         self.run_chat(['/tool codex', 'first', 'second'], done=lambda out: self.saved_queue() == 2)
         session_id = json.loads(next((self.root / 'sessions').glob('*.json')).read_text())['id']
         (self.root / 'calls').unlink(missing_ok=True)
