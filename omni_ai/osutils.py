@@ -183,6 +183,27 @@ def kill_tree(process, force=False):
         pass
 
 
+def private_file(path, mode='w', encoding=None, tighten=False):
+    """Opens a file only its owner can read, whatever the umask. `tighten` also fixes a file made loose earlier;
+    left off, an existing file the user chose keeps the permissions they gave it."""
+    path = Path(path)
+    if not path.parent.exists():
+        path.parent.mkdir(parents=True, mode=0o700)
+    flags = os.O_WRONLY | os.O_CREAT | (os.O_APPEND if 'a' in mode else os.O_TRUNC)
+    descriptor = os.open(path, flags | getattr(os, 'O_BINARY', 0), 0o600)
+    if tighten:
+        tighten_file(path)
+    return os.fdopen(descriptor, mode, encoding=encoding)
+
+
+def tighten_file(path):
+    try:
+        if os.stat(path).st_mode & 0o077:
+            os.chmod(path, 0o600)
+    except OSError:
+        pass  # not ours to change: the file still works
+
+
 def stop_tree(process, force_after):
     """Asks the whole tree to stop, then kills what is left. Always both: the parent dying says nothing about
     the tool under it, which can ignore the first signal and keep running."""

@@ -3,6 +3,9 @@ import json
 import os
 import time
 from pathlib import Path
+
+from ..osutils import private_file
+
 def costs_file():
     return Path(os.environ.get('SMART_AI_LOG', '~/.cache/smart-ai/usage.log')).expanduser().with_name('costs.jsonl')
 
@@ -33,8 +36,7 @@ def record_spend(job):
         return
     path = costs_file()
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, 'a') as stream:
+        with private_file(path, 'a', tighten=True) as stream:
             stream.write(json.dumps({'at': time.strftime('%Y-%m-%d %H:%M:%S'), 'tool': job.get('provider', job['engine']),
                                      'cost': job.get('cost') or 0, 'tokens': job.get('tokens', 0)}) + '\n')
     except OSError:

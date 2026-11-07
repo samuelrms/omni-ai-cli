@@ -96,6 +96,11 @@ class Workspaces:
     def uses_git(self):
         return self.repo is not None
 
+    def _prepare_root(self):
+        # Worktrees and copies of what can be a private repository
+        self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(self.root, 0o700)
+
     def _claim(self, work_id):
         with self.lock:
             if work_id in self.busy:
@@ -135,7 +140,7 @@ class Workspaces:
         self._claim(work_id)
         branch, path = BRANCH_PREFIX + work_id, self.root / work_id
         with self.lock:
-            self.root.mkdir(parents=True, exist_ok=True)
+            self._prepare_root()
             if new:
                 result = _git(self.repo, 'worktree', 'add', '-q', '-b', branch, str(path), 'HEAD')
             elif _git(self.repo, 'rev-parse', '--verify', f'refs/heads/{branch}').returncode != 0:
@@ -165,7 +170,7 @@ class Workspaces:
                 raise RequestError(404, 'Copy not found.', param=COPY_HEADER, code='work_not_found')
             if not wanted:
                 size = _size(self.workdir)
-                self.root.mkdir(parents=True, exist_ok=True)
+                self._prepare_root()
                 if size > MAX_COPY_BYTES or size > shutil.disk_usage(self.root).free:
                     raise RequestError(507, 'The folder is too large to copy for this request.', 'api_error', code='workspace_too_large')
                 shutil.copytree(self.workdir, path, symlinks=True)

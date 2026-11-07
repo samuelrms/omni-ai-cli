@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .. import config as config_tool
 from .. import usage
-from ..osutils import REPO, clean_terminal, direct_argv, enable_ansi, module_cmd, module_env, resolve_bin
+from ..osutils import REPO, clean_terminal, direct_argv, enable_ansi, module_cmd, module_env, private_file, resolve_bin
 from ..tools import CLIS, KEY_NAMES, TOOLS
 from .attempts import before_attempt
 
@@ -57,8 +57,7 @@ def set_state(key, value):
 
 def log_usage(tool, profile, status):
     # Metadata only: the prompt never goes to the log
-    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(LOG_FILE, 'a') as stream:
+    with private_file(LOG_FILE, 'a', tighten=True) as stream:
         stream.write(f"[{time.strftime('%Y-%m-%dT%H:%M:%S%z')}] tool={tool} profile={profile} status={status}\n")
 
 

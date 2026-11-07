@@ -9,7 +9,7 @@ import sys
 import time
 
 from .. import config as config_tool
-from ..osutils import SAFE_PATH, REPO, resolve_bin
+from ..osutils import SAFE_PATH, REPO, private_file, resolve_bin
 from ..tools import CLIS, TOOLS
 from . import auth
 
@@ -84,7 +84,7 @@ def service_path():
 
 
 def environment(extra):
-    env = {'PATH': service_path(), **extra}
+    env = {'PATH': service_path(), 'SMART_AI_SERVICE': '1', **extra}
     env.update({name: os.environ[name] for name in PASSED_ENV if os.environ.get(name)})
     return env
 
@@ -242,7 +242,7 @@ def install(args, loopback):
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary.write_text(render(argv + server_args(args, workdir), environment(extra), workdir), encoding='utf-8')
     os.replace(temporary, path)
-    (log_dir() / 'serve.out.log').write_text('', encoding='utf-8')  # the manager appends and never rotates this one
+    private_file(log_dir() / 'serve.out.log', 'w', encoding='utf-8', tighten=True).close()  # the manager appends and never rotates this one
     start()
     if not _wait(lambda: port_open(args.host, args.port), START_WAIT):
         stop()

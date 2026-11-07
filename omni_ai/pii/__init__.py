@@ -17,6 +17,7 @@ import re
 import json
 import sys
 
+from ..osutils import private_file
 from .masker import PIIMasker
 
 def main():
@@ -42,7 +43,7 @@ def main():
         masked, mapping = masker.mask(text)
         print(masked, end="")
         if args.map_out:
-            with open(args.map_out, "w", encoding="utf-8") as f:
+            with private_file(args.map_out, "w", encoding="utf-8") as f:
                 json.dump(mapping, f, indent=2, ensure_ascii=False)
             print(f"\n[PII Map saved to {args.map_out}]", file=sys.stderr)
         if args.report:
