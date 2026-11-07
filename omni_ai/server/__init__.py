@@ -12,7 +12,7 @@ import signal
 import sys
 import time
 
-from ..osutils import in_container
+from ..osutils import in_container, private_file
 from . import auth, service
 from .execution import FORCE_AFTER, SHUTDOWN, uses_shared_credentials
 from .handler import REQUEST_LOG, Server
@@ -35,8 +35,13 @@ def _positive(text):
     return value
 
 
+class PrivateRotatingLog(logging.handlers.RotatingFileHandler):
+    def _open(self):
+        return private_file(self.baseFilename, self.mode, encoding=self.encoding, tighten=True)
+
+
 def _log_to_file(path):
-    handler = logging.handlers.RotatingFileHandler(path, maxBytes=5_000_000, backupCount=3, encoding='utf-8')
+    handler = PrivateRotatingLog(path, maxBytes=5_000_000, backupCount=3, encoding='utf-8')
     REQUEST_LOG.addHandler(handler)
     REQUEST_LOG.propagate = False
 
@@ -178,6 +183,9 @@ def main(argv):
         _log_to_file(args.log_file)
     created = None
     if not auth.configured():
+        if os.environ.get('SMART_AI_SERVICE') == '1':  # the key would be printed to a log file
+            print('Nenhuma chave configurada. Crie uma com `ai serve keys add NOME` e reinicie o serviço.', file=sys.stderr)
+            return service.FATAL_EXIT
         created = auth.add('default')
     concurrent = args.max_concurrent
     if concurrent > 1 and uses_shared_credentials():

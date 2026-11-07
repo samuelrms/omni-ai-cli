@@ -3,6 +3,7 @@ import re
 import sys
 import time
 
+from ..osutils import private_file
 from .convert import _role_label, _when
 
 _PAGE_W, _PAGE_H = 612.0, 792.0
@@ -168,7 +169,7 @@ def to_pdf(conv, out_path):
     out += (f'trailer\n<< /Size {len(objects) + 1} /Root {catalog_id} 0 R >>\n'
             f'startxref\n{xref_at}\n%%EOF\n').encode()
 
-    with open(out_path, 'wb') as stream:
+    with private_file(out_path, 'wb') as stream:
         stream.write(out)
     return out_path
 

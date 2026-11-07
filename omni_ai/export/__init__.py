@@ -8,6 +8,7 @@ import json
 import os
 import sys
 
+from ..osutils import private_file
 from .convert import (normalize, _when, default_name, _role_label, to_markdown, to_clipboard)
 from .pdf import to_pdf, _esc, _wrap, _layout, _paginate, _content_stream
 
@@ -55,7 +56,7 @@ def main(argv):
     if mode == '--export':
         text = to_markdown(conv, model)
         out_path = out_path or default_name(conv, 'md')
-        with open(out_path, 'w', encoding='utf-8') as stream:
+        with private_file(out_path, 'w', encoding='utf-8') as stream:
             stream.write(text)
         copied = to_clipboard(text)
         print(os.path.abspath(out_path))
