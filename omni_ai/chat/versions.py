@@ -45,7 +45,7 @@ def translate(texts, lang):
         return list(texts)
     path = translations_file()
     try:
-        cache = json.loads(path.read_text())
+        cache = json.loads(path.read_text(encoding='utf-8'))
     except (OSError, ValueError):
         cache = {}
     known = cache.setdefault(lang, {})
@@ -66,7 +66,7 @@ def translate(texts, lang):
                 known.update(zip(todo, lines))
                 try:
                     path.parent.mkdir(parents=True, exist_ok=True)
-                    path.write_text(json.dumps(cache, ensure_ascii=False))
+                    path.write_text(json.dumps(cache, ensure_ascii=False), encoding='utf-8')
                 except OSError:
                     pass
                 break
@@ -75,7 +75,7 @@ def translate(texts, lang):
 
 def installed_version():
     try:
-        return json.loads((REPO / 'package.json').read_text()).get('version', '')
+        return json.loads((REPO / 'package.json').read_text(encoding='utf-8')).get('version', '')
     except (OSError, ValueError):
         return ''
 
@@ -87,7 +87,7 @@ def newer_release():
         return None
     stamp = costs_file().with_name('release_check.json')
     try:
-        seen = json.loads(stamp.read_text())
+        seen = json.loads(stamp.read_text(encoding='utf-8'))
     except (OSError, ValueError):
         seen = {}
     if time.time() - seen.get('at', 0) < 86400:
@@ -99,7 +99,7 @@ def newer_release():
             return None
         try:
             stamp.parent.mkdir(parents=True, exist_ok=True)
-            stamp.write_text(json.dumps({'at': time.time(), 'release': latest}))
+            stamp.write_text(json.dumps({'at': time.time(), 'release': latest}), encoding='utf-8')
         except OSError:
             pass
     if not latest:

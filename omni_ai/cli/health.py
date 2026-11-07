@@ -95,7 +95,7 @@ def show_status():
     for tool, label in ((name, TOOLS[name].label) for name in CLIS):
         say(f'  {GREEN}●{NC} {label}: {version(tool)}' if installed(tool) else f'  {RED}○{NC} {label}: não instalado')
     if LOG_FILE.is_file():
-        lines = LOG_FILE.read_text(errors='replace').splitlines()
+        lines = LOG_FILE.read_text(encoding='utf-8', errors='replace').splitlines()
         counts = {t: sum(f'tool={t} ' in l for l in lines) for t in TOOLS}
         say(f'\n{BOLD}  📊 Estatísticas de uso:{NC}')
         say(f'    Total de chamadas: {len(lines)}')

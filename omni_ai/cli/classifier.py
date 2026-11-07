@@ -35,14 +35,16 @@ CLASSIFIER_SYSTEM = (
 
 def ask_text(url, key, data, timeout=6):
     """One request to an OpenAI-compatible endpoint; the reply text, or None on any failure."""
+    import http.client
     import urllib.request
     request = urllib.request.Request(url, data=json.dumps(data).encode(), method='POST', headers={
         'Content-Type': 'application/json', 'Authorization': f'Bearer {key}', 'User-Agent': 'omni-ai-cli'})
     try:
         with urllib.request.urlopen(request, timeout=timeout) as resp:
-            return json.loads(resp.read().decode())['choices'][0]['message']['content'] or ''
-    except (OSError, ValueError, KeyError, IndexError, TypeError):
+            content = json.loads(resp.read().decode())['choices'][0]['message']['content'] or ''
+    except (OSError, ValueError, KeyError, IndexError, TypeError, http.client.HTTPException):
         return None
+    return content if isinstance(content, str) else None
 
 
 def ask_classifier(url, key, data, labels=('complex', 'simple')):

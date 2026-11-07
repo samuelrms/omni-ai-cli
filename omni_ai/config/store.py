@@ -29,16 +29,19 @@ def profiles_path():
 def read_json(path, default):
     path = Path(path)
     try:
-        return json.loads(path.read_text(encoding='utf-8'))
-    except FileNotFoundError:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except (FileNotFoundError, NotADirectoryError):
         return default
     except (ValueError, UnicodeDecodeError) as error:
         # A corrupt file must not look empty: returning the default here would make the next
         # write overwrite it and silently erase whatever was still in it.
         raise SystemExit(f'Arquivo de configuração corrompido: {path} ({error}). '
                          f'Corrija ou remova o arquivo e tente de novo.')
-    except OSError:
-        return default
+    except OSError as error:  # it exists but cannot be read: the same risk of being overwritten
+        raise SystemExit(f'Não foi possível ler {path}: {error}. Corrija as permissões e tente de novo.') from None
+    if isinstance(default, dict) and not isinstance(data, dict):
+        raise SystemExit(f'Arquivo de configuração corrompido: {path} (esperado um objeto). Corrija ou remova o arquivo e tente de novo.')
+    return data
 
 
 _FILE_LOCKS = {}
@@ -61,7 +64,7 @@ def update_json(path, mutate, default=None):
         handle = None
         try:
             try:
-                handle = open(path.with_name(path.name + '.lock'), 'w')
+                handle = open(path.with_name(path.name + '.lock'), 'w', encoding='utf-8')
                 import fcntl
                 fcntl.flock(handle, fcntl.LOCK_EX)
             except (ImportError, OSError):

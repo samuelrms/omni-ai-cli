@@ -104,6 +104,13 @@ class Runner:
         return job
 
     def event(self, job, raw):
+        """One line from the tool. Its shape is up to the tool, so an odd one must not end the job."""
+        try:
+            self._event(job, raw)
+        except (AttributeError, TypeError, KeyError, IndexError, ValueError):
+            job['events'].append({'type': 'status', 'text': 'evento inesperado ignorado'})
+
+    def _event(self, job, raw):
         if not raw:
             return
         view = job['view']
