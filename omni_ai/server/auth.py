@@ -19,6 +19,11 @@ def keys_path():
     return config_tool.CONFIG_DIR / 'server_keys.json'
 
 
+def created_key_path():
+    """Where a container keeps the key made on first start: its log is kept, and often shipped elsewhere."""
+    return config_tool.CONFIG_DIR / 'server_key.txt'
+
+
 def admin_keys_path():
     return config_tool.CONFIG_DIR / 'admin_keys.json'
 

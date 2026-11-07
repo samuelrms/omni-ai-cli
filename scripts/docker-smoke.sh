@@ -23,11 +23,14 @@ wait_up() {
   fail 'the server did not answer'
 }
 generated_keys() { "${compose[@]}" logs --no-color omni | grep -oE 'omni-[A-Za-z0-9_-]{20,}' || true; }
+saved_key() { docker exec omni cat /home/omni/.config/smart-ai/server_key.txt 2>/dev/null || true; }
 
 "${compose[@]}" up -d --build --quiet-pull
 wait_up
-key="$(generated_keys | head -1)"
-[ -n "$key" ] || fail 'no key in the first start log'
+[ -z "$(generated_keys)" ] || fail 'the generated key went to the log'
+key="$(saved_key)"
+[ -n "$key" ] || fail 'no key saved on the first start'
+[ "$(docker exec omni stat -c %a /home/omni/.config/smart-ai/server_key.txt)" = 600 ] || fail 'the saved key can be read by others'
 [ "$(status "$key")" = 200 ] || fail 'the generated key was refused'
 [ "$(status wrong)" = 401 ] || fail 'a wrong key was accepted'
 
@@ -53,6 +56,7 @@ export SMART_AI_SERVER_KEY="from-environment"
 wait_up
 [ "$(status from-environment)" = 200 ] || fail 'the key from the environment was refused'
 [ -z "$(generated_keys)" ] || fail 'a key was generated despite the environment one'
+[ -z "$(saved_key)" ] || fail 'a key was saved despite the environment one'
 
 # A mode that writes needs the folder, and the compose file always gives it one
 "${compose[@]}" down >/dev/null

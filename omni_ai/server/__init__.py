@@ -127,6 +127,24 @@ def work_command(argv):
     return 1 if failed or (busy and args.action == 'remove') else 0
 
 
+def _show_created(key):
+    if not in_container():
+        print(f'Chave de API criada (guarde agora, ela não será mostrada de novo):\n{key}', flush=True)
+        return
+    # Not in the log: docker keeps it, and log collectors copy it
+    target = auth.created_key_path()
+    try:
+        with private_file(target, tighten=True) as out:
+            out.write(key + '\n')
+    except OSError as error:
+        print(f'Chave de API criada, mas não foi possível gravá-la em {target}: {error.strerror}. '
+              'Crie outra com: docker exec -it omni ai serve keys add NOME', flush=True)
+        return
+    print(f'Chave de API criada e gravada em {target}, que só o usuário do container lê.\n'
+          f'Para ver: docker exec omni cat {target}\n'
+          f'Depois de guardar: docker exec omni rm {target}', flush=True)
+
+
 def main(argv):
     if argv and argv[0] == 'keys':
         return keys_command(argv[1:])
@@ -213,7 +231,7 @@ def main(argv):
     host = f'[{args.host}]' if ':' in args.host else args.host
     print(f'Omni AI server em http://{host}:{server.server_address[1]}/v1', flush=True)
     if created:
-        print(f'Chave de API criada (guarde agora, ela não será mostrada de novo):\n{created}', flush=True)
+        _show_created(created)
     if args.mode != 'plan':
         place = 'uma branch por pedido' if server.workspaces.uses_git else 'uma cópia da pasta por pedido, sem git'
         print(f'Aviso: modo {args.mode}, {place}, sem aprovação. Base: {workdir}. '
