@@ -494,7 +494,7 @@ curl -H "Authorization: Bearer omni-admin-..." http://127.0.0.1:8080/admin/healt
 | `DELETE /admin/accounts/{account}/login` | Cancels, with the id in `X-Omni-Login-Attempt` |
 
 - **Separate keys:** a `/v1` key never opens `/admin`, and vice versa. Without an admin key, `--enable-admin` does not start.
-- **Network:** from outside this machine, it requires HTTPS through a reverse proxy, which must set `X-Forwarded-Proto`. `--admin-allow-http` turns this check off. In Docker, the published port counts as external access.
+- **Network:** from outside this machine, it requires HTTPS through a reverse proxy, which must set `X-Forwarded-Proto`. `--admin-allow-http` turns this check off. It only prevents accidental exposure: whoever reaches the port directly can forge the header, so keep the port open only to the proxy. In Docker, the published port counts as external access.
 - **Secrets:** responses show only the end of provider keys. The exception is a newly created client key, shown once.
 - **Protected fields:** permission mode, binary paths and `config_dir` return 403.
 - **Careful:** this key can turn on paid models (`openrouter_paid`) and replace provider keys. In Docker, use `SMART_AI_ADMIN=1`.

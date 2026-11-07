@@ -84,8 +84,8 @@ def admin_configured():
 
 def admin_key_shared():
     """A /v1 key must never open /admin, so one value cannot be both."""
-    admin = external_admin_key()
-    return bool(admin) and verify(admin)
+    admin, client = external_admin_key(), external_key()
+    return bool(admin) and verify(admin) or bool(client) and verify_admin(client)
 
 
 def verify_admin(value):

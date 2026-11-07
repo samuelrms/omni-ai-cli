@@ -81,6 +81,12 @@ def login_command(tool):
     return command
 
 
+def inside(folder, base):
+    """Whether a folder is really under `base`, after `..` and links. These folders get deleted."""
+    folder, base = Path(folder).expanduser().resolve(), Path(base).expanduser().resolve()
+    return folder != base and folder.is_relative_to(base)
+
+
 def main_login(tool):
     """The tool's normal login, not an extra account: what a new machine or container needs first."""
     command = login_command(tool)
@@ -167,8 +173,8 @@ def cmd_account(args):
         del data['profiles'][name]
         write_json(profiles_path(), data)
         folder = profile.get('config_dir')
-        resolved = Path(folder).expanduser() if folder else None
-        if resolved and resolved.is_dir() and resolved.is_relative_to(ACCOUNTS_DIR):
+        resolved = Path(folder).expanduser().resolve() if folder else None
+        if resolved and resolved.is_dir() and inside(resolved, ACCOUNTS_DIR):
             # Log out first: on macOS the login lives in the Keychain, not only in the folder
             try:
                 subprocess.run([resolve_bin(os.environ.get('CLAUDE_BIN', 'claude')) or 'claude', 'auth', 'logout'],
@@ -280,14 +286,14 @@ def cmd_tool_account(tool, action, args):
     elif action == 'remove':
         del accounts[name]
         write_json(profiles_path(), data)
-        folder = Path(conf['config_dir']).expanduser()
+        folder = Path(conf['config_dir']).expanduser().resolve()
         if tool in ('codex', 'grok') and folder.is_dir():
             try:
                 subprocess.run([resolve_bin(tool) or tool, 'logout'], env=dict(os.environ, **tool_env(tool, conf)),
                                capture_output=True, timeout=30)
             except (OSError, subprocess.TimeoutExpired):
                 pass  # remove the folder regardless
-        if folder.is_dir() and folder.is_relative_to(TOOL_ACCOUNTS_DIR):
+        if folder.is_dir() and inside(folder, TOOL_ACCOUNTS_DIR):
             shutil.rmtree(folder, ignore_errors=True)
         print(f'✓ Conta "{name}" do {tool} removida.')
     else:

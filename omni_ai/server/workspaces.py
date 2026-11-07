@@ -17,6 +17,7 @@ COPY_HEADER = 'X-Omni-Copy'
 BRANCH_PREFIX = 'omni/'
 WORK_ID = re.compile(r'[a-f0-9]{16}')
 MAX_COPY_BYTES = 1024 ** 3
+MAX_RUNS_BYTES = 20 * 1024 ** 3  # all copies of a folder: `ai serve work prune` frees them
 IN_USE_SECONDS = 900  # a copy touched this recently may belong to a request still running
 
 
@@ -173,6 +174,9 @@ class Workspaces:
                 self._prepare_root()
                 if size > MAX_COPY_BYTES or size > shutil.disk_usage(self.root).free:
                     raise RequestError(507, 'The folder is too large to copy for this request.', 'api_error', code='workspace_too_large')
+                if size + _size(self.root) > MAX_RUNS_BYTES:
+                    raise RequestError(507, 'The copies of earlier requests fill the space allowed. Remove them with `ai serve work prune`.',
+                                       'api_error', code='workspace_quota')
                 shutil.copytree(self.workdir, path, symlinks=True)
                 _relink_inside(path, self.workdir)
         except (OSError, shutil.Error):

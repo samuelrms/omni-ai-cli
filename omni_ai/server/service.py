@@ -127,6 +127,13 @@ def render_launchd(argv, env, workdir):
     return data.replace('<plist ', f'<!-- {MARKER} -->\n<plist ', 1)
 
 
+def check_values(values):
+    """A line break in a value would add lines of its own to the service file."""
+    for value in values:
+        if any(ord(char) < 32 or ord(char) == 127 for char in str(value)):
+            raise ServiceError(f'Valor inválido para o serviço, com caractere de controle: {str(value)!r}')
+
+
 def render(argv, env, workdir):
     return (render_launchd if platform_name() == 'darwin' else render_systemd)(argv, env, workdir)
 
@@ -240,6 +247,7 @@ def install(args, loopback):
     argv, extra = command()
     temporary = path.with_suffix(path.suffix + '.tmp')
     path.parent.mkdir(parents=True, exist_ok=True)
+    check_values([*argv, *server_args(args, workdir), *environment(extra).values(), workdir])
     temporary.write_text(render(argv + server_args(args, workdir), environment(extra), workdir), encoding='utf-8')
     os.replace(temporary, path)
     private_file(log_dir() / 'serve.out.log', 'w', encoding='utf-8', tighten=True).close()  # the manager appends and never rotates this one

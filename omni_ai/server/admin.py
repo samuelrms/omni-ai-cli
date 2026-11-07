@@ -11,7 +11,7 @@ from ..tools import CLIS
 from . import auth
 from .protocol import RequestError
 
-PROTECTED = re.compile(r'(^|_)(mode|bin|path|dir|file|config_dir|credentials_file|permission\w*|sandbox)$')
+PROTECTED_ENDINGS = {'mode', 'bin', 'path', 'dir', 'file', 'sandbox'}
 ROUTING_FIELDS = ('usage_skip_percent', 'usage_alert_percent')
 MAX_KEY_LENGTH = 512
 KEY_VALUE = re.compile(r'[\x21-\x7e]+')
@@ -19,8 +19,13 @@ LOGIN_ROUTE = re.compile(r'/admin/accounts/([a-z0-9][a-z0-9_-]*(?:\.[a-z0-9][a-z
 KEY_ID = re.compile(r'([a-z]+)(?:\.([a-z0-9][a-z0-9_-]{0,14}))?')
 
 
+def _protected(field):
+    words = field.lower().split('_')
+    return words[-1] in PROTECTED_ENDINGS or any(word.startswith('permission') for word in words)
+
+
 def _forbid_or_reject(field):
-    if PROTECTED.search(field):
+    if _protected(field):
         raise RequestError(403, f"The field '{field}' cannot be changed through the API.", 'permission_error', param=field)
     raise RequestError(400, f"Unknown field '{field}'.", param=field)
 
@@ -32,7 +37,8 @@ def _checked_object(value, where):
 
 
 def require_https(handler):
-    """An accident guard for direct exposure. The header comes from the client, so the proxy must overwrite it."""
+    """Only prevents accidents. The header comes from the client: whoever reaches this port directly can forge it,
+    so the port must be closed to anything but the proxy, which has to overwrite the header."""
     if handler.server.admin_allow_http:
         return
     try:
