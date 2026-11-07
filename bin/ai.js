@@ -38,10 +38,22 @@ function findPython() {
   return null;
 }
 
+// Downloading and running an installer from the internet needs a yes: asked in a terminal, or given
+// beforehand with SMART_AI_AUTO_PYTHON=1. Without a terminal (CI, the editor extension) nothing is downloaded.
+function allowedToInstall() {
+  if (process.env.SMART_AI_NO_AUTO_PYTHON === '1') return Promise.resolve(false);
+  if (process.env.SMART_AI_AUTO_PYTHON === '1') return Promise.resolve(true);
+  if (!process.stdin.isTTY || !process.stderr.isTTY) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const prompt = require('readline').createInterface({ input: process.stdin, output: process.stderr });
+    prompt.question('Python 3.11+ não encontrado. Baixar um Python 3.12 só para o Omni AI, com o uv (astral.sh)? [s/N] ',
+      (answer) => { prompt.close(); resolve(/^(s|sim|y|yes)$/i.test(answer.trim())); });
+  });
+}
+
 // No usable Python: fetch a private Python 3.12 with uv (no sudo, system Python untouched)
 function installPython() {
-  if (process.env.SMART_AI_NO_AUTO_PYTHON === '1') return null;
-  console.error('Python 3.11+ não encontrado. Instalando um Python 3.12 só para o Omni AI (sem sudo)...');
+  console.error('Instalando um Python 3.12 só para o Omni AI (sem sudo)...');
   const uvDir = path.join(dataDir, 'uv');
   const uv = path.join(uvDir, process.platform === 'win32' ? 'uv.exe' : 'uv');
   const env = { ...process.env, UV_INSTALL_DIR: uvDir, UV_NO_MODIFY_PATH: '1',
@@ -50,7 +62,7 @@ function installPython() {
     const setup = process.platform === 'win32'
       ? spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
         'irm https://astral.sh/uv/install.ps1 | iex'], { stdio: 'inherit', env })
-      : spawnSync('sh', ['-c', 'curl -LsSf https://astral.sh/uv/install.sh | sh'], { stdio: 'inherit', env });
+      : spawnSync('sh', ['-c', "curl --proto '=https' --tlsv1.2 -LsSf https://astral.sh/uv/install.sh | sh"], { stdio: 'inherit', env });
     if (setup.status !== 0 || !fs.existsSync(uv)) return null;
   }
   // --no-bin: keep the private Python out of the user's PATH
@@ -65,24 +77,29 @@ function installPython() {
   return [exe, []];
 }
 
-const python = findPython() || installPython();
-if (!python) {
-  console.error('Omni AI precisa do Python 3.11 ou mais novo e não conseguiu instalá-lo sozinho.');
-  console.error(process.platform === 'win32'
-    ? 'Instale em https://www.python.org/downloads/ (marque "Add to PATH").'
-    : 'macOS: brew install python  ·  Ubuntu/Debian: sudo apt install python3');
-  process.exit(1);
+async function main() {
+  const python = findPython() || (await allowedToInstall() ? installPython() : null);
+  if (!python) {
+    console.error('Omni AI precisa do Python 3.11 ou mais novo.');
+    console.error(process.platform === 'win32'
+      ? 'Instale em https://www.python.org/downloads/ (marque "Add to PATH").'
+      : 'macOS: brew install python  ·  Ubuntu/Debian: sudo apt install python3');
+    console.error('Ou deixe o Omni AI baixar um só para ele: SMART_AI_AUTO_PYTHON=1');
+    process.exit(1);
+  }
+
+  // Claude Code installed as this package's optional dependency is used when there's no global one
+  const env = { ...process.env, SMART_AI_INSTALLER: 'npm',
+    // An empty entry means the working directory, even with -P
+    PYTHONPATH: [root, ...(process.env.PYTHONPATH || '').split(path.delimiter)].filter(Boolean).join(path.delimiter) };
+  env.PATH = [process.env.PATH, path.join(root, 'node_modules', '.bin')].join(path.delimiter);
+
+  const [cmd, pre] = python;
+  const child = spawn(cmd, [...pre, '-P', '-m', 'omni_ai', ...process.argv.slice(2)], { stdio: 'inherit', env });
+  // Ctrl-C reaches the child through the shared terminal; just don't die before it does
+  process.on('SIGINT', () => {});
+  process.on('SIGTERM', () => child.kill('SIGTERM'));
+  child.on('exit', (code, signal) => process.exit(signal ? 130 : code ?? 1));
 }
 
-// Claude Code installed as this package's optional dependency is used when there's no global one
-const env = { ...process.env, SMART_AI_INSTALLER: 'npm',
-  // An empty entry means the working directory, even with -P
-  PYTHONPATH: [root, ...(process.env.PYTHONPATH || '').split(path.delimiter)].filter(Boolean).join(path.delimiter) };
-env.PATH = [process.env.PATH, path.join(root, 'node_modules', '.bin')].join(path.delimiter);
-
-const [cmd, pre] = python;
-const child = spawn(cmd, [...pre, '-P', '-m', 'omni_ai', ...process.argv.slice(2)], { stdio: 'inherit', env });
-// Ctrl-C reaches the child through the shared terminal; just don't die before it does
-process.on('SIGINT', () => {});
-process.on('SIGTERM', () => child.kill('SIGTERM'));
-child.on('exit', (code, signal) => process.exit(signal ? 130 : code ?? 1));
+main();

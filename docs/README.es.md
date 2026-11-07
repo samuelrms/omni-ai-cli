@@ -148,7 +148,7 @@ El instalador:
 3. crea el comando `ai` en `~/.local/bin`;
 4. muestra las cuentas de Claude configuradas.
 
-Requisitos: nada más que `curl` (macOS/Linux) o PowerShell (Windows). Si falta Python 3.11+, el instalador descarga un Python 3.12 solo para Omni AI, sin sudo y sin tocar el Python del sistema.
+Requisitos: nada más que `curl` (macOS/Linux) o PowerShell (Windows). Si falta Python 3.11+, el instalador descarga un Python 3.12 solo para Omni AI, sin sudo y sin tocar el Python del sistema. Instalado con npm, yarn, pnpm o bun, `ai` pregunta antes de descargar; sin una terminal para preguntar, como en la extensión, no descarga nada y muestra cómo instalar Python, salvo que `SMART_AI_AUTO_PYTHON=1` esté definida. Si la carpeta de instalación (`SMART_AI_DIR`) ya existe con otro contenido, el script se detiene sin borrar nada.
 Codex (`codex`) y Antigravity (`agy`) son opcionales y entran en la cola de alternativas cuando están instalados.
 
 Si `~/.local/bin` no está en el `PATH`, agrégalo al `~/.zshrc`:
