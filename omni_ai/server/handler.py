@@ -52,7 +52,7 @@ def tool_of(model):
         return 'auto'
     name = model[len(TOOL_PREFIX):] if model.startswith(TOOL_PREFIX) else ''
     if name in TOOLS and available(name):
-        return name
+        return TOOLS[name].name  # from our table: this reaches a response header, and `model` is the client's text
     raise RequestError(404, f"The model '{model}' does not exist or is not configured.", param='model', code='model_not_found')
 
 

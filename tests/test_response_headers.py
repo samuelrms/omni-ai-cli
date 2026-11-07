@@ -42,6 +42,16 @@ class ProviderFromATool(ServerCase):
         self.assert_clean(self.chat('notext')[0])
 
 
+class ModelFromTheClient(ServerCase):
+    def test_a_line_break_in_the_model_is_refused(self):
+        response, _ = self.chat(model='omni/codex\r\nSet-Cookie: stolen=1')
+        self.assertEqual(response.status, 404)
+        self.assertIsNone(response.getheader('Set-Cookie'))
+
+    def test_a_known_model_reports_its_tool(self):
+        self.assertEqual(self.chat()[0].getheader('X-Omni-Provider'), 'codex')
+
+
 class ProviderEvent(unittest.TestCase):
     def provider_after(self, line):
         execution = Execution('codex', 'p', 'p')
