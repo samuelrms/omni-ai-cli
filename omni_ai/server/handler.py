@@ -130,7 +130,7 @@ class Server(ThreadingHTTPServer):
             return
         try:
             super().process_request(request, client_address)
-        except BaseException:
+        except Exception:  # the thread didn't start. An interruption can come after it did, and then it releases this itself
             self.connections.release()
             raise
 
