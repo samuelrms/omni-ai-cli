@@ -4,6 +4,7 @@ import os
 import re
 import tempfile
 
+from ..osutils import tighten_file
 from ..tools import keys as tool_keys
 from .store import CONFIG_DIR, NAME
 
@@ -29,6 +30,7 @@ def stored_keys(provider):
     if env:
         found.append(('env', env, 'env'))
     def _read(path):
+        tighten_file(path)
         try:
             return path.read_text(encoding='utf-8').strip()
         except (OSError, ValueError):

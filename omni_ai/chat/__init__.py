@@ -19,6 +19,7 @@ from .. import config as config_tool
 from .. import onboarding
 from .. import skills
 from .. import ui
+from ..osutils import private_file
 from ..tools import KEY_NAMES, PARALLEL, TOOLS
 
 from . import i18n, session, spend, runner, versions, queue, ops
@@ -309,7 +310,7 @@ def main(argv=None):
                     else:
                         text = _export.to_markdown(conv, argument.strip() or None)
                         out = os.path.abspath(_export.default_name(conv, 'md'))
-                        with open(out, 'w', encoding='utf-8') as stream:
+                        with private_file(out, 'w', encoding='utf-8') as stream:
                             stream.write(text)
                         copied = _export.to_clipboard(text)
                         display(f'📝 Resumo para continuar em outra LLM salvo em {out}'

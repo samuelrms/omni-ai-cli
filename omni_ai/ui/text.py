@@ -5,7 +5,7 @@ from pathlib import Path
 
 from . import color
 
-SECRET = re.compile(r'^\s*/key\b|sk-[A-Za-z0-9_-]{16,}|AIza[0-9A-Za-z_-]{20,}|npm_[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9]{20,}')
+SECRET = re.compile(r'^\s*/key\b|sk-[A-Za-z0-9_-]{16,}|xai-[A-Za-z0-9_-]{16,}|gsk_[A-Za-z0-9_-]{16,}|AIza[0-9A-Za-z_-]{20,}|npm_[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9]{20,}')
 LANG = ['pt']  # set by the chat; screen texts follow it
 TEXT = {
     'cancel': {'pt': 'Ctrl-C cancela', 'en': 'Ctrl-C cancels', 'es': 'Ctrl-C cancela', 'fr': 'Ctrl-C annule'},
