@@ -15,6 +15,8 @@
 ![Idiomas](https://img.shields.io/badge/pt--BR%20·%20en%20·%20es%20·%20fr-C4552F)
 
 > [English](docs/README.en.md) · [Español](docs/README.es.md) · [Français](docs/README.fr.md)
+>
+> **Site:** [omni.samuelramos.dev](https://omni.samuelramos.dev)
 
 Um terminal de chat que junta **Claude Code, Codex, Cursor, Antigravity, Grok, DeepSeek e
 OpenRouter** num lugar só. Você escreve a pergunta, o `ai` decide quem responde e, se a
