@@ -60,6 +60,9 @@ def chat(key, prompt, model="", system_prompt=None, mask=True, base=XAI_BASE, na
     pii_map = {}
     if masker:
         prompt, pii_map = masker.mask(prompt)
+        if system_prompt:
+            system_prompt, more = masker.mask(system_prompt)
+            pii_map.update(more)
         if pii_map:
             print(f"  🛡️  PII mascarado: {len(pii_map)} item(s)", file=sys.stderr)
     messages = ([{"role": "system", "content": system_prompt}] if system_prompt else []) + [{"role": "user", "content": prompt}]

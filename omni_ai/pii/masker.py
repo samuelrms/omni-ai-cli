@@ -1,9 +1,22 @@
 """PIIMasker: detect and reversibly mask personal data before sending prompts to third-party LLMs."""
+import ipaddress
 import re
 import json
 import sys
 import hashlib
 from typing import Tuple
+
+NOT_A_VALUE = r"(?!(?:string|str|null|none|true|false|undefined|any|int|bool|number)\b)"
+
+
+def _secret_pattern(words, shortest):
+    """A word, its optional ending (aws_secret_access_key), and a value that may be quoted, as in JSON."""
+    return re.compile(
+        words + r"(?:[_-][\w-]{0,40})?[\"']?\s*[:=]\s*" + NOT_A_VALUE +
+        rf"(?:\"([^\"\n]{{{shortest},}})\"|'([^'\n]{{{shortest},}})'|([^\s'\",;{{}}()]{{{shortest},}}))",
+        re.IGNORECASE,
+    )
+
 
 class PIIMasker:
     """Mascara e desmascara dados pessoais identificáveis (PII)."""
@@ -15,31 +28,33 @@ class PIIMasker:
             "API_KEY",
             re.compile(
                 r"""(?:sk-(?:ant-)?[a-zA-Z0-9_-]{20,}"""       # Anthropic/OpenAI keys
-                r"""|ghp_[a-zA-Z0-9]{36}"""                      # GitHub PAT
-                r"""|gho_[a-zA-Z0-9]{36}"""                      # GitHub OAuth
+                r"""|csk-[a-zA-Z0-9_-]{20,}"""                   # Cerebras
+                r"""|xai-[a-zA-Z0-9_-]{20,}"""                   # xAI
+                r"""|gsk_[a-zA-Z0-9_-]{20,}"""                   # Groq
+                r"""|npm_[a-zA-Z0-9]{20,}"""                     # npm
+                r"""|gh[pousr]_[a-zA-Z0-9]{20,}"""               # GitHub tokens
                 r"""|github_pat_[a-zA-Z0-9_]{22,}"""             # GitHub fine-grained
                 r"""|glpat-[a-zA-Z0-9_-]{20,}"""                 # GitLab PAT
                 r"""|xoxb-[0-9A-Za-z-]{50,}"""                   # Slack bot token
                 r"""|xoxp-[0-9A-Za-z-]{50,}"""                   # Slack user token
-                r"""|AKIA[0-9A-Z]{16}"""                         # AWS Access Key
-                r"""|AIza[0-9A-Za-z_-]{35}"""                    # Google API Key
+                r"""|(?:AKIA|ASIA)[0-9A-Z]{16}"""                # AWS access key, long-lived or temporary
+                r"""|AIza[0-9A-Za-z_-]{30,}"""                   # Google API Key
                 r"""|ya29\.[0-9A-Za-z_-]+"""                     # Google OAuth
                 r"""|eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,})""",  # JWT
                 re.VERBOSE,
             ),
         ),
-        (
-            "SECRET",
-            re.compile(
-                r"(?:password|passwd|pwd|secret|token|api[_-]?key|auth)\s*[:=]\s*['\"]?([^\s'\"]{8,})['\"]?",
-                re.IGNORECASE,
-            ),
-        ),
+        # Passwords can be short. The other words appear in ordinary text, so only long values count.
+        ("SECRET", _secret_pattern(r"(?:password|passwd|pwd|senha)", 1)),
+        ("SECRET", _secret_pattern(r"(?:secret|token|api[_-]?key|access[_-]?key|auth(?:orization)?|chave)", 8)),
+        ("SECRET", re.compile(r"\bbearer\s+((?=[A-Za-z]{0,300}[^A-Za-z\s])[A-Za-z0-9._~+/=-]{8,})", re.IGNORECASE)),
+        ("SECRET", re.compile(r"authorization[\"']?\s*[:=]\s*[\"']?basic\s+([A-Za-z0-9+/=]{4,})", re.IGNORECASE)),
 
         # === Documentos Brasileiros ===
         ("CPF", re.compile(r"\b\d{3}[.\s]?\d{3}[.\s]?\d{3}[-.\s]?\d{2}\b")),
         ("CNPJ", re.compile(r"\b\d{2}[.\s]?\d{3}[.\s]?\d{3}[/\\]?\d{4}[-.\s]?\d{2}\b")),
         ("RG", re.compile(r"\b\d{2}[.\s]?\d{3}[.\s]?\d{3}[-.\s]?[\dxX]\b")),
+        ("PIS", re.compile(r"\b\d{3}\.\d{5}\.\d{2}-\d\b")),
 
         # === Documentos Internacionais ===
         ("SSN", re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),  # US Social Security
@@ -48,21 +63,24 @@ class PIIMasker:
         (
             "CREDIT_CARD",
             re.compile(
-                r"\b(?:4\d{3}|5[1-5]\d{2}|3[47]\d{2}|6(?:011|5\d{2}))"
-                r"[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{3,4}\b"
+                r"\b(?:3[47]\d{2}[\s-]?\d{6}[\s-]?\d{5}"  # American Express groups its digits differently
+                r"|(?:4\d{3}|5[1-5]\d{2}|3[47]\d{2}|6(?:011|5\d{2}))"
+                r"[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{3,4})\b"
             ),
         ),
 
         # === Telefones ===
+        # International and US first: the Brazilian pattern would take only the end of these numbers
+        (
+            "PHONE_INTL",
+            re.compile(r"\+(?!55)\d{1,3}(?:[\s.-]?\(?\d{1,4}\)?){2,5}\b"),
+        ),
+        ("PHONE_US", re.compile(r"(?:\(\d{3}\)\s?|\b\d{3}-)\d{3}[-.\s]\d{4}\b")),
         (
             "PHONE_BR",
             re.compile(
                 r"(?:\+55\s?)?(?:\(?\d{2}\)?\s?)?\d{4,5}[-.\s]?\d{4}\b"
             ),
-        ),
-        (
-            "PHONE_INTL",
-            re.compile(r"\+\d{1,3}[\s.-]?\(?\d{1,4}\)?[\s.-]?\d{3,4}[\s.-]?\d{3,4}\b"),
         ),
 
         # === Endereços IP ===
@@ -75,14 +93,14 @@ class PIIMasker:
         ),
         (
             "IPV6",
-            re.compile(r"\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b"),
+            re.compile(r"(?<![\w:.])[0-9a-fA-F:]{2,39}(?![\w:.])"),  # the shape only: _is_false_positive validates it
         ),
 
         # === Email (depois de IP para não conflitar) ===
         (
             "EMAIL",
             re.compile(
-                r"\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b"
+                r"\b[\w.%+-]{1,64}@[\w.-]{1,255}\.[^\W\d_]{2,}\b"
             ),
         ),
 
@@ -90,7 +108,7 @@ class PIIMasker:
         (
             "URL_WITH_CREDS",
             re.compile(
-                r"https?://[^:]+:[^@]+@[^\s]+"
+                r"https?://[^\s:/@]{1,256}:[^\s/@]{1,256}@\S+"
             ),
         ),
 
@@ -120,9 +138,9 @@ class PIIMasker:
         (
             "PRIVATE_KEY",
             re.compile(
-                r"-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----"
+                r"-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY(?: BLOCK)?-----"
                 r"[\s\S]*?"
-                r"-----END (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----"
+                r"(?:-----END [A-Z0-9 ]{0,40}PRIVATE KEY(?: BLOCK)?-----|\Z)"  # cut off, it is still a secret
             ),
         ),
 
@@ -160,6 +178,13 @@ class PIIMasker:
                 # (e.g. "10.0.0.1"), which used to leave such IPs unmasked.
                 if fp.fullmatch(match_text):
                     return True
+        if category == "IPV6":
+            try:
+                address = ipaddress.IPv6Address(match_text)
+            except ValueError:
+                return True
+            # `ab::cd` is valid but is far more likely a name in code than an address
+            return address.is_loopback or not any(char.isdigit() for char in match_text)
         # CEPs que parecem mais versões ou números genéricos
         if category == "CEP" and len(match_text.replace("-", "").replace(".", "")) < 8:
             return True
