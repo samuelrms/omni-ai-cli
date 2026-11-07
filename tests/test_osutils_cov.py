@@ -15,7 +15,7 @@ from omni_ai import osutils
 
 class ModuleHelpersTests(unittest.TestCase):
     def test_module_cmd(self):
-        self.assertEqual(osutils.module_cmd('cli'), [sys.executable, '-P', '-m', 'omni_ai.cli'])
+        self.assertEqual(osutils.module_cmd('cli'), [sys.executable, '-P', '-X', 'utf8', '-m', 'omni_ai.cli'])
 
     def test_module_env_from_none_adds_repo_to_pythonpath(self):
         env = osutils.module_env()
@@ -93,12 +93,21 @@ class ProcessGroupTests(unittest.TestCase):
         self.assertIn('/F', argv)
         self.assertIn('999', argv)
 
-    def test_kill_tree_windows_without_force_has_no_f_flag(self):
+    def test_kill_tree_windows_without_force_sends_ctrl_break(self):
+        # taskkill without /F only asks windows to close, which console tools don't have
         proc = MagicMock(pid=7)
-        with patch('omni_ai.osutils.WINDOWS', True), \
-             patch('omni_ai.osutils.subprocess.run') as run:
+        with patch('omni_ai.osutils.WINDOWS', True), patch.object(osutils.signal, 'CTRL_BREAK_EVENT', 1, create=True), \
+             patch('omni_ai.osutils.os.kill') as kill, patch('omni_ai.osutils.subprocess.run') as run:
             osutils.kill_tree(proc)
-        self.assertNotIn('/F', run.call_args.args[0])
+        kill.assert_called_once_with(7, 1)
+        run.assert_not_called()
+
+    def test_kill_tree_windows_without_a_console_stops_it_for_real(self):
+        proc = MagicMock(pid=7)
+        with patch('omni_ai.osutils.WINDOWS', True), patch.object(osutils.signal, 'CTRL_BREAK_EVENT', 1, create=True), \
+             patch('omni_ai.osutils.os.kill', side_effect=OSError), patch('omni_ai.osutils.subprocess.run') as run:
+            osutils.kill_tree(proc)
+        self.assertEqual(run.call_args.args[0], ['taskkill', '/PID', '7', '/T', '/F'])
 
 
 class LockTests(unittest.TestCase):

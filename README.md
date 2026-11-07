@@ -596,7 +596,7 @@ No primeiro início, o servidor cria uma chave e a mostra uma única vez. Só o 
 - `tools`/function calling só nos provedores de API (OpenRouter, DeepSeek e Grok via chave). As ferramentas nunca são executadas pelo servidor: a chamada volta para o seu código. Outros modelos retornam 400, porque os CLIs de agente não têm como devolver a chamada, a não ser com `--tool-emulation`. Com `omni-auto`, a ordem é OpenRouter, DeepSeek e Grok. No OpenRouter, sem `openrouter_paid`, só modelos gratuitos. Em streaming, a chamada chega de uma vez, ao final. Argumentos fora do schema fazem o servidor tentar o próximo provedor; só o núcleo do JSON Schema é checado (`type`, `required`, `enum`, `properties`, `items`, `additionalProperties`). `functions` (formato antigo) retorna 400.
 - **Experimental:** `ai serve --tool-emulation` (`SMART_AI_TOOL_EMULATION=1` no Docker) emula `tools` em Claude Code e Grok CLI, com as ferramentas próprias deles desligadas. O modelo escreve a chamada em JSON, o servidor valida e tenta de novo uma vez, o que gasta mais cota. Só entra quando não há provedor de API. Codex e Cursor ficam de fora, porque não dá para desligar as ferramentas deles. O modelo pode errar mais que no modo nativo, os dados pessoais não são mascarados, e o conteúdo do cliente pode imitar o formato.
 - Imagens retornam erro 400.
-- O prompt chega às ferramentas como argumento de linha de comando e fica visível na lista de processos da máquina. O limite é de 100 KB por pedido.
+- O prompt chega às ferramentas como argumento de linha de comando e fica visível na lista de processos da máquina. Quando não cabe na linha de comando (no Windows, cerca de 32 mil caracteres), Claude Code e Codex recebem pela entrada padrão; Antigravity, Cursor e Grok recusam, e o fallback segue. O limite é de 100 KB por pedido.
 - Perfis Claude legados, que trocam o arquivo de credenciais, limitam o servidor a um pedido por vez.
 
 ---
@@ -787,6 +787,7 @@ guardar nem rotacionar.
 | `Not inside a trusted directory` (Codex) | Instalação antiga. Rode o instalador de novo. |
 | `Claude Code não instalado` | `./scripts/install.sh` (ou `scripts\install.ps1` no Windows) instala pelo instalador oficial. |
 | Windows: atalhos de skills falham | Ative o Modo de Desenvolvedor ou rode como administrador; sem isso o `ai` usa junções de pasta. |
+| `o pedido é longo demais para a linha de comando deste sistema` | Antigravity, Cursor e Grok só recebem o pedido pela linha de comando. O fallback segue para Claude Code e Codex, que recebem pedidos longos pela entrada padrão. |
 | Windows: `este pedido não pode ser passado com segurança` | A ferramenta foi instalada por um atalho `.cmd` que o `ai` não reconhece. Instale com o npm ou defina `<FERRAMENTA>_BIN` com o executável dela. |
 | `/model` não muda nada | Uma variável `SMART_AI_*_MODEL` está definida e tem precedência. |
 | `/key` não muda nada | A variável da ferramenta (`ANTHROPIC_API_KEY` etc.) está definida e tem precedência. |
@@ -804,7 +805,7 @@ guardar nem rotacionar.
   arquivos. Os agentes não editam o projeto ao mesmo tempo.
 - A classificação simples/complexa usa um modelo quando há chave de Groq, Cerebras, OpenRouter ou Grok. Sem nenhuma delas, ou se todas falharem, usa palavras-chave e tamanho. Ela pode errar nos dois casos.
 - Trocar de modelo não renova a cota da conta.
-- No Windows, o código usa os equivalentes nativos (grupo de processos e `taskkill`, `msvcrt`, junções de pasta), mas foi testado de verdade só no macOS. A exceção é a execução de ferramentas instaladas pelo npm, testada no CI em Windows.
+- No Windows, o código usa os equivalentes nativos (grupo de processos, Ctrl+Break e `taskkill`, `msvcrt`, junções de pasta), mas foi testado de verdade só no macOS. As exceções, testadas no CI em Windows, são: execução de ferramentas instaladas pelo npm, cancelamento, saída em pipe, pedidos longos e o `ai.cmd`.
 
 ---
 

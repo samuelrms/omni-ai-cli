@@ -15,6 +15,16 @@ from .base import (
 from .limits import hit_limit, remember_limit, tail_hit_limit
 
 
+def _without_prompt(argv, at):
+    """Claude Code reads the prompt from stdin when -p has none."""
+    return [*argv[:at], *argv[at + 1:]], argv[at]
+
+
+def _prompt_from_stdin(argv, at):
+    """Codex reads the prompt from stdin when it is `-`."""
+    return [*argv[:at], '-', *argv[at + 1:]], argv[at]
+
+
 def plain_prompt(prompt):
     """A prompt starting with a dash would be read as an option by the CLI, even in plan mode.
     A leading space keeps it text in every CLI, whether or not it supports `--`."""
@@ -61,7 +71,11 @@ def _swap_credentials(main_creds, creds):
 
 
 def _stop_on_sigterm(signum, frame):
-    raise SystemExit(128 + signum)  # cancel and timeout send SIGTERM; this makes `finally` run
+    raise SystemExit(128 + signum)  # cancel and timeout send SIGTERM (Ctrl+Break on Windows); this makes `finally` run
+
+
+# What cancel sends: SIGTERM, or Ctrl+Break on Windows
+STOP_SIGNALS = tuple(getattr(signal, name) for name in ('SIGTERM', 'SIGBREAK') if hasattr(signal, name))
 
 
 def run_claude(profile, prompt):
@@ -98,7 +112,7 @@ def run_claude(profile, prompt):
                     say(f'{DIM}  Execute: ai --account add {profile}{NC}')
                     return NOT_READY
                 if threading.current_thread() is threading.main_thread():
-                    previous_handler = signal.signal(signal.SIGTERM, _stop_on_sigterm)
+                    previous_handler = {stop: signal.signal(stop, _stop_on_sigterm) for stop in STOP_SIGNALS}
                 _swap_credentials(main_creds, creds)
                 swapped = True
                 say(f'{DIM}  → Credenciais trocadas para perfil: {profile}{NC}')
@@ -110,15 +124,16 @@ def run_claude(profile, prompt):
     if no_tools():
         argv += ['--tools', '', '--strict-mcp-config']
     argv += ['-p', plain_prompt(prompt), '--verbose']
+    at = len(argv) - 2
     if os.environ.get('SMART_AI_EVENTS') == '1':
         argv += ['--output-format', 'stream-json']
     try:
-        code, output = run(argv, env)
+        code, output = run(argv, env, prompt_at=at, long_prompt=_without_prompt)
     finally:
         if swapped:
             restore_credentials(main_creds)
-            if previous_handler is not None:
-                signal.signal(signal.SIGTERM, previous_handler)
+            for stop, handler in (previous_handler or {}).items():
+                signal.signal(stop, handler)
     if hit_limit(output, code):
         remember_limit(f'claude:{profile}', output)
         mark_rate_limited(profile)
@@ -136,8 +151,10 @@ def key_account(tool, name):
     return base if name == 'principal' else f'{base}:{name}'
 
 
-def run_with_key_retry(tool, argv, env_var, label):
-    """Main login first, then each extra account of the tool (/account add TOOL NAME), then the saved API key."""
+def run_with_key_retry(tool, argv, env_var, label, long_prompt=None):
+    """Main login first, then each extra account of the tool (/account add TOOL NAME), then the saved API key.
+    The prompt is the last item of `argv`."""
+    prompt = {'prompt_at': len(argv) - 1, 'long_prompt': long_prompt}
     accounts = [('primary', {})] + [(name, config_tool.tool_env(tool, conf)) for name, conf in config_tool.tool_accounts(tool, True)]
     code = 1
     for name, env in accounts:
@@ -150,7 +167,7 @@ def run_with_key_retry(tool, argv, env_var, label):
         if name != 'primary':
             say(f'{YELLOW}🔄 {label}: tentando a conta {name}{NC}')
             emit_provider(tool)  # a new attempt: the reader forgets what the previous one failed with
-        code, output = run(argv, dict(os.environ, **env) if env else None)
+        code, output = run(argv, dict(os.environ, **env) if env else None, **prompt)
         remember_limit(account, output if code != 0 else '')
         if code == 0:
             break
@@ -162,7 +179,7 @@ def run_with_key_retry(tool, argv, env_var, label):
             continue
         say(f'{YELLOW}🔑 {label}: tentando com a chave {name}{NC}')
         emit_provider(tool)
-        code, output = run(argv, dict(os.environ, **{env_var: key}))
+        code, output = run(argv, dict(os.environ, **{env_var: key}), **prompt)
         remember_limit(account, output if code != 0 else '')
         if code != 0 and tail_hit_limit(output):
             mark_rate_limited(account)
@@ -197,7 +214,7 @@ def run_codex(prompt):
     argv += {'plan': ['--sandbox', 'read-only'], 'edits': ['--sandbox', 'workspace-write'],
              'auto': ['--sandbox', 'workspace-write', '-c', 'approval_policy="never"'],
              'yolo': ['--dangerously-bypass-approvals-and-sandbox']}.get(mode(), [])
-    return run_with_key_retry('codex', argv + ['--', prompt], 'CODEX_API_KEY', 'Codex')
+    return run_with_key_retry('codex', argv + ['--', prompt], 'CODEX_API_KEY', 'Codex', _prompt_from_stdin)
 
 
 def run_agy(prompt):

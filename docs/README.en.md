@@ -595,7 +595,7 @@ On first start, the server creates a key and shows it once. Only its hash is sto
 - `tools`/function calling only on API providers (OpenRouter, DeepSeek and Grok with a key). The server never runs the tools: the call goes back to your code. Other models return 400, because agent CLIs cannot hand the call back, unless `--tool-emulation` is on. With `omni-auto`, the order is OpenRouter, DeepSeek and Grok. On OpenRouter, without `openrouter_paid`, only free models. When streaming, the call arrives in one piece at the end. Arguments outside the schema make the server try the next provider; only the core of JSON Schema is checked (`type`, `required`, `enum`, `properties`, `items`, `additionalProperties`). `functions` (old format) returns 400.
 - **Experimental:** `ai serve --tool-emulation` (`SMART_AI_TOOL_EMULATION=1` in Docker) emulates `tools` on Claude Code and the Grok CLI, with their own tools switched off. The model writes the call as JSON, and the server checks it and retries once, which spends more quota. It only applies when no API provider is available. Codex and Cursor are left out, because their tools cannot be switched off. The model may get it wrong more often than in native mode, personal data is not masked, and client content can imitate the format.
 - Images return a 400 error.
-- The prompt reaches the tools as a command-line argument, so it is visible in the machine's process list. The limit is 100 KB per request.
+- The prompt reaches the tools as a command-line argument, so it is visible in the machine's process list. When it does not fit on a command line (about 32 thousand characters on Windows), Claude Code and Codex get it through standard input; Antigravity, Cursor and Grok refuse it, and the fallback goes on. The limit is 100 KB per request.
 - Legacy Claude profiles, which swap the credentials file, limit the server to one request at a time.
 
 ---
@@ -786,6 +786,7 @@ The workflow already requests `id-token: write` and `NPM_CONFIG_PROVENANCE`; the
 | `Not inside a trusted directory` (Codex) | Old install. Run the installer again. |
 | `Claude Code não instalado` | `./scripts/install.sh` (or `scripts\install.ps1` on Windows) installs it with the official installer. |
 | Windows: skill links fail | Turn on Developer Mode or run as administrator; otherwise `ai` uses folder junctions. |
+| `o pedido é longo demais para a linha de comando deste sistema` | Antigravity, Cursor and Grok only take the prompt on the command line. The fallback goes on to Claude Code and Codex, which get long prompts through standard input. |
 | Windows: `este pedido não pode ser passado com segurança` | The tool was installed through a `.cmd` shim `ai` does not recognize. Install it with npm or set `<TOOL>_BIN` to its executable. |
 | `/model` changes nothing | A `SMART_AI_*_MODEL` variable is set and takes precedence. |
 | `/key` changes nothing | The tool's variable (`ANTHROPIC_API_KEY` etc.) is set and takes precedence. |
@@ -803,7 +804,7 @@ The workflow already requests `id-token: write` and `NPM_CONFIG_PROVENANCE`; the
   access the files. The agents do not edit the project at the same time.
 - The simple/complex classification uses a model when there is a Groq, Cerebras, OpenRouter or Grok key. Without any of them, or if they all fail, it uses keywords and size. It can be wrong in both cases.
 - Switching models does not renew the account's quota.
-- On Windows the code uses the native equivalents (process groups and `taskkill`, `msvcrt`, folder junctions), but it has only been tested for real on macOS. The exception is running tools installed through npm, tested in CI on Windows.
+- On Windows the code uses the native equivalents (process groups, Ctrl+Break and `taskkill`, `msvcrt`, folder junctions), but it has only been tested for real on macOS. The exceptions, tested in CI on Windows, are running tools installed through npm, cancelling, piped output, long prompts and `ai.cmd`.
 
 ---
 

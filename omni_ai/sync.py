@@ -186,7 +186,7 @@ def main(argv):
     for tool, name, _, argv in mcp_actions:
         try:
             result = subprocess.run([resolve_bin(argv[0]) or argv[0]] + argv[1:],
-                                    capture_output=True, text=True, timeout=60)
+                                    capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60)
         except (OSError, subprocess.TimeoutExpired) as error:
             failures += 1
             print(f'  ✗ MCP {name} em {tool}: {error}')

@@ -4,7 +4,7 @@ import re
 import time
 
 ROLE_LABELS = {'system': 'System', 'developer': 'System', 'user': 'User', 'assistant': 'Assistant'}
-MAX_PROMPT_BYTES = 100_000  # the prompt reaches the tools as one command-line argument (Linux caps it at 128 KiB)
+MAX_PROMPT_BYTES = 100_000  # tools without stdin get it as one command-line argument (Linux caps that at 128 KiB)
 UNSUPPORTED_PARAMS = ('top_p', 'stop', 'presence_penalty', 'frequency_penalty', 'logit_bias', 'seed',
                       'response_format', 'logprobs', 'top_logprobs')
 MAX_TOOLS = 128
