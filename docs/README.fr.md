@@ -75,7 +75,7 @@ Trois détails que le diagramme rend explicites :
 - **Chaque compte Claude a son propre dossier de connexion.** Les comptes
   supplémentaires s'exécutent avec `CLAUDE_CONFIG_DIR` pointant vers
   `~/.claude-accounts/<nom>`. Le compte principal n'est jamais déconnecté, et aucun
-  identifiant n'est copié d'un endroit à un autre. Copier le `.credentials.json` ne
+  identifiant n'est copié d'un endroit à un autre. L'exception concerne les anciens profils avec `credentials_file`, qui échangent le fichier d'identifiants pendant l'appel. Copier le `.credentials.json` ne
   fonctionne pas de façon fiable sur macOS, où la connexion est stockée dans le
   Keychain.
 - **Ctrl-C tue tout l'arbre de processus.** Le routeur s'exécute dans son propre groupe de
@@ -811,8 +811,7 @@ Le workflow demande déjà `id-token: write` et `NPM_CONFIG_PROVENANCE` ; il n'y
   utilisez le CLI natif.
 - `/parallel` ne fait qu'analyser : Codex en `--sandbox read-only` ou OpenRouter, qui
   n'accède pas aux fichiers. Les agents ne modifient pas le projet en même temps.
-- La classification simple/complexe repose sur des mots-clés et la taille, pas sur un
-  modèle.
+- La classification simple/complexe utilise un modèle quand il y a une clé Groq, Cerebras, OpenRouter ou Grok. Sans aucune, ou si toutes échouent, elle utilise des mots-clés et la taille. Elle peut se tromper dans les deux cas.
 - Changer de modèle ne renouvelle pas le quota du compte.
 - Sous Windows le code utilise les équivalents natifs (groupes de processus et `taskkill`, `msvcrt`, jonctions de dossier), mais il n'a été testé pour de vrai que sous macOS. L'exception est le lancement des outils installés avec npm, testé en CI sous Windows.
 
@@ -826,8 +825,8 @@ Le workflow demande déjà `id-token: write` et `NPM_CONFIG_PROVENANCE` ; il n'y
 - Avant d'aller vers OpenRouter, e-mails, téléphones, documents et autres données
   personnelles sont remplacés par des marqueurs et restaurés dans la réponse. Le
   masquage repose sur des motifs et ne garantit pas une anonymisation totale.
-- Claude, Codex et Antigravity reçoivent le texte d'origine, selon les conditions de
-  chaque service.
+- Claude, Codex, Cursor, Antigravity et Grok Build reçoivent le texte original, selon les conditions de chaque service.
+- Pour classer les demandes et décider pour la file, une partie masquée de la demande, et de la réponse précédente pour la file, va au service configuré : Groq, Cerebras ou OpenRouter. Si les gratuits échouent, la classification peut utiliser xAI, qui est payant.
 
 ---
 
