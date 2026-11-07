@@ -47,3 +47,6 @@ omni-*.pdf
 omni-*.md
 omni-conversa-*.pdf
 omni-conversa-*.md
+
+# Generated at publish from the GitHub releases
+editor/CHANGELOG.md

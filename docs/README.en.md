@@ -73,7 +73,7 @@ Three details the diagram makes explicit:
 
 - **Each Claude account has its own login folder.** Extra accounts run with
   `CLAUDE_CONFIG_DIR` pointing to `~/.claude-accounts/<nome>`. The main account is
-  never logged out, and no credential is copied from one place to another. Copying
+  never logged out, and no credential is copied from one place to another. The exception is legacy profiles with `credentials_file`, which swap the credentials file during a call. Copying
   `.credentials.json` does not work reliably on macOS, where the login lives in the
   Keychain.
 - **Ctrl-C kills the whole tree.** The router runs in its own process group, so
@@ -799,7 +799,7 @@ The workflow already requests `id-token: write` and `NPM_CONFIG_PROVENANCE`; the
   example, "can I edit this file?") do not appear; in those cases, use the native CLI.
 - `/parallel` only analyzes: Codex in `--sandbox read-only` or OpenRouter, which does not
   access the files. The agents do not edit the project at the same time.
-- The simple/complex classification is by keywords and length, not by a model.
+- The simple/complex classification uses a model when there is a Groq, Cerebras, OpenRouter or Grok key. Without any of them, or if they all fail, it uses keywords and size. It can be wrong in both cases.
 - Switching models does not renew the account's quota.
 - On Windows the code uses the native equivalents (process groups and `taskkill`, `msvcrt`, folder junctions), but it has only been tested for real on macOS. The exception is running tools installed through npm, tested in CI on Windows.
 
@@ -813,7 +813,8 @@ The workflow already requests `id-token: write` and `NPM_CONFIG_PROVENANCE`; the
 - Before going to OpenRouter, emails, phone numbers, documents and other personal data
   are swapped for placeholders and restored in the answer. Masking is pattern-based and
   does not guarantee full anonymization.
-- Claude, Codex and Antigravity receive the original text, under each service's terms.
+- Claude, Codex, Cursor, Antigravity and Grok Build receive the original text, under each service's terms.
+- To classify requests and decide on the queue, a masked part of the request, and of the previous answer in the queue's case, goes to the configured service: Groq, Cerebras or OpenRouter. If the free ones fail, classification can use xAI, which is paid.
 
 ---
 
