@@ -217,4 +217,18 @@ test('the manifest keeps risky settings out of workspaces', () => {
   assert.equal(manifest.capabilities.untrustedWorkspaces.supported, false);
 });
 
+test('the chat prompt travels in a private file, never on the command line', () => {
+  reset();
+  const { handler } = chatView();
+  state.providers['omni-ai.chat'].child = null; // a /usage started by an earlier test may still be running
+  const prompt = '-x " & echo planted & "\n' + 'á'.repeat(40000);
+  handler({ type: 'send', text: prompt, tool: 'codex', mode: 'plan' });
+  const call = spawned.find((c) => c.includes('--prompt-file'));
+  assert.ok(call, 'the chat did not start the CLI');
+  assert.ok(!call.some((part) => part.includes('planted')));
+  const file = call[call.indexOf('--prompt-file') + 1];
+  assert.equal(fs.readFileSync(file, 'utf8'), prompt);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o077, 0);
+});
+
 test.after(() => setImmediate(() => process.exit(process.exitCode || 0)));

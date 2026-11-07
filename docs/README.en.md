@@ -215,6 +215,8 @@ Install from the browser: [Open VSX](https://open-vsx.org/extension/samuelrms/om
 
 On first run the extension installs the `ai` CLI underneath if missing and opens a setup walkthrough.
 
+On Windows the sidebar starts an npm-installed `ai` without going through `cmd.exe`. The prompt travels in a temporary file only your user can read, so the command-line limit does not apply. This is tested in CI on Windows, without opening VS Code.
+
 ---
 
 ## Chat commands

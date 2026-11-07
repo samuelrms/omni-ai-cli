@@ -49,6 +49,8 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Tool launch on real Windows
         run: python -m unittest discover -s tests -p 'test_windows_*.py' -v
+      - name: Editor extension starts the CLI on real Windows
+        run: node --test editor/test/launch.test.js
 
   docker:
     name: Docker image
@@ -74,8 +76,10 @@ jobs:
       - name: Editor extension syntax
         run: |
           node --check editor/extension.js
+          node --check editor/launch.js
           node -e "JSON.parse(require('fs').readFileSync('editor/package.json','utf8'))"
           node --test editor/test/safety.test.js
+          node --test editor/test/launch.test.js
       - name: Pack
         run: npm pack --dry-run
       - name: Install tarball and run launcher
