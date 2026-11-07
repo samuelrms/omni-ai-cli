@@ -3,9 +3,10 @@ import hashlib
 import http.client
 import json
 import os
-import select
+import queue
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -45,7 +46,7 @@ def codex_status(env=None, timeout=15):
                                 stderr=subprocess.DEVNULL, text=True, env=dict(os.environ, **(env or {})))
     except OSError:
         return None
-    answers = {}
+    answers, reader = {}, None
     try:
         for message in ({'id': 1, 'method': 'initialize', 'params': {'clientInfo': {'name': 'omni', 'version': '1'}}},
                         {'method': 'initialized', 'params': {}},
@@ -53,13 +54,25 @@ def codex_status(env=None, timeout=15):
                         {'id': 3, 'method': 'account/rateLimits/read', 'params': None}):
             proc.stdin.write(json.dumps(message) + '\n')
         proc.stdin.flush()
+        # A thread reads: asking the pipe whether it has data misses lines already in the file's own buffer
+        lines = queue.Queue()
+
+        def read_lines():
+            try:
+                for line in iter(proc.stdout.readline, ''):
+                    lines.put(line)
+            except (OSError, ValueError):
+                pass
+            lines.put(None)
+        reader = threading.Thread(target=read_lines, daemon=True)
+        reader.start()
         end = time.time() + timeout
         while len(answers) < 2 and time.time() < end:
-            ready, _, _ = select.select([proc.stdout], [], [], 0.5)
-            if not ready:
+            try:
+                line = lines.get(timeout=min(0.5, max(0.01, end - time.time())))
+            except queue.Empty:
                 continue
-            line = proc.stdout.readline()
-            if not line:
+            if line is None:
                 break
             try:
                 reply = json.loads(line)
@@ -74,6 +87,8 @@ def codex_status(env=None, timeout=15):
         pass
     finally:
         proc.kill()
+        if reader:
+            reader.join(1)
         try:
             proc.wait(timeout=5)  # reap the child and let the pipes close instead of leaking fds
         except (OSError, subprocess.TimeoutExpired, AttributeError):

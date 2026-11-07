@@ -1,43 +1,110 @@
 """Rate-limit detection and memory: parse the tool's own words, remember them, and expire them."""
+from datetime import datetime, timedelta
 import json
 import os
 import re
 import time
+from zoneinfo import ZoneInfo
 
 from .. import config as config_tool
 from .base import STATE_FILE, LIMIT_TEXT
 
 LIMIT_MESSAGE = re.compile(r"[^\n]*(?:hit your (?:usage|session) limit|quota reached|rate limit|try again at|resets? (?:at|in))[^\n]*", re.I)
 
-LIMIT_IN = re.compile(r'(?:resets?|try again)\s+in\s+((?:\d+\s*[dhms]\s*)+)', re.I)
+_DURATION = r"\d+\s*(?:months?|mo|weeks?|wks?|w|days?|d|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)(?![a-z])"
+LIMIT_IN = re.compile(r"(?:resets?|try again)\s+in\s+(" + _DURATION + r"(?:\s*(?:,|and)?\s*" + _DURATION + r"){0,4})", re.I)
 LIMIT_AT = re.compile(r'(?:resets?(?:\s+at)?|try again at)\s+(\d{1,2})(?::(\d{2}))?\s*([ap]m)?\b', re.I)
+LIMIT_ON = re.compile(r"(?:resets?|try again)(?:\s+on)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b"
+                      r"(?:,?\s*(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*([ap]m)?\b)?", re.I)
+LIMIT_ZONE = re.compile(r"\b([A-Za-z_]+/[A-Za-z_]+(?:/[A-Za-z_]+)?|UTC|GMT)\b")
+MONTHS = ('jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec')
 LIMIT_FALLBACK = 24 * 3600  # no reset time in the message: stop showing it after a day
+
+
+def _seconds(amount, unit):
+    unit = unit.lower()
+    if unit.startswith('mo'):
+        return amount * 30 * 86400
+    if unit.startswith('w'):
+        return amount * 7 * 86400
+    return amount * {'d': 86400, 'h': 3600, 'm': 60, 's': 1}[unit[0]]
+
+
+def _zone(text):
+    """The time zone the message names; None (local time) when it names none or an unknown one."""
+    found = LIMIT_ZONE.search(text)
+    try:
+        return ZoneInfo(found.group(1)) if found else None
+    except (KeyError, ValueError, OSError):
+        return None
+
+
+def _clock(hour, minute, half):
+    hour, minute, half = int(hour or 0), int(minute or 0), (half or '').lower()
+    if half == 'pm' and hour < 12:
+        hour += 12
+    elif half == 'am' and hour == 12:
+        hour = 0
+    return (hour, minute) if hour <= 23 and minute <= 59 else None
 
 
 def limit_until(text, at):
     """When the tool said the limit ends, as epoch seconds; None when the message gives no time."""
     found = LIMIT_IN.search(text)
     if found:
-        units = {'d': 86400, 'h': 3600, 'm': 60, 's': 1}
-        return at + sum(int(n) * units[u.lower()] for n, u in re.findall(r'(\d+)\s*([dhms])', found.group(1), re.I))
+        return at + sum(_seconds(int(n), unit) for n, unit in re.findall(r'(\d+)\s*([a-z]+)', found.group(1), re.I))
+    seen = datetime.fromtimestamp(at, _zone(text))
+    found = LIMIT_ON.search(text)
+    if found:
+        clock = _clock(found.group(3), found.group(4), found.group(5))
+        if not clock:
+            return None
+        try:
+            until = seen.replace(month=MONTHS.index(found.group(1).lower()) + 1, day=int(found.group(2)),
+                                 hour=clock[0], minute=clock[1], second=0, microsecond=0)
+            if until <= seen:
+                until = until.replace(year=until.year + 1)
+        except ValueError:
+            return None
+        return int(until.timestamp())
     found = LIMIT_AT.search(text)
     if not found:
         return None
-    hour, minute, half = int(found.group(1)), int(found.group(2) or 0), (found.group(3) or '').lower()
-    if half == 'pm' and hour < 12:
-        hour += 12
-    elif half == 'am' and hour == 12:
-        hour = 0
-    if hour > 23 or minute > 59:
+    clock = _clock(found.group(1), found.group(2), found.group(3))
+    if not clock:
         return None
-    seen = time.localtime(at)
-    until = time.mktime((seen.tm_year, seen.tm_mon, seen.tm_mday, hour, minute, 0, 0, 0, -1))
-    return int(until if until > at else until + 86400)
+    until = seen.replace(hour=clock[0], minute=clock[1], second=0, microsecond=0)
+    return int((until if until > seen else until + timedelta(days=1)).timestamp())
+
+
+def _deciding_lines(output):
+    """Where a tool talks about itself: its error events and the last plain lines. What it read or wrote
+    while working (files, logs, a diff that mentions "rate limit") is not the reason it stopped."""
+    lines = []
+    for line in output.splitlines():
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            lines.append(line)
+            continue
+        if not isinstance(event, dict):
+            continue
+        kind = event.get('type')
+        info = event.get('rate_limit_info')
+        if kind == 'result' and event.get('is_error'):
+            lines.append(str(event.get('result', '')))
+        elif kind == 'rate_limit_event' and isinstance(info, dict) and info.get('status') in ('rejected', 'exceeded'):
+            lines.append(str(info.get('message') or 'rate limit'))
+        elif kind in ('error', 'turn.failed'):
+            lines.append(line)
+    return lines[-5:]
 
 
 def remember_limit(key, output):
     """Keep the tool's own words about its limit (e.g. 'resets 7:40pm') for /usage."""
-    match = LIMIT_MESSAGE.search(re.sub(r'\\u2019', "'", output))
+    match = LIMIT_MESSAGE.search(re.sub(r'\\u2019', "'", '\n'.join(_deciding_lines(output))))
     entry = None
     if match:
         text = match.group(0)
