@@ -34,7 +34,7 @@ def claude_account(conf):
         status = json.loads(result.stdout)
     except (OSError, subprocess.TimeoutExpired, ValueError):
         return None
-    if not status.get('loggedIn'):
+    if not isinstance(status, dict) or not status.get('loggedIn'):
         return None
     return {'email': status.get('email') or '', 'plan': plan_name(status.get('subscriptionType'))}
 
@@ -118,7 +118,8 @@ def openrouter_credits(key, timeout=10):
     request = urllib.request.Request('https://openrouter.ai/api/v1/key', headers={'Authorization': f'Bearer {key}'})
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            data = json.loads(response.read()).get('data') or {}
+            body = json.loads(response.read())
+        data = (body.get('data') or {}) if isinstance(body, dict) else None
         if not isinstance(data, dict):
             return None
         return {'used': _f(data.get('usage')), 'limit': data.get('limit'), 'free': bool(data.get('is_free_tier'))}
@@ -176,13 +177,15 @@ def claude_limits(conf, timeout=10):
             except ValueError:
                 return {'error': 'rate', 'retry': 120}
         return None
-    except (OSError, ValueError):
+    except (OSError, ValueError, http.client.HTTPException):
         return None
     return claude_windows(data)
 
 
 def claude_windows(data):
     windows = []
+    if not isinstance(data, dict):
+        return windows
     for key, minutes in CLAUDE_WINDOWS:
         window = data.get(key)
         if not isinstance(window, dict) or window.get('utilization') is None:

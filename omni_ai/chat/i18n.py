@@ -230,7 +230,7 @@ LANG_FILE = Path('~/.config/smart-ai/lang').expanduser()
 
 def load_lang():
     try:
-        value = LANG_FILE.read_text().strip()
+        value = LANG_FILE.read_text(encoding='utf-8').strip()
         if value in LANGS:
             return value
     except OSError:
@@ -240,7 +240,7 @@ def load_lang():
 
 def save_lang(value):
     LANG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    LANG_FILE.write_text(value)
+    LANG_FILE.write_text(value, encoding='utf-8')
 
 
 LANG = [load_lang() or (os.environ.get('LANG', 'pt')[:2] if os.environ.get('LANG', '')[:2] in LANGS else 'pt')]

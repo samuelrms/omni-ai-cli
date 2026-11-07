@@ -47,7 +47,7 @@ def discover(cwd):
 
 def description(path):
     try:
-        text = Path(path).read_text(errors='replace')
+        text = Path(path).read_text(encoding='utf-8', errors='replace')
     except OSError:
         return ''
     match = re.search(r'^description:[ \t]*(.*)$', text, re.M)
@@ -121,7 +121,7 @@ def native_command(name):
 
 def argument_hint(path):
     try:
-        text = Path(path).read_text(errors='replace')
+        text = Path(path).read_text(encoding='utf-8', errors='replace')
     except OSError:
         return ''
     match = re.search(r'^argument-hint:[ \t]*(.+)$', text, re.M)

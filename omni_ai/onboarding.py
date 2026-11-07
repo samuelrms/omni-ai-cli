@@ -180,7 +180,7 @@ def first_run():
         return False
     try:
         MARKER.parent.mkdir(parents=True, exist_ok=True)
-        MARKER.write_text('1')
+        MARKER.write_text('1', encoding='utf-8')
     except OSError:
         pass  # can't persist the marker (read-only home): still guide, just don't crash the launch
     return True

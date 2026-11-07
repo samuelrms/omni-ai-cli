@@ -193,7 +193,7 @@ def private_file(path, mode='w', encoding=None, tighten=False):
     descriptor = os.open(path, flags | getattr(os, 'O_BINARY', 0), 0o600)
     if tighten:
         tighten_file(path)
-    return os.fdopen(descriptor, mode, encoding=encoding)
+    return os.fdopen(descriptor, mode, encoding=None if 'b' in mode else encoding or 'utf-8')
 
 
 def tighten_file(path):

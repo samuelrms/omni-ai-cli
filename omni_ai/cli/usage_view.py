@@ -40,7 +40,7 @@ def spend_today(today):
     path = LOG_FILE.with_name('costs.jsonl')
     totals = {}
     try:
-        rows = path.read_text(errors='replace').splitlines()
+        rows = path.read_text(encoding='utf-8', errors='replace').splitlines()
     except OSError:
         return totals
     for row in rows:
@@ -58,7 +58,7 @@ def spend_today(today):
 def render_usage():
     limits = state().get('limits', {})
     today = time.strftime('%Y-%m-%d')
-    lines = LOG_FILE.read_text(errors='replace').splitlines() if LOG_FILE.is_file() else []
+    lines = LOG_FILE.read_text(encoding='utf-8', errors='replace').splitlines() if LOG_FILE.is_file() else []
     skip, alert = usage.thresholds()
 
     def calls(tool):
