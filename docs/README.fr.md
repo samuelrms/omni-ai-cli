@@ -603,7 +603,7 @@ Au premier démarrage, le serveur crée une clé et ne l'affiche qu'une fois. Se
 - `tools`/function calling uniquement sur les fournisseurs d'API (OpenRouter, DeepSeek et Grok avec une clé). Le serveur n'exécute jamais les outils : l'appel revient à votre code. Les autres modèles renvoient 400, car les CLI d'agent ne peuvent pas rendre l'appel, sauf avec `--tool-emulation`. Avec `omni-auto`, l'ordre est OpenRouter, DeepSeek et Grok. Sur OpenRouter, sans `openrouter_paid`, uniquement les modèles gratuits. En streaming, l'appel arrive d'un seul coup, à la fin. Des arguments hors du schéma font essayer le fournisseur suivant ; seul le cœur de JSON Schema est vérifié (`type`, `required`, `enum`, `properties`, `items`, `additionalProperties`). `functions` (ancien format) renvoie 400.
 - **Expérimental :** `ai serve --tool-emulation` (`SMART_AI_TOOL_EMULATION=1` sous Docker) émule `tools` sur Claude Code et le CLI Grok, avec leurs propres outils désactivés. Le modèle écrit l'appel en JSON, le serveur le vérifie et réessaie une fois, ce qui consomme plus de quota. Cela ne s'applique que sans fournisseur d'API. Codex et Cursor sont exclus, car leurs outils ne peuvent pas être désactivés. Le modèle peut se tromper plus souvent qu'en mode natif, les données personnelles ne sont pas masquées, et le contenu du client peut imiter le format.
 - Les images renvoient une erreur 400.
-- Le prompt parvient aux outils comme argument de ligne de commande : il est donc visible dans la liste des processus de la machine. La limite est de 100 Ko par demande.
+- Le prompt parvient aux outils comme argument de ligne de commande : il est donc visible dans la liste des processus de la machine. Quand il ne tient pas sur une ligne de commande (environ 32 000 caractères sous Windows), Claude Code et Codex le reçoivent par l'entrée standard ; Antigravity, Cursor et Grok le refusent, et le fallback continue. La limite est de 100 Ko par demande.
 - Les profils Claude hérités, qui échangent le fichier d'identifiants, limitent le serveur à une demande à la fois.
 
 ---
@@ -795,6 +795,7 @@ Le workflow demande déjà `id-token: write` et `NPM_CONFIG_PROVENANCE` ; il n'y
 | `Not inside a trusted directory` (Codex) | Ancienne installation. Relancez l'installateur. |
 | `Claude Code não instalado` | `./scripts/install.sh` (ou `scripts\install.ps1` sous Windows) l'installe avec l'installateur officiel. |
 | Windows : les liens de skills échouent | Activez le mode développeur ou lancez en administrateur ; sinon `ai` utilise des jonctions de dossier. |
+| `o pedido é longo demais para a linha de comando deste sistema` | Antigravity, Cursor et Grok ne reçoivent la demande que par la ligne de commande. Le fallback continue avec Claude Code et Codex, qui reçoivent les demandes longues par l'entrée standard. |
 | Windows : `este pedido não pode ser passado com segurança` | L'outil a été installé via un raccourci `.cmd` que `ai` ne reconnaît pas. Installez-le avec npm ou définissez `<OUTIL>_BIN` avec son exécutable. |
 | `/model` ne change rien | Une variable `SMART_AI_*_MODEL` est définie et elle est prioritaire. |
 | `/key` ne change rien | La variable de l'outil (`ANTHROPIC_API_KEY` etc.) est définie et elle est prioritaire. |
@@ -813,7 +814,7 @@ Le workflow demande déjà `id-token: write` et `NPM_CONFIG_PROVENANCE` ; il n'y
   n'accède pas aux fichiers. Les agents ne modifient pas le projet en même temps.
 - La classification simple/complexe utilise un modèle quand il y a une clé Groq, Cerebras, OpenRouter ou Grok. Sans aucune, ou si toutes échouent, elle utilise des mots-clés et la taille. Elle peut se tromper dans les deux cas.
 - Changer de modèle ne renouvelle pas le quota du compte.
-- Sous Windows le code utilise les équivalents natifs (groupes de processus et `taskkill`, `msvcrt`, jonctions de dossier), mais il n'a été testé pour de vrai que sous macOS. L'exception est le lancement des outils installés avec npm, testé en CI sous Windows.
+- Sous Windows le code utilise les équivalents natifs (groupes de processus, Ctrl+Break et `taskkill`, `msvcrt`, jonctions de dossier), mais il n'a été testé pour de vrai que sous macOS. Les exceptions, testées en CI sous Windows, sont le lancement des outils installés avec npm, l'annulation, la sortie redirigée, les demandes longues et `ai.cmd`.
 
 ---
 

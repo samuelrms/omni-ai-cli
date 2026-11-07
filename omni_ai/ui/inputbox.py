@@ -16,7 +16,7 @@ def project_files(cwd, limit=4000):
     import subprocess
     try:
         out = subprocess.run(['git', '-c', 'core.fsmonitor=false', '-C', str(cwd), 'ls-files', '--cached', '--others', '--exclude-standard'],
-                             capture_output=True, text=True, timeout=3)
+                             capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=3)
         if out.returncode == 0 and out.stdout:
             return out.stdout.splitlines()[:limit]
     except (OSError, subprocess.TimeoutExpired):

@@ -10,7 +10,7 @@ import time
 from .. import agy_events
 from .. import config as config_tool
 from .. import ui
-from ..osutils import clean_terminal, group_kwargs, kill_tree, module_cmd, module_env, stop_tree
+from ..osutils import clean_terminal, group_kwargs, kill_tree, module_cmd, module_env, send_prompt, stop_tree
 from ..tools import TOOLS
 from .i18n import tr
 from .session import Session
@@ -75,7 +75,7 @@ class Runner:
         args = module_cmd('cli')
         if job['engine'] != 'auto':
             args += ['--' + job['engine']]
-        args += ['--', job['sent']]
+        args += ['--prompt-file', '-']  # stdin: a command line can't hold a long prompt on Windows
         job['events'] = []
         job['answers'] = []
         job['view'] = ui.View(f"[{job['id']}] " if readonly else '')
@@ -84,11 +84,12 @@ class Runner:
                 if self.cancelled.is_set():
                     job['status'] = 'cancelled'
                     return job
-                child = subprocess.Popen(args, cwd=self.cwd, env=env, stdin=subprocess.DEVNULL,
+                child = subprocess.Popen(args, cwd=self.cwd, env=env, stdin=subprocess.PIPE,
                                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                          encoding='utf-8', errors='replace', **group_kwargs())
                 self.children.add(child)
             try:
+                send_prompt(child, job['sent'])
                 for raw in child.stdout:
                     self.event(job, raw.rstrip())
                 code = child.wait()

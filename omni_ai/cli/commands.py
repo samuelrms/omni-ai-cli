@@ -131,9 +131,9 @@ def _restart_service():
 def _fetch_tags():
     """The version comes from the latest tag: a pull doesn't bring new ones, and the first install is shallow."""
     shallow = subprocess.run(['git', '-C', str(REPO), 'rev-parse', '--is-shallow-repository'],
-                             capture_output=True, text=True).stdout.strip() == 'true'
+                             capture_output=True, text=True, encoding='utf-8', errors='replace').stdout.strip() == 'true'
     subprocess.run(['git', '-C', str(REPO), 'fetch', '-q', '--tags', *(['--unshallow'] if shallow else []), 'origin'],
-                   capture_output=True, text=True)
+                   capture_output=True, text=True, encoding='utf-8', errors='replace')
 
 
 def _update():
@@ -142,7 +142,7 @@ def _update():
         # Pull the current branch from origin explicitly, so it works even when the branch has no
         # upstream tracking set (a plain `git pull` fails there). A detached HEAD updates from main.
         branch = subprocess.run(['git', '-C', str(REPO), 'rev-parse', '--abbrev-ref', 'HEAD'],
-                                capture_output=True, text=True).stdout.strip()
+                                capture_output=True, text=True, encoding='utf-8', errors='replace').stdout.strip()
         ref = branch if branch and branch != 'HEAD' else 'main'
         code = subprocess.call(['git', '-C', str(REPO), 'pull', '--ff-only', 'origin', ref])
         if code == 0:

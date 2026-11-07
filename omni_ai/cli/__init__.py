@@ -79,6 +79,11 @@ USAGE = f'''{BOLD}Uso:{NC}
 '''
 
 
+def _stdin_text():
+    stream = getattr(sys.stdin, 'buffer', None)
+    return stream.read().decode('utf-8') if stream else sys.stdin.read()
+
+
 def main(argv):
     enable_ansi()
     if not argv and sys.stdin.isatty():
@@ -148,7 +153,8 @@ def main(argv):
             i += 1
         elif arg == '--prompt-file':
             try:
-                words.append(Path(argv[i + 1]).read_text(encoding='utf-8'))
+                # `-` is stdin: the chat and the server send the prompt that way, as no command line limits it
+                words.append(_stdin_text() if argv[i + 1] == '-' else Path(argv[i + 1]).read_text(encoding='utf-8'))
             except (IndexError, OSError, UnicodeDecodeError) as error:
                 print(f'Não foi possível ler o arquivo do pedido: {error}', file=sys.stderr)
                 return 1

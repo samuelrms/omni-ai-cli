@@ -21,7 +21,7 @@ def installed_version():
     if parse(version) or not (REPO / '.git').is_dir() or not resolve_bin('git'):
         return version
     tag = subprocess.run(['git', '-C', str(REPO), 'describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*'],
-                         capture_output=True, text=True).stdout.strip()
+                         capture_output=True, text=True, encoding='utf-8', errors='replace').stdout.strip()
     return tag[1:] if parse(tag) else version
 
 

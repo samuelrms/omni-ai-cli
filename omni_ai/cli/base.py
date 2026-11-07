@@ -10,7 +10,8 @@ from pathlib import Path
 
 from .. import config as config_tool
 from .. import usage
-from ..osutils import REPO, clean_terminal, direct_argv, enable_ansi, module_cmd, module_env, private_file, resolve_bin
+from ..osutils import (REPO, clean_terminal, direct_argv, enable_ansi, fits_command_line, module_cmd, module_env,
+                       private_file, resolve_bin)
 from ..tools import CLIS, KEY_NAMES, TOOLS
 from .attempts import before_attempt
 
@@ -106,21 +107,33 @@ def emit_provider(provider, profile=''):
     emit({'type': 'smart.provider', 'provider': provider, 'profile': profile})
 
 
-def run(argv, env=None, stdin=None):
-    """Run a CLI, stream its output live, and return (exit code, captured text)."""
+def run(argv, env=None, stdin=None, prompt_at=None, long_prompt=None):
+    """Run a CLI, stream its output live, and return (exit code, captured text).
+    `argv[prompt_at]` is the prompt. When the command line would be too long for this system,
+    `long_prompt(argv, prompt_at)` gives the same call with the prompt sent another way: (argv, stdin)."""
     executable = resolve_bin(argv[0])
     if not executable:
         say(f'{RED}✗ {argv[0]} não encontrado.{NC}')
         return 127, ''
     argv = before_attempt(argv, stdin, say)
     command = direct_argv(executable, argv[1:])
+    if command and prompt_at is not None and not fits_command_line(command, env):
+        if not long_prompt:
+            say(f'{RED}✗ {argv[0]}: o pedido é longo demais para a linha de comando deste sistema.{NC}')
+            return 126, ''
+        argv, stdin = long_prompt(argv, prompt_at)
+        command = direct_argv(executable, argv[1:])
     if not command:
         say(f'{RED}✗ {argv[0]}: este pedido não pode ser passado com segurança pelo atalho {executable}.{NC}')
         say(f'{DIM}  Instale a ferramenta com o npm ou aponte para o executável dela.{NC}')
         return 126, ''
-    process = subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                               stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
-                               text=True, encoding='utf-8', errors='replace')
+    try:
+        process = subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
+                                   text=True, encoding='utf-8', errors='replace')
+    except OSError as error:
+        say(f'{RED}✗ {argv[0]} não pôde ser iniciado: {clean_terminal(error.strerror or error)}{NC}')
+        return 126, ''
     writer = None
     if stdin is not None:
         # Feed stdin from a thread: writing inline can deadlock when the child fills its

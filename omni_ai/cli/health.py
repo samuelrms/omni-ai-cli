@@ -50,7 +50,8 @@ def key_problem(provider, key):
 
 def version(tool):
     try:
-        out = subprocess.run([resolve_bin(BINS[tool]), '--version'], capture_output=True, text=True, timeout=15).stdout
+        out = subprocess.run([resolve_bin(BINS[tool]), '--version'], capture_output=True, text=True, encoding='utf-8',
+                             errors='replace', timeout=15).stdout
         return out.strip().splitlines()[0] if out.strip() else '?'
     except (OSError, subprocess.TimeoutExpired, TypeError):
         return '?'

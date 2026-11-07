@@ -1,4 +1,5 @@
 """What differs between macOS, Linux and Windows, in one place."""
+import codecs
 import os
 from pathlib import Path
 import re
@@ -50,8 +51,52 @@ def _keep_colors(text):
 
 
 def module_cmd(name):
-    """Command line that runs one of this package's modules (python -m omni_ai.<name>)."""
-    return [sys.executable, *SAFE_PATH, '-m', 'omni_ai.' + name]
+    """Command line that runs one of this package's modules (python -m omni_ai.<name>).
+    UTF-8 mode: on Windows a pipe would otherwise use the ANSI code page, which cannot write ✓ or most emoji."""
+    return [sys.executable, *SAFE_PATH, '-X', 'utf8', '-m', 'omni_ai.' + name]
+
+
+def utf8_stdio():
+    """Standard streams in UTF-8. Windows pipes and C locales start in a code page that fails on the first ✓,
+    and the editor and the server read the output as UTF-8."""
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        try:
+            if codecs.lookup(stream.encoding).name != 'utf-8':
+                stream.reconfigure(encoding='utf-8', errors='replace')
+        except (AttributeError, LookupError, TypeError, ValueError, OSError):
+            pass  # replaced by something that is not a text stream, or already closed
+
+
+def send_prompt(process, text):
+    """Writes the prompt to a child started with `--prompt-file -` and closes its stdin.
+    The router reads all of it before printing anything, so writing first cannot fill the other pipe."""
+    try:
+        process.stdin.write(text)
+        process.stdin.close()
+    except (BrokenPipeError, OSError, ValueError):
+        pass  # it ended before reading: its exit code and output say why
+
+
+# Linux refuses a single argument over 128 KiB; Windows a whole command line over 32,767 characters
+_LONGEST_ARGUMENT = 131_072
+_WINDOWS_COMMAND_LINE = 32_767
+
+
+def fits_command_line(command, env=None):
+    """Whether this system can start `command`. Too long and starting it fails, whatever the tool."""
+    if WINDOWS:
+        return len(subprocess.list2cmdline(command)) < _WINDOWS_COMMAND_LINE
+    sizes = [len(os.fsencode(part)) + 1 for part in command]
+    if sys.platform.startswith('linux') and max(sizes, default=0) > _LONGEST_ARGUMENT:
+        return False
+    try:
+        limit = os.sysconf('SC_ARG_MAX')
+    except (AttributeError, ValueError, OSError):
+        limit = 262_144
+    env = os.environ if env is None else env
+    environment = sum(len(os.fsencode(key)) + len(os.fsencode(value)) + 2 for key, value in env.items())
+    pointers = 8 * (len(command) + len(env) + 2)
+    return sum(sizes) + environment + pointers + 4096 < limit
 
 
 def repair_launcher():
@@ -175,8 +220,15 @@ def group_kwargs():
 def kill_tree(process, force=False):
     try:
         if WINDOWS:
-            subprocess.run(['taskkill', '/PID', str(process.pid), '/T'] + (['/F'] if force else []),
-                           capture_output=True)
+            if not force:
+                try:
+                    # taskkill without /F only asks a program's windows to close; console tools have none, so it did nothing.
+                    # Ctrl+Break reaches the whole group group_kwargs made, which is what Ctrl+C does in a terminal.
+                    os.kill(process.pid, signal.CTRL_BREAK_EVENT)
+                    return
+                except OSError:
+                    pass  # no console to send it through: stop it for real
+            subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'], capture_output=True)
         else:
             os.killpg(process.pid, signal.SIGKILL if force else signal.SIGTERM)
     except (ProcessLookupError, OSError):
