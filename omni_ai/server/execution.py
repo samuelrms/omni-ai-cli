@@ -11,7 +11,7 @@ from .. import agy_events
 from .. import config as config_tool
 from ..chat.spend import record_spend, spend
 from ..cli.base import LIMIT_TEXT
-from ..osutils import group_kwargs, kill_tree, module_cmd, module_env
+from ..osutils import group_kwargs, module_cmd, module_env, stop_tree
 from ..tools import TOOLS
 from .auth import SECRET_VARS
 
@@ -101,16 +101,8 @@ class Execution:
                 return
             self.stop_reason = reason
             child = self.child
-        if child is None or child.poll() is not None:
-            return
-        kill_tree(child)
-        timer = threading.Timer(FORCE_AFTER, self._force)
-        timer.daemon = True
-        timer.start()
-
-    def _force(self):
-        if self.child is not None and self.child.poll() is None:
-            kill_tree(self.child, force=True)
+        if child is not None:
+            stop_tree(child, FORCE_AFTER)
 
     def _line(self, raw):
         if not raw:

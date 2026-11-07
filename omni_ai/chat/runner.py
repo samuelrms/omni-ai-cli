@@ -10,11 +10,13 @@ import time
 from .. import agy_events
 from .. import config as config_tool
 from .. import ui
-from ..osutils import clean_terminal, group_kwargs, kill_tree, module_cmd, module_env
+from ..osutils import clean_terminal, group_kwargs, kill_tree, module_cmd, module_env, stop_tree
 from ..tools import TOOLS
 from .i18n import tr
 from .session import Session
 from .spend import spend, spend_label, record_spend
+
+FORCE_AFTER = 5  # seconds between asking a process to stop and killing it
 
 ACTIVE = set()  # runners working right now, so Ctrl-C at the input can stop them
 NOISE = re.compile(r'^[─━-]{5,}$|^(🤖|📦|🚀|🌐|📊|→ Credenciais)|Reading additional input from stdin|^AGY_ERROR: |'
@@ -65,7 +67,7 @@ class Runner:
         with self.lock:
             children = list(self.children)
         for child in children:
-            kill_tree(child)
+            stop_tree(child, FORCE_AFTER)
 
     def run(self, job, classify_prompt, readonly=False):
         env = module_env(dict(os.environ, SMART_AI_EVENTS='1', SMART_AI_CLASSIFY_PROMPT=classify_prompt, SMART_AI_MODE=self.mode,
