@@ -372,10 +372,10 @@ class RunnerRunTests(Base):
         runner = chat.Runner(str(self.root))
         child = MagicMock()
         runner.children.add(child)
-        with patch.object(chat.runner, 'kill_tree') as kill:
+        with patch.object(chat.runner, 'stop_tree') as kill:
             runner.cancel()
         self.assertTrue(runner.cancelled.is_set())
-        kill.assert_called_once_with(child)
+        kill.assert_called_once_with(child, chat.runner.FORCE_AFTER)
 
 
 # --------------------------------------------------------------------------- execute

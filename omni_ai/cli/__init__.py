@@ -202,4 +202,4 @@ def entry():
     except BrokenPipeError:
         # Output piped into something that stopped reading (e.g. `ai --usage | head`)
         os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
-        return 0
+        return 141  # what a shell reports for a program stopped by a closed pipe

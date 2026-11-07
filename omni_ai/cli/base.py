@@ -138,10 +138,18 @@ def run(argv, env=None, stdin=None):
         writer = threading.Thread(target=_feed, daemon=True)
         writer.start()
     captured = []
-    for line in process.stdout:
-        sys.stdout.write(clean_terminal(line, colors=True))
-        sys.stdout.flush()
-        captured.append(line)
+    try:
+        for line in process.stdout:
+            sys.stdout.write(clean_terminal(line, colors=True))
+            sys.stdout.flush()
+            captured.append(line)
+    except BrokenPipeError:  # `ai ... | head`: nobody is reading, so the tool must not go on using quota
+        process.terminate()
+        try:
+            process.wait(5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+        raise
     code = process.wait()
     if writer is not None:
         writer.join(timeout=1)

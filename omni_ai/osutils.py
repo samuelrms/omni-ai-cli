@@ -6,6 +6,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 
 WINDOWS = os.name == 'nt'
 REPO = Path(__file__).resolve().parent.parent
@@ -180,6 +181,15 @@ def kill_tree(process, force=False):
             os.killpg(process.pid, signal.SIGKILL if force else signal.SIGTERM)
     except (ProcessLookupError, OSError):
         pass
+
+
+def stop_tree(process, force_after):
+    """Asks the whole tree to stop, then kills what is left. Always both: the parent dying says nothing about
+    the tool under it, which can ignore the first signal and keep running."""
+    kill_tree(process)
+    timer = threading.Timer(force_after, kill_tree, args=(process,), kwargs={'force': True})
+    timer.daemon = True
+    timer.start()
 
 
 def lock_exclusive(stream):
