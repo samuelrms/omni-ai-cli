@@ -215,6 +215,8 @@ Instalar pelo navegador: [Open VSX](https://open-vsx.org/extension/samuelrms/omn
 
 Na primeira execução a extensão instala o CLI `ai` por baixo se ele não existir e abre um tutorial de configuração.
 
+No Windows, o painel abre o `ai` instalado pelo npm sem passar pelo `cmd.exe`. O pedido vai num arquivo temporário que só o seu usuário lê, então não esbarra no limite da linha de comando. Isso é testado no CI em Windows, sem abrir o VS Code.
+
 ---
 
 ## Comandos do chat

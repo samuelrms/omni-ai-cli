@@ -218,6 +218,8 @@ Installer via le navigateur : [Open VSX](https://open-vsx.org/extension/samuelrm
 
 Au premier lancement, l'extension installe le CLI `ai` en dessous s'il manque et ouvre un tutoriel de configuration.
 
+Sous Windows, le panneau lance le `ai` installé avec npm sans passer par `cmd.exe`. La demande passe par un fichier temporaire que seul votre utilisateur peut lire, donc la limite de la ligne de commande ne s'applique pas. C'est testé en CI sous Windows, sans ouvrir VS Code.
+
 ---
 
 ## Commandes du chat

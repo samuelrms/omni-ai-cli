@@ -7,6 +7,7 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
+const { launch, promptFile } = require('./launch');
 
 // Without this, Windows starts git.exe or ai.exe from the workspace before looking in PATH
 if (process.platform === 'win32') process.env.NoDefaultCurrentDirectoryInExePath = '1';
@@ -193,7 +194,7 @@ function runCapture(args) {
     let out = '';
     let child;
     try {
-      child = spawn(bin, args, { cwd, env: { ...process.env, NO_COLOR: '1' } });
+      child = launch(bin, args, { cwd, env: { ...process.env, NO_COLOR: '1' } });
     } catch (e) {
       resolve(''); return;
     }
@@ -504,7 +505,7 @@ class OmniChatView {
     let acc = '';
     this.post({ type: 'cliBegin', label });
     let child;
-    try { child = spawn(bin, args, { cwd: workspaceCwd(), env: { ...process.env, NO_COLOR: '1' } }); }
+    try { child = launch(bin, args, { cwd: workspaceCwd(), env: { ...process.env, NO_COLOR: '1' } }); }
     catch (e) { this.post({ type: 'out', stream: 'err', text: String(e) }); this.post({ type: 'done', code: 1 }); return; }
     this.child = child;
     child.stdout.on('data', (d) => { const t = d.toString(); acc += t; this.post({ type: 'out', stream: 'out', pre: true, text: t }); });
@@ -541,7 +542,7 @@ class OmniChatView {
     const bin = binPath();
     this.post({ type: 'cliBegin', label: '/' + mode + (model ? ' ' + model : '') });
     let child;
-    try { child = spawn(bin, args, { cwd: workspaceCwd(), env: { ...process.env, NO_COLOR: '1' } }); }
+    try { child = launch(bin, args, { cwd: workspaceCwd(), env: { ...process.env, NO_COLOR: '1' } }); }
     catch (e) { this.post({ type: 'out', stream: 'err', text: String(e) }); this.post({ type: 'done', code: 1 }); return; }
     let errAcc = '';
     child.stderr.on('data', (d) => { errAcc += d.toString(); });
@@ -618,7 +619,7 @@ class OmniChatView {
     const bin = binPath();
     let out = '';
     let child;
-    try { child = spawn(bin, ['--menu-json'], { cwd: workspaceCwd(), env: { ...process.env, NO_COLOR: '1' } }); }
+    try { child = launch(bin, ['--menu-json'], { cwd: workspaceCwd(), env: { ...process.env, NO_COLOR: '1' } }); }
     catch (e) { return; }
     child.stdout.on('data', (d) => { out += d.toString(); });
     child.on('error', () => {});
@@ -645,7 +646,15 @@ class OmniChatView {
       this.attachments = [];
       this.post({ type: 'attached', names: [] });
     }
-    args.push('--', prompt);
+    // In a file, not on the command line: Windows caps that at 32 thousand characters, and a .cmd launcher
+    // would hand the text to cmd.exe
+    let sent;
+    try { sent = promptFile(prompt); } catch (e) {
+      this.post({ type: 'out', stream: 'err', text: String(e) });
+      this.post({ type: 'done', code: 1 });
+      return;
+    }
+    args.push('--prompt-file', sent.file);
     this._saving = true; this._acc = ''; this._user = text;
     this._changed = new Set();
     this._gitBefore = changedSnapshot(workspaceCwd());
@@ -654,8 +663,9 @@ class OmniChatView {
     try {
       // SMART_AI_EVENTS makes the router emit JSON events (route, provider, actions, answer),
       // so the panel can show the thinking/activity like the other tools.
-      child = spawn(bin, args, { cwd: workspaceCwd(), env: { ...process.env, NO_COLOR: '1', SMART_AI_EVENTS: '1' } });
+      child = launch(bin, args, { cwd: workspaceCwd(), env: { ...process.env, NO_COLOR: '1', SMART_AI_EVENTS: '1' } });
     } catch (e) {
+      sent.remove();
       this.post({ type: 'out', stream: 'err', text: String(e) });
       this.post({ type: 'done', code: 1 });
       return;
@@ -672,8 +682,9 @@ class OmniChatView {
     };
     child.stdout.on('data', (d) => feed(d.toString()));
     child.stderr.on('data', (d) => this.post({ type: 'out', stream: 'err', text: d.toString() }));
-    child.on('error', (e) => this.post({ type: 'out', stream: 'err', text: String(e.message || e) }));
+    child.on('error', (e) => { sent.remove(); this.post({ type: 'out', stream: 'err', text: String(e.message || e) }); });
     child.on('close', (code) => {
+      sent.remove();
       if (buf.trim()) this._event(buf);
       this.child = null;
       if (this._saving) { if (this._acc.trim()) this.saveTurn(this._user, this._acc.trim()); this._saving = false; }
@@ -1369,7 +1380,7 @@ function installCli(manager) {
 function ensureCli(context) {
   const bin = binPath();
   let child;
-  try { child = spawn(bin, ['--version'], { env: process.env }); } catch (e) { child = null; }
+  try { child = launch(bin, ['--version'], { env: process.env }); } catch (e) { child = null; }
   const offer = () => {
     vscode.window.showWarningMessage(
       'Omni AI needs the `ai` CLI. Install it now?', 'npm', 'Homebrew', 'Script'
