@@ -11,7 +11,7 @@ from pathlib import Path
 from .. import config as config_tool
 from .. import usage
 from ..osutils import (REPO, clean_terminal, direct_argv, enable_ansi, fits_command_line, module_cmd, module_env,
-                       private_file, resolve_bin)
+                       private_file, resolve_bin, send_prompt)
 from ..tools import CLIS, KEY_NAMES, TOOLS
 from .attempts import before_attempt
 
@@ -139,17 +139,7 @@ def run(argv, env=None, stdin=None, prompt_at=None, long_prompt=None):
         # Feed stdin from a thread: writing inline can deadlock when the child fills its
         # stdout pipe before draining stdin, and it crashes with BrokenPipeError if the
         # child exits early. The reader loop below keeps stdout drained meanwhile.
-        def _feed():
-            try:
-                process.stdin.write(stdin)
-            except (BrokenPipeError, OSError):
-                pass
-            finally:
-                try:
-                    process.stdin.close()
-                except OSError:
-                    pass
-        writer = threading.Thread(target=_feed, daemon=True)
+        writer = threading.Thread(target=send_prompt, args=(process, stdin), daemon=True)
         writer.start()
     captured = []
     try:

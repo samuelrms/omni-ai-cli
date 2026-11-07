@@ -96,7 +96,11 @@ class WindowsConsole(unittest.TestCase):
         with patch.dict(os.environ, RECORD=str(record)), patch.object(base, 'say'), patch.object(sys, 'stdout', io.StringIO()):
             code, _ = base.run([str(shim), '-p', prompt, '--verbose'], prompt_at=2, long_prompt=executors._without_prompt)
         self.assertEqual(code, 0)
-        self.assertEqual(json.loads(record.read_text(encoding='utf-8')), {'args': ['-p', '--verbose'], 'stdin': prompt})
+        got = json.loads(record.read_text(encoding='utf-8'))
+        self.assertEqual(got['args'], ['-p', '--verbose'])
+        # Not assertEqual: a diff of 66 thousand characters exhausts difflib's recursion
+        self.assertTrue(got['stdin'] == prompt, f"stdin differs: {len(got['stdin'])} vs {len(prompt)} characters, "
+                                                 f"starts {got['stdin'][:30]!r}")
         self.assertFalse((self.folder / 'planted').exists())
 
     def test_ai_cmd_runs_a_failed_request_only_once(self):

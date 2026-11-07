@@ -68,11 +68,17 @@ def utf8_stdio():
 
 
 def send_prompt(process, text):
-    """Writes the prompt to a child started with `--prompt-file -` and closes its stdin.
-    The router reads all of it before printing anything, so writing first cannot fill the other pipe."""
+    """Writes text to a child's stdin as UTF-8 bytes and closes it. Bytes, because a text pipe on Windows turns
+    every line break into CR LF. Used for `--prompt-file -`, which reads all of it before printing anything, so
+    writing first cannot fill the other pipe."""
+    stream = process.stdin
     try:
-        process.stdin.write(text)
-        process.stdin.close()
+        raw = getattr(stream, 'buffer', None)
+        if raw is not None:
+            raw.write(text.encode('utf-8'))
+        else:
+            stream.write(text)
+        stream.close()
     except (BrokenPipeError, OSError, ValueError):
         pass  # it ended before reading: its exit code and output say why
 

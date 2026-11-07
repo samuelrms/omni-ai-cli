@@ -165,6 +165,18 @@ class Cancel(unittest.TestCase):
         if os.name == 'nt':
             self.assertIn(signal.SIGBREAK, executors.STOP_SIGNALS)
 
+    def test_send_prompt_keeps_line_breaks_as_they_are(self):
+        # A text pipe on Windows writes every \n as \r\n; this one does the same anywhere
+        class Kept(io.BytesIO):
+            def close(self):
+                self.kept = self.getvalue()
+                super().close()
+        raw = Kept()
+        class Child:
+            stdin = io.TextIOWrapper(raw, encoding='utf-8', newline='\r\n', write_through=True)
+        osutils.send_prompt(Child, 'linha 1\nlinha 2 ✓')
+        self.assertEqual(raw.kept, 'linha 1\nlinha 2 ✓'.encode('utf-8'))
+
     def test_send_prompt_survives_a_child_that_already_left(self):
         class Gone:
             class stdin:
