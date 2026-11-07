@@ -608,13 +608,13 @@ Imagem com o Omni e os CLIs em versões fixas, para rodar o `ai serve` em servid
 ```bash
 git clone https://github.com/samuelrms/omni-ai-cli && cd omni-ai-cli
 docker compose up -d
-docker compose logs omni                       # chave gerada no primeiro início
+docker exec omni cat /home/omni/.config/smart-ai/server_key.txt   # chave gerada no primeiro início
 docker exec -it omni ai --account login primary
 ```
 
 - **Login:** veja [Login sem navegador](#login-sem-navegador). Chaves de provedores vão com `docker exec -it omni ai --key <ferramenta>`.
 - **Dados:** logins, chaves, configuração e cooldowns ficam no volume `omni-home`, que sobrevive à recriação do container. `docker compose down -v` apaga esse volume.
-- **Chave do servidor:** sem chave informada, uma é gerada e aparece uma única vez no log. Para definir a sua, use `SMART_AI_SERVER_KEY`, ou `SMART_AI_SERVER_KEY_FILE` com um Docker secret. O `docker-compose.yml` traz o exemplo.
+- **Chave do servidor:** sem chave informada, uma é gerada e gravada em `/home/omni/.config/smart-ai/server_key.txt`, que só o usuário do container lê. Ela não aparece no log. Depois de guardá-la, apague o arquivo com `docker exec omni rm /home/omni/.config/smart-ai/server_key.txt`. Para definir a sua, use `SMART_AI_SERVER_KEY`, ou `SMART_AI_SERVER_KEY_FILE` com um Docker secret. O `docker-compose.yml` traz o exemplo.
 - **Porta:** publicada só em `127.0.0.1`. `OMNI_PORT` muda a porta.
 - **Isolamento:** roda sem root, com sistema de arquivos somente leitura e sem capabilities.
 - **Modos:** `OMNI_MODE=plan|edits|auto|yolo docker compose up -d` (padrão: `plan`). As ferramentas trabalham em `/workspace`, no volume `omni-workspace`. Para usar uma pasta sua, defina `OMNI_WORKSPACE=/caminho`, com escrita liberada para o uid 10001.
