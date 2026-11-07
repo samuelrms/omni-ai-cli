@@ -10,6 +10,7 @@ import logging.handlers
 import os
 import signal
 import sys
+import threading
 import time
 
 from ..osutils import in_container, private_file
@@ -204,7 +205,9 @@ def main(argv):
         server.queue_size, server.queue_wait = args.queue_size, args.queue_wait
 
     def terminate(*_):
-        raise KeyboardInterrupt
+        # Not an exception: it would surface anywhere in the main thread, and the server treats errors there
+        # as problems with one connection and goes on serving. shutdown() waits for the loop, so not from here.
+        threading.Thread(target=server.shutdown, daemon=True).start()
     signal.signal(signal.SIGTERM, terminate)
 
     host = f'[{args.host}]' if ':' in args.host else args.host
@@ -222,7 +225,7 @@ def main(argv):
               file=sys.stderr, flush=True)
     try:
         server.serve_forever()
-    except KeyboardInterrupt:
+    except KeyboardInterrupt:  # Ctrl-C
         pass
     finally:
         server.logins.stop_all()
