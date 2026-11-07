@@ -52,7 +52,7 @@ test('an npm install runs Node with the script, not cmd.exe', () => {
   const dir = folder();
   const script = npmInstall(dir);
   fs.writeFileSync(path.join(dir, 'node.exe'), '');
-  const how = plan('ai', ['--claude', ATTACK], { PATH: dir, PATHEXT: '.COM;.EXE;.BAT;.CMD' }, 'win32');
+  const how = plan('ai', ['--claude', ATTACK], { PATH: dir, PATHEXT: '.com;.exe;.bat;.cmd' }, 'win32');
   assert.deepEqual(how, { file: path.join(dir, 'node.exe'), args: [script, '--claude', ATTACK] });
 });
 
@@ -60,14 +60,15 @@ test('a copy of the environment with Path in mixed case still works', () => {
   const dir = folder();
   npmInstall(dir);
   fs.writeFileSync(path.join(dir, 'node.exe'), '');
-  assert.equal(plan('ai', [], { Path: dir, PathExt: '.CMD' }, 'win32').file, path.join(dir, 'node.exe'));
+  assert.equal(plan('ai', [], { Path: dir, PathExt: '.cmd' }, 'win32').file, path.join(dir, 'node.exe'));
 });
 
 test('a relative PATH entry is never searched', () => {
   const dir = folder();
   npmInstall(dir);
-  const relative = path.relative(process.cwd(), dir);
-  assert.deepEqual(plan('ai', [], { PATH: relative, PATHEXT: '.CMD' }, 'win32'), { file: 'ai', args: [] });
+  // A bare folder name: path.relative across Windows drives would give back an absolute path
+  const relative = path.basename(dir);
+  assert.deepEqual(plan('ai', [], { PATH: relative, PATHEXT: '.cmd' }, 'win32'), { file: 'ai', args: [] });
 });
 
 test('another launcher goes through cmd.exe with every part quoted', () => {
@@ -85,7 +86,7 @@ test('another launcher refuses what cmd.exe would read as a command', () => {
   const dir = folder();
   fs.writeFileSync(path.join(dir, 'ai.cmd'), INSTALLER_LAUNCHER);
   for (const bad of [ATTACK, '%PATH%', '!x!', 'a\nb', 'C:\\folder\\']) {
-    assert.equal(plan('ai', [bad], { PATH: dir, PATHEXT: '.CMD' }, 'win32'), null, bad);
+    assert.equal(plan('ai', [bad], { PATH: dir, PATHEXT: '.cmd' }, 'win32'), null, bad);
   }
 });
 
@@ -102,6 +103,14 @@ test('the prompt file is private and removed afterwards', () => {
 
 const windows = { skip: process.platform !== 'win32' && 'real Windows only' };
 
+/** process.env with `dir` first on PATH, keeping the name Windows gave the variable (usually `Path`). */
+function withFolder(dir, extra) {
+  const env = { ...process.env, ...extra };
+  const key = Object.keys(env).find((k) => k.toUpperCase() === 'PATH') || 'PATH';
+  env[key] = `${dir};${env[key] || ''}`;
+  return env;
+}
+
 function finished(child) {
   return new Promise((resolve, reject) => { child.on('error', reject); child.on('close', resolve); });
 }
@@ -110,7 +119,7 @@ test('Windows: the extension starts an npm-installed ai by name', windows, async
   const dir = folder();
   npmInstall(dir, ECHO_ARGS);
   const record = path.join(dir, 'args.json');
-  const env = { ...process.env, PATH: `${dir};${process.env.PATH}`, RECORD: record };
+  const env = withFolder(dir, { RECORD: record });
   // What failed before: Node alone does not find ai.cmd
   assert.equal(spawnSync('ai', ['--version'], { env, cwd: dir }).error.code, 'ENOENT');
   const code = await finished(launch('ai', ['--claude', ATTACK], { env, cwd: dir }));
@@ -125,7 +134,7 @@ test('Windows: another launcher runs through cmd.exe and gets its arguments inta
   fs.writeFileSync(script, ECHO_ARGS);
   fs.writeFileSync(path.join(dir, 'ai.cmd'), `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`);
   const record = path.join(dir, 'args.json');
-  const env = { ...process.env, PATH: `${dir};${process.env.PATH}`, RECORD: record };
+  const env = withFolder(dir, { RECORD: record });
   const file = path.join(dir, 'with space', 'prompt.txt');
   const code = await finished(launch('ai', ['--prompt-file', file], { env, cwd: dir }));
   assert.equal(code, 0);

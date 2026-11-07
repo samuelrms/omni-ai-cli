@@ -12,8 +12,10 @@ const CMD_QUOTABLE = /^[^"%!\r\n]*$/;
 
 function isShim(file) { return /\.(cmd|bat)$/i.test(file); }
 
-/** An environment variable whatever its case: a copy of process.env on Windows keeps names like `Path`. */
+/** An environment variable whatever its case: a copy of process.env on Windows keeps names like `Path`.
+ * The exact name wins when a copy has both. */
 function getEnv(env, name) {
+  if (env[name] !== undefined) return env[name];
   const key = Object.keys(env).find((k) => k.toUpperCase() === name);
   return key === undefined ? undefined : env[key];
 }
