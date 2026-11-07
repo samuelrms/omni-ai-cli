@@ -19,3 +19,16 @@ updates:
       interval: weekly
     commit-message:
       prefix: build
+  # The tools the release and coverage workflows run
+  - package-ecosystem: npm
+    directory: /.github/release-tools
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+  - package-ecosystem: pip
+    directory: /.github/release-tools
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci

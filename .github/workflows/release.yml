@@ -36,13 +36,12 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
       - name: Upgrade npm for OIDC
-        run: npm install -g npm@latest
+        run: npm install -g npm@12.2.2 --ignore-scripts
+      # Exact versions from the lockfile, and no install scripts: they would run with the publishing token around
+      - name: Install release tools
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix .github/release-tools
       - name: semantic-release
-        run: >
-          npx --yes
-          -p semantic-release@25
-          -p conventional-changelog-conventionalcommits@9
-          semantic-release
+        run: .github/release-tools/node_modules/.bin/semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_CONFIG_PROVENANCE: 'true'
@@ -50,7 +49,7 @@ jobs:
       - name: Detect released version
         id: ver
         run: |
-          tag=$(git tag --points-at HEAD | grep -E '^v[0-9]' | head -1 || true)
+          tag=$(git tag --points-at HEAD | grep -xE 'v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?' | head -1 || true)
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
       # Runs before the extension job, which copies these notes to the store's "Changes" tab.
       - name: Add the pull request's notes to the release
@@ -58,7 +57,8 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/release_notes.py "v${{ steps.ver.outputs.version }}"
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: python3 scripts/release_notes.py "v${VERSION}"
 
   extension:
     name: Publish the editor extension
@@ -77,9 +77,13 @@ jobs:
         with:
           node-version: 22
       - name: Install tooling
-        run: npm install -g @vscode/vsce@latest ovsx@latest
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund --prefix ../.github/release-tools
+          echo "$PWD/../.github/release-tools/node_modules/.bin" >> "$GITHUB_PATH"
       - name: Set version
-        run: npm version "${{ needs.release.outputs.version }}" --no-git-tag-version --allow-same-version
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+        run: npm version "$VERSION" --no-git-tag-version --allow-same-version
       # Always rebuild the changelog from the GitHub releases so the store's "Changes"
       # tab is never stale, no matter if someone forgot to edit the file by hand.
       - name: Refresh changelog from releases
@@ -159,6 +163,9 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          # What is inside the image, and how and where it was built, signed by GitHub
+          sbom: true
+          provenance: mode=max
           tags: ${{ steps.tags.outputs.list }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
@@ -186,7 +193,7 @@ jobs:
           set -euo pipefail
           tag="v${VERSION}"
           url="https://github.com/samuelrms/omni-ai-cli/archive/refs/tags/${tag}.tar.gz"
-          sha=$(curl -fsSL "$url" | shasum -a 256 | awk '{print $1}')
+          sha=$(curl --proto '=https' --tlsv1.2 -fsSL "$url" | shasum -a 256 | awk '{print $1}')
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/samuelrms/homebrew-tap" tap
           cd tap
           sed -i -E "s#archive/refs/tags/v[0-9.]+\.tar\.gz#archive/refs/tags/${tag}.tar.gz#" Formula/omni-ai-cli.rb
