@@ -648,6 +648,7 @@ omni.example.com {
 | `~/.config/smart-ai/admin_keys.json` | Hashes of the administration API keys (mode 600) |
 | `~/.cache/smart-ai/costs.jsonl` | Cost and tokens of each chat request, no prompt or answer (day total in `/usage`) |
 | `~/.local/share/smart-ai/runs/` | Copies from write requests in folders without git |
+| `~/.local/share/smart-ai/partial/` | Copy of what an attempt left before failing, from the last 10 times |
 | `~/.cache/smart-ai/serve.log` | Log of `ai serve` as a service, rotated |
 
 ---
@@ -793,6 +794,7 @@ The workflow already requests `id-token: write` and `NPM_CONFIG_PROVENANCE`; the
 
 ## Known limitations
 
+- If a tool fails after changing files, the next one receives their list and continues from there. Nothing is undone: it can inherit something incomplete, and effects outside the folder, such as commands already run, are not detected.
 - The chat uses the CLIs' non-interactive modes. Native approval prompts (for
   example, "can I edit this file?") do not appear; in those cases, use the native CLI.
 - `/parallel` only analyzes: Codex in `--sandbox read-only` or OpenRouter, which does not
@@ -805,6 +807,7 @@ The workflow already requests `id-token: write` and `NPM_CONFIG_PROVENANCE`; the
 
 ## Privacy
 
+- If a tool fails after changing files, a copy of them stays only on your machine, readable only by your user.
 - Sessions, API keys and logs stay only on your machine, with permissions restricted to your user.
 - The usage log records tool, account and status, **never the text of the question**.
 - Before going to OpenRouter, emails, phone numbers, documents and other personal data

@@ -12,6 +12,7 @@ from .. import config as config_tool
 from .. import usage
 from ..osutils import REPO, clean_terminal, direct_argv, enable_ansi, module_cmd, module_env, resolve_bin
 from ..tools import CLIS, KEY_NAMES, TOOLS
+from .attempts import before_attempt
 
 STATE_FILE = Path(os.environ.get('SMART_AI_STATE', '~/.cache/smart-ai/state.json')).expanduser()
 LOG_FILE = Path(os.environ.get('SMART_AI_LOG', '~/.cache/smart-ai/usage.log')).expanduser()
@@ -112,6 +113,7 @@ def run(argv, env=None, stdin=None):
     if not executable:
         say(f'{RED}✗ {argv[0]} não encontrado.{NC}')
         return 127, ''
+    argv = before_attempt(argv, stdin, say)
     command = direct_argv(executable, argv[1:])
     if not command:
         say(f'{RED}✗ {argv[0]}: este pedido não pode ser passado com segurança pelo atalho {executable}.{NC}')

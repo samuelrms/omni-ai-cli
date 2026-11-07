@@ -658,6 +658,7 @@ omni.example.com {
 | `~/.config/smart-ai/admin_keys.json` | Hash des clés de l'API d'administration (permission 600) |
 | `~/.cache/smart-ai/costs.jsonl` | Coût et tokens de chaque demande du chat, sans question ni réponse (total du jour dans `/usage`) |
 | `~/.local/share/smart-ai/runs/` | Copies des demandes d'écriture dans les dossiers sans git |
+| `~/.local/share/smart-ai/partial/` | Copie de ce qu'une tentative a laissé avant d'échouer, des 10 dernières fois |
 | `~/.cache/smart-ai/serve.log` | Journal de `ai serve` en tant que service, avec rotation |
 
 ---
@@ -804,6 +805,7 @@ Le workflow demande déjà `id-token: write` et `NPM_CONFIG_PROVENANCE` ; il n'y
 
 ## Limitations connues
 
+- Si un outil échoue après avoir modifié des fichiers, le suivant reçoit leur liste et continue à partir de là. Rien n'est annulé : il peut hériter de quelque chose d'incomplet, et les effets hors du dossier, comme les commandes déjà exécutées, ne sont pas détectés.
 - Le chat utilise les modes non interactifs des CLI. Les demandes d'approbation natives
   (par exemple « puis-je modifier ce fichier ? ») n'apparaissent pas ; dans ces cas,
   utilisez le CLI natif.
@@ -818,6 +820,7 @@ Le workflow demande déjà `id-token: write` et `NPM_CONFIG_PROVENANCE` ; il n'y
 
 ## Confidentialité
 
+- Si un outil échoue après avoir modifié des fichiers, une copie reste uniquement sur votre machine, accessible à votre seul utilisateur.
 - Les sessions, clés d'API et journaux restent uniquement sur votre machine, avec une permission limitée à votre utilisateur.
 - Le journal d'utilisation enregistre l'outil, le compte et le statut, **jamais le texte de la question**.
 - Avant d'aller vers OpenRouter, e-mails, téléphones, documents et autres données
