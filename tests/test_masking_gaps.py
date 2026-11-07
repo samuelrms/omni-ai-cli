@@ -1,12 +1,17 @@
 """Common personal data and credentials are masked; ordinary text and code are left alone."""
 import isolation  # noqa: F401  (first: keeps the tests away from real data)
 import json
+import re
 import time
 import unittest
 from unittest.mock import patch
 
 from omni_ai import grok
 from omni_ai.pii import PIIMasker
+
+# The placeholder carries a random hex id, so a short secret such as 'abc'
+# can show up inside it by chance; only the text around placeholders counts.
+PLACEHOLDER = re.compile(r'\[[A-Z_]+_[0-9a-f]+_\d+\]')
 
 # (text, what must not be sent)
 SENSITIVE = [
@@ -78,7 +83,7 @@ class Masks(unittest.TestCase):
         for text, secret in SENSITIVE:
             with self.subTest(text=text):
                 masked, mapping = PIIMasker().mask(text)
-                self.assertNotIn(secret, masked)
+                self.assertNotIn(secret, PLACEHOLDER.sub('', masked))
                 self.assertEqual(PIIMasker().unmask(masked, mapping), text)
 
     def test_ordinary_text_is_unchanged(self):
