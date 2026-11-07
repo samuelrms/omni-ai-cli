@@ -16,7 +16,7 @@
     "url": "https://github.com/samuelrms/omni-ai-cli.git",
     "directory": "editor"
   },
-  "homepage": "https://github.com/samuelrms/omni-ai-cli#readme",
+  "homepage": "https://omni.samuelramos.dev",
   "bugs": "https://github.com/samuelrms/omni-ai-cli/issues",
   "sponsor": {"url": "https://github.com/sponsors/samuelrms"},
   "main": "./extension.js",
