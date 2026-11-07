@@ -42,6 +42,7 @@
   },
   "homepage": "https://github.com/samuelrms/omni-ai-cli#readme",
   "bugs": "https://github.com/samuelrms/omni-ai-cli/issues",
+  "funding": {"type": "github", "url": "https://github.com/sponsors/samuelrms"},
   "author": "samuelrms",
   "license": "MIT"
 }

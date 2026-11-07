@@ -826,6 +826,10 @@ Le workflow demande déjà `id-token: write` et `NPM_CONFIG_PROVENANCE` ; il n'y
 
 ---
 
+## Soutenir le projet
+
+Omni AI CLI est gratuit et maintenu par Samuel Ramos. S'il vous aide au quotidien, vous pouvez le soutenir sur [GitHub Sponsors](https://github.com/sponsors/samuelrms) ou par PIX, au Brésil. Voir [comment soutenir](https://github.com/samuelrms/omni-ai-cli/blob/main/SPONSORS.md).
+
 ## Licence
 
 [MIT](../LICENSE). Intégrées dans `vendor/` : prompt_toolkit (BSD-3-Clause) et wcwidth (MIT), chacune avec sa licence.
