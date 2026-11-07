@@ -125,7 +125,7 @@ def main(argv=None):
             listed = []
             for path in sorted(session_dir().glob('*.json'), key=lambda p: p.stat().st_mtime, reverse=True)[:30]:
                 try:
-                    data = json.loads(path.read_text())
+                    data = json.loads(path.read_text(encoding='utf-8'))
                     listed.append((data['id'], f"{data.get('title') or '—'} · {ui.home_path(data['cwd'])}"))
                 except (ValueError, KeyError):
                     continue
@@ -174,8 +174,8 @@ def main(argv=None):
 
     def restore():
         """Requests left in the queue when this session was closed: show them and offer to run them."""
-        pending = session.data.pop('queue', None) or []
-        if not pending or not box.session:
+        pending = session.data.get('queue') or []
+        if not pending or not box.session:  # nobody to ask here: it stays saved for a later --resume
             return
         display(tr('queue_restore', n=len(pending)))
         for i, spec in enumerate(pending, 1):
@@ -183,7 +183,8 @@ def main(argv=None):
         try:
             answer = input(tr('queue_restore_ask')).strip().lower()
         except (EOFError, KeyboardInterrupt):
-            answer = 'n'
+            return  # no answer: it stays saved
+        session.data.pop('queue', None)
         if answer in ('', 's', 'sim', 'y', 'yes', 'si', 'sí', 'o', 'oui'):
             for spec in pending:
                 spec = dict(spec)

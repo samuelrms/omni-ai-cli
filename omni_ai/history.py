@@ -49,21 +49,43 @@ def _omni_messages(data):
     return out
 
 
-def _read_omni():
-    for path in glob.glob(str(_omni_dir() / '*.json')):
+def _each(pattern, read, recursive=False):
+    """One broken file must not hide every other conversation of the tool."""
+    for path in glob.glob(pattern, recursive=recursive):
         try:
-            data = json.loads(Path(path).read_text(encoding='utf-8', errors='replace'))
-        except (OSError, ValueError):
+            item = read(path)
+        except Exception:
             continue
-        if not isinstance(data, dict):
+        if item:
+            yield item
+
+
+def _lines(path):
+    """The JSON objects of a log. Reading a line that makes no sense is the caller's to skip."""
+    for raw in Path(path).read_text(encoding='utf-8', errors='replace').splitlines():
+        try:
+            obj = json.loads(raw)
+        except ValueError:
             continue
-        messages = _omni_messages(data)
-        if not messages:
-            continue
-        yield {'id': 'omni:' + str(data.get('id') or Path(path).stem), 'source': 'omni',
-               'title': _first_line(messages[0]['content']),
-               'updated': _num(data.get('updated'), os.path.getmtime(path)),
-               'cwd': data.get('cwd', '') if isinstance(data.get('cwd'), str) else '', 'messages': messages}
+        if isinstance(obj, dict):
+            yield obj
+
+
+def _omni_file(path):
+    data = json.loads(Path(path).read_text(encoding='utf-8', errors='replace'))
+    if not isinstance(data, dict):
+        return None
+    messages = _omni_messages(data)
+    if not messages:
+        return None
+    return {'id': 'omni:' + str(data.get('id') or Path(path).stem), 'source': 'omni',
+            'title': _first_line(messages[0]['content']),
+            'updated': _num(data.get('updated'), os.path.getmtime(path)),
+            'cwd': data.get('cwd', '') if isinstance(data.get('cwd'), str) else '', 'messages': messages}
+
+
+def _read_omni():
+    return _each(str(_omni_dir() / '*.json'), _omni_file)
 
 
 # ─── Claude Code ─────────────────────────────────────────────────
@@ -78,30 +100,26 @@ def _claude_text(message):
     return ''
 
 
-def _read_claude():
-    root = _dir('CLAUDE_CONFIG_DIR', '~/.claude') / 'projects'
-    for path in glob.glob(str(root / '*' / '*.jsonl')):
-        messages, cwd = [], ''
+def _claude_file(path):
+    messages, cwd = [], ''
+    for obj in _lines(path):
         try:
-            for raw in Path(path).read_text(errors='replace').splitlines():
-                try:
-                    obj = json.loads(raw)
-                except ValueError:
-                    continue
-                if not isinstance(obj, dict):
-                    continue
-                cwd = obj.get('cwd', cwd)
-                if obj.get('type') in ('user', 'assistant') and isinstance(obj.get('message'), dict):
-                    text = _claude_text(obj['message'])
-                    if text.strip():
-                        messages.append({'role': obj['type'], 'content': text})
-        except OSError:
+            cwd = obj['cwd'] if isinstance(obj.get('cwd'), str) else cwd
+            if obj.get('type') in ('user', 'assistant') and isinstance(obj.get('message'), dict):
+                text = _claude_text(obj['message'])
+                if text.strip():
+                    messages.append({'role': obj['type'], 'content': text})
+        except (AttributeError, TypeError):
             continue
-        if not messages:
-            continue
-        yield {'id': 'claude:' + Path(path).stem, 'source': 'claude',
-               'title': _first_line(messages[0]['content']), 'updated': os.path.getmtime(path),
-               'cwd': cwd, 'messages': messages}
+    if not messages:
+        return None
+    return {'id': 'claude:' + Path(path).stem, 'source': 'claude',
+            'title': _first_line(messages[0]['content']), 'updated': os.path.getmtime(path),
+            'cwd': cwd, 'messages': messages}
+
+
+def _read_claude():
+    return _each(str(_dir('CLAUDE_CONFIG_DIR', '~/.claude') / 'projects' / '*' / '*.jsonl'), _claude_file)
 
 
 # ─── Codex ───────────────────────────────────────────────────────
@@ -121,35 +139,31 @@ def _codex_text(payload):
     return payload.get('text', '') if isinstance(payload.get('text'), str) else ''
 
 
-def _read_codex():
-    root = _dir('CODEX_HOME', '~/.codex') / 'sessions'
-    for path in glob.glob(str(root / '**' / '*.jsonl'), recursive=True):
-        messages, cwd = [], ''
+def _codex_file(path):
+    messages, cwd = [], ''
+    for obj in _lines(path):
         try:
-            for raw in Path(path).read_text(errors='replace').splitlines():
-                try:
-                    obj = json.loads(raw)
-                except ValueError:
-                    continue
-                if not isinstance(obj, dict):
-                    continue
-                payload = obj.get('payload', obj)
-                if not isinstance(payload, dict):
-                    continue
-                if obj.get('type') == 'session_meta' or payload.get('type') == 'session_meta':
-                    cwd = payload.get('cwd', cwd)
-                role = payload.get('role')
-                if role in ('user', 'assistant'):
-                    text = _codex_text(payload)
-                    if text.strip():
-                        messages.append({'role': role, 'content': text})
-        except OSError:
+            payload = obj.get('payload', obj)
+            if not isinstance(payload, dict):
+                continue
+            if (obj.get('type') == 'session_meta' or payload.get('type') == 'session_meta') and isinstance(payload.get('cwd'), str):
+                cwd = payload['cwd']
+            role = payload.get('role')
+            if role in ('user', 'assistant'):
+                text = _codex_text(payload)
+                if text.strip():
+                    messages.append({'role': role, 'content': text})
+        except (AttributeError, TypeError):
             continue
-        if not messages:
-            continue
-        yield {'id': 'codex:' + Path(path).stem, 'source': 'codex',
-               'title': _first_line(messages[0]['content']), 'updated': os.path.getmtime(path),
-               'cwd': cwd, 'messages': messages}
+    if not messages:
+        return None
+    return {'id': 'codex:' + Path(path).stem, 'source': 'codex',
+            'title': _first_line(messages[0]['content']), 'updated': os.path.getmtime(path),
+            'cwd': cwd, 'messages': messages}
+
+
+def _read_codex():
+    return _each(str(_dir('CODEX_HOME', '~/.codex') / 'sessions' / '**' / '*.jsonl'), _codex_file, recursive=True)
 
 
 # ─── Cursor ──────────────────────────────────────────────────────
@@ -193,14 +207,18 @@ def _cursor_sessions():
                 continue
             if not isinstance(d, dict):
                 continue
-            heads = d.get('fullConversationHeadersOnly') or []
-            name = d.get('name') or (d.get('text') or '').strip()
-            if not name or not heads:
+            try:
+                heads = d.get('fullConversationHeadersOnly') or []
+                name = d.get('name') or (d.get('text') or '').strip()
+                if not name or not heads:
+                    continue
+                item = {'id': 'cursor:' + str(d.get('composerId', '')), 'source': 'cursor',
+                        'title': _first_line(name),
+                        'updated': _num(d.get('lastUpdatedAt') or d.get('createdAt'), 0) / 1000,
+                        'cwd': '', 'count': len(heads)}
+            except (AttributeError, TypeError):
                 continue
-            yield {'id': 'cursor:' + str(d.get('composerId', '')), 'source': 'cursor',
-                   'title': _first_line(name),
-                   'updated': _num(d.get('lastUpdatedAt') or d.get('createdAt'), 0) / 1000,
-                   'cwd': '', 'count': len(heads)}
+            yield item
     finally:
         con.close()
 
@@ -229,8 +247,8 @@ def _cursor_load(conv_id):
                 b = json.loads(br[0])
             except ValueError:
                 continue
-            text = b.get('text') or ''
-            if text.strip():
+            text = b.get('text') if isinstance(b, dict) else ''
+            if isinstance(text, str) and text.strip():
                 messages.append({'role': 'assistant' if b.get('type') == 2 else 'user', 'content': text})
         if not messages:
             return None

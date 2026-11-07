@@ -15,7 +15,7 @@ CONTROL = re.compile(r'[\x00-\x09\x0b-\x1f\x7f-\x9f]')
 def installed_version():
     """The version on disk. Git installs keep a placeholder in package.json, so they use the latest tag."""
     try:
-        version = json.loads((REPO / 'package.json').read_text()).get('version', '?')
+        version = json.loads((REPO / 'package.json').read_text(encoding='utf-8')).get('version', '?')
     except (OSError, ValueError):
         version = '?'
     if parse(version) or not (REPO / '.git').is_dir() or not resolve_bin('git'):
