@@ -49,7 +49,7 @@ if [[ -z "$PYTHON" ]]; then
     echo -e "  ${YELLOW}⚠${NC} Python 3.11+ não encontrado. Instalando Python 3.12 só para o Omni AI..."
     DATA="$HOME/.local/share/smart-ai"
     export UV_INSTALL_DIR="$DATA/uv" UV_NO_MODIFY_PATH=1 UV_PYTHON_INSTALL_DIR="$DATA/python"
-    [[ -x "$UV_INSTALL_DIR/uv" ]] || curl -LsSf https://astral.sh/uv/install.sh | sh
+    [[ -x "$UV_INSTALL_DIR/uv" ]] || curl --proto '=https' --tlsv1.2 -LsSf https://astral.sh/uv/install.sh | sh
     "$UV_INSTALL_DIR/uv" python install --no-bin 3.12 || "$UV_INSTALL_DIR/uv" python install 3.12
     PYTHON="$("$UV_INSTALL_DIR/uv" python find 3.12)"
 fi
@@ -65,7 +65,7 @@ install_claude() {
         echo -e "    ${RED}✗ curl não encontrado. Instale manualmente: https://docs.claude.com/claude-code${NC}"
         return 1
     fi
-    curl -fsSL https://claude.ai/install.sh | bash || return 1
+    curl --proto '=https' --tlsv1.2 -fsSL https://claude.ai/install.sh | bash || return 1
     export PATH="$HOME/.local/bin:$PATH"
     check_dep "Claude Code" "claude"
 }
@@ -79,7 +79,7 @@ fi
 install_grok() {
     echo -e "    ${CYAN}→ Instalando Grok Build (instalador oficial da xAI)...${NC}"
     command -v curl &>/dev/null || return 1
-    curl -fsSL https://x.ai/cli/install.sh | bash || return 1
+    curl --proto '=https' --tlsv1.2 -fsSL https://x.ai/cli/install.sh | bash || return 1
     export PATH="$HOME/.grok/bin:$HOME/.local/bin:$PATH"
     check_dep "Grok Build" "grok"
 }

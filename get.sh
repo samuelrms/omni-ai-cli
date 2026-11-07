@@ -8,6 +8,12 @@ BRANCH="${SMART_AI_BRANCH:-main}"
 DEST="${SMART_AI_DIR:-$HOME/.local/share/omni-ai-cli}"
 
 echo "Omni AI CLI → $DEST"
+# The folder is replaced below: never one that holds something else
+if [[ -e "$DEST" && ! -f "$DEST/omni_ai/__init__.py" && -n "$(ls -A "$DEST" 2>/dev/null)" ]]; then
+    echo "✗ $DEST já existe e não é uma instalação do Omni AI. Nada foi apagado." >&2
+    echo "  Escolha outra pasta com SMART_AI_DIR=... ou remova essa você mesmo." >&2
+    exit 1
+fi
 if command -v git >/dev/null 2>&1; then
     if [[ -d "$DEST/.git" ]]; then
         echo "Atualizando..."
@@ -20,7 +26,7 @@ if command -v git >/dev/null 2>&1; then
 else
     # No git: download the branch tarball instead
     tmp=$(mktemp -d)
-    curl -fsSL "$REPO/archive/refs/heads/$BRANCH.tar.gz" | tar -xz -C "$tmp"
+    curl --proto '=https' --tlsv1.2 -fsSL "$REPO/archive/refs/heads/$BRANCH.tar.gz" | tar -xz -C "$tmp"
     rm -rf "$DEST"
     mkdir -p "$(dirname "$DEST")"
     mv "$tmp"/omni-ai-cli-"$BRANCH" "$DEST"
