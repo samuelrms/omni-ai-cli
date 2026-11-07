@@ -21,8 +21,9 @@ FLAGS = {**{name: name for name in TOOLS}, **{tool.flag: name for name, tool in 
 TOOL_FLAGS = '|'.join('--' + name for name in TOOLS)
 KEY_LIST = '|'.join(KEY_NAMES)
 MODES = ('default', 'plan', 'edits', 'auto', 'yolo')
-RATE_LIMITED = 2
-NOT_READY = 3  # account without login: skip it, don't stop the fallback
+# Outside what a process can return, so a tool's own exit 2 isn't read as a limit
+RATE_LIMITED = 1000
+NOT_READY = 1001  # account without login: skip it, don't stop the fallback
 LIMIT_TEXT = re.compile(r'rate.?limit|too many requests|usage limit|session limit|limit reached|quota|resets? (at|in)|out of .*messages', re.I)
 
 COLOR = sys.stdout.isatty() and not os.environ.get('NO_COLOR')
