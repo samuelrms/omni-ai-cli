@@ -500,6 +500,8 @@ class Stream:
             if not self.started:
                 raise RequestError(status, message, kind, code=code, retry_after=60 if status == 429 else None)
             self._send(protocol.error_body(message, kind, code=code))  # too late to change the status
+            self.handler.wfile.write(b'data: [DONE]\n\n')
+            self.handler.wfile.flush()
             return
         already_sent = self.started
         self._start()
