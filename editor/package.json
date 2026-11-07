@@ -18,6 +18,7 @@
   },
   "homepage": "https://github.com/samuelrms/omni-ai-cli#readme",
   "bugs": "https://github.com/samuelrms/omni-ai-cli/issues",
+  "sponsor": {"url": "https://github.com/sponsors/samuelrms"},
   "main": "./extension.js",
   "activationEvents": ["onStartupFinished"],
   "capabilities": {

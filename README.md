@@ -813,6 +813,10 @@ guardar nem rotacionar.
 
 ---
 
+## Apoie o projeto
+
+O Omni AI CLI é gratuito e mantido pelo Samuel Ramos. Se ele ajuda no seu dia a dia, você pode apoiar pelo [GitHub Sponsors](https://github.com/sponsors/samuelrms) ou por PIX. Veja [como apoiar](https://github.com/samuelrms/omni-ai-cli/blob/main/SPONSORS.md).
+
 ## Licença
 
 [MIT](LICENSE). Bibliotecas embutidas em `vendor/`: prompt_toolkit (BSD-3-Clause) e wcwidth (MIT), com as licenças em cada pasta.
