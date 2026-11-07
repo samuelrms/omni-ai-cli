@@ -603,7 +603,7 @@ No primeiro início, o servidor cria uma chave e a mostra uma única vez. Só o 
 
 ## Docker
 
-Imagem com o Omni e os CLIs em versões fixas, para rodar o `ai serve` em servidor próprio. Inclui Claude Code, Codex, Cursor e Grok. O Antigravity não está incluído, porque não tem instalação por comando.
+Imagem com o Omni e os CLIs em versões fixas, para rodar o `ai serve` em servidor próprio. Claude Code e Codex vêm do npm; Grok e Cursor são baixados e conferidos por hash SHA-256 antes de entrar na imagem. Inclui Claude Code, Codex, Cursor e Grok. O Antigravity não está incluído, porque não tem instalação por comando.
 
 ```bash
 git clone https://github.com/samuelrms/omni-ai-cli && cd omni-ai-cli

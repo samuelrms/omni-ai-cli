@@ -46,3 +46,9 @@ npm run diagrams
 
 A publicação no npm é automática (semantic-release) ao mergear na `main`, por OIDC /
 trusted publishing. Ninguém edita `version` no `package.json` à mão.
+
+## Imagem Docker
+
+As versões das ferramentas ficam nos `ARG` do `Dockerfile`. Ao trocar a versão do Grok ou do Cursor, rode
+`scripts/docker-hashes.sh` e copie as quatro linhas de hash que ele imprime. Sem isso, o build falha na conferência,
+que é o comportamento esperado. Claude Code e Codex vêm do npm, que confere os pacotes sozinho.
