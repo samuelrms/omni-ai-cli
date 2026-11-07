@@ -132,8 +132,10 @@ class Encoding(unittest.TestCase):
 
     @unittest.skipIf(os.name == 'nt', 'POSIX locale')
     def test_a_session_saves_on_a_machine_without_utf8(self):
-        code = ("from omni_ai.chat.session import Session; s = Session(); s.data['messages'].append({'role': 'user', 'content': '✓ 日本語 😀'}); "
-                "s.save(); s.close(); r = Session(s.id); print(r.data['messages'][0]['content'] == '✓ 日本語 😀')")
+        # Escaped: without UTF-8, Python can't even read these characters from its command line
+        text = r"'\u2713 \u65e5\u672c\u8a9e \U0001f600'"
+        code = (f"from omni_ai.chat.session import Session; s = Session(); s.data['messages'].append({{'role': 'user', 'content': {text}}}); "
+                f"s.save(); s.close(); r = Session(s.id); print(r.data['messages'][0]['content'] == {text})")
         with tempfile.TemporaryDirectory() as home:
             env = {**os.environ, 'HOME': home, 'PYTHONPATH': str(ROOT), 'LC_ALL': 'C', 'LANG': 'C', 'PYTHONCOERCECLOCALE': '0', 'PYTHONUTF8': '0',
                    'SMART_AI_HOME': home}
