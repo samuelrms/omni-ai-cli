@@ -73,7 +73,7 @@ Três detalhes que o diagrama torna explícitos:
 
 - **Cada conta Claude tem sua própria pasta de login.** Contas extras rodam com
   `CLAUDE_CONFIG_DIR` apontando para `~/.claude-accounts/<nome>`. A conta principal
-  nunca é deslogada, e nenhuma credencial é copiada de um lugar para outro. Copiar o
+  nunca é deslogada, e nenhuma credencial é copiada de um lugar para outro. A exceção são perfis antigos com `credentials_file`, que trocam o arquivo de credenciais durante a chamada. Copiar o
   `.credentials.json` não funciona de forma confiável no macOS, onde o login fica no
   Keychain.
 - **Ctrl-C mata a árvore inteira.** O roteador roda num grupo de processos próprio, então
@@ -800,7 +800,7 @@ guardar nem rotacionar.
   exemplo, "posso editar este arquivo?") não aparecem; nesses casos, use o CLI nativo.
 - `/parallel` só analisa: Codex em `--sandbox read-only` ou OpenRouter, que não acessa os
   arquivos. Os agentes não editam o projeto ao mesmo tempo.
-- A classificação simples/complexa é por palavras-chave e tamanho, não por um modelo.
+- A classificação simples/complexa usa um modelo quando há chave de Groq, Cerebras, OpenRouter ou Grok. Sem nenhuma delas, ou se todas falharem, usa palavras-chave e tamanho. Ela pode errar nos dois casos.
 - Trocar de modelo não renova a cota da conta.
 - No Windows, o código usa os equivalentes nativos (grupo de processos e `taskkill`, `msvcrt`, junções de pasta), mas foi testado de verdade só no macOS. A exceção é a execução de ferramentas instaladas pelo npm, testada no CI em Windows.
 
@@ -814,7 +814,8 @@ guardar nem rotacionar.
 - Antes de ir para o OpenRouter, e-mails, telefones, documentos e outros dados pessoais
   são trocados por marcadores e restaurados na resposta. O mascaramento é por padrões e
   não garante anonimização total.
-- Claude, Codex e Antigravity recebem o texto original, sob os termos de cada serviço.
+- Claude, Codex, Cursor, Antigravity e Grok Build recebem o texto original, sob os termos de cada serviço.
+- Para classificar pedidos e decidir sobre a fila, um trecho mascarado do pedido, e da resposta anterior no caso da fila, vai para o serviço configurado: Groq, Cerebras ou OpenRouter. Se os gratuitos falharem, a classificação pode usar a xAI, que é paga.
 
 ---
 
