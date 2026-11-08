@@ -602,7 +602,7 @@ On first start, the server creates a key and shows it once. Only its hash is sto
 
 ## Docker
 
-An image with Omni and the CLIs at pinned versions, to run `ai serve` on your own server. It includes Claude Code, Codex, Cursor and Grok. Antigravity is not included, because it has no command-line install.
+An image with Omni and the CLIs at pinned versions, to run `ai serve` on your own server. Claude Code and Codex come from npm; Grok and Cursor are downloaded and checked against a SHA-256 hash before they go into the image. It includes Claude Code, Codex, Cursor and Grok. Antigravity is not included, because it has no command-line install.
 
 ```bash
 git clone https://github.com/samuelrms/omni-ai-cli && cd omni-ai-cli
