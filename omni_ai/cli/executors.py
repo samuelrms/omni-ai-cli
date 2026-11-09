@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import signal
+import sys
 import threading
 
 from .. import config as config_tool
@@ -151,9 +152,9 @@ def key_account(tool, name):
     return base if name == 'principal' else f'{base}:{name}'
 
 
-def run_with_key_retry(tool, argv, env_var, label, long_prompt=None):
+def run_with_key_retry(tool, argv, env_var, label, long_prompt=None, stop=None):
     """Main login first, then each extra account of the tool (/account add TOOL NAME), then the saved API key.
-    The prompt is the last item of `argv`."""
+    The prompt is the last item of `argv`. `stop(output)` true after a failure: no other account would do better."""
     prompt = {'prompt_at': len(argv) - 1, 'long_prompt': long_prompt}
     accounts = [('primary', {})] + [(name, config_tool.tool_env(tool, conf)) for name, conf in config_tool.tool_accounts(tool, True)]
     code = 1
@@ -171,6 +172,9 @@ def run_with_key_retry(tool, argv, env_var, label, long_prompt=None):
         remember_limit(account, output if code != 0 else '')
         if code == 0:
             break
+        if stop and stop(output):
+            log_usage(tool, 'N/A', 'error')
+            return code
         if tail_hit_limit(output):
             mark_rate_limited(account)
     for name, key, origin in config_tool.stored_keys(tool):
@@ -181,6 +185,8 @@ def run_with_key_retry(tool, argv, env_var, label, long_prompt=None):
         emit_provider(tool)
         code, output = run(argv, dict(os.environ, **{env_var: key}), **prompt)
         remember_limit(account, output if code != 0 else '')
+        if code != 0 and stop and stop(output):
+            break
         if code != 0 and tail_hit_limit(output):
             mark_rate_limited(account)
     log_usage(tool, 'N/A', 'success' if code == 0 else 'error')
@@ -269,7 +275,7 @@ def run_cursor(prompt):
         say(f'{DIM}  Instale: curl https://cursor.com/install -fsS | bash  e rode: cursor-agent login{NC}')
         log_usage('cursor', 'N/A', 'not_installed')
         return 1
-    argv = [BINS['cursor'], '-p', '--trust']
+    argv = [BINS['cursor'], '-p']
     if os.environ.get('SMART_AI_EVENTS') == '1':
         argv += ['--output-format', 'stream-json']  # same events as Claude Code's stream-json
     if models()['cursor']:
@@ -277,8 +283,39 @@ def run_cursor(prompt):
     # Without --force the headless agent only proposes changes
     # 'ask', not 'plan': in plan mode the headless agent was seen writing files anyway
     argv += {'plan': ['--mode', 'ask'], 'edits': ['--force'], 'auto': ['--force'], 'yolo': ['--force']}.get(mode(), [])
-    # Subscription login first, then each saved CURSOR_API_KEY
-    return run_with_key_retry('cursor', argv + [plain_prompt(prompt)], 'CURSOR_API_KEY', 'Cursor')
+    # Subscription login first, then each saved CURSOR_API_KEY. --force already lets the agent work in a
+    # folder it does not trust yet; read-only mode needs that trust, which only the person can give.
+    untrusted = []
+
+    def stop(output):
+        if CURSOR_TRUST in output:
+            untrusted.append(True)
+        return bool(untrusted)
+
+    code = run_with_key_retry('cursor', argv + [plain_prompt(prompt)], 'CURSOR_API_KEY', 'Cursor', stop=stop)
+    if not untrusted:
+        return code
+    if not _trust_folder_for_cursor():
+        say(f'{YELLOW}O Cursor ainda não confia nesta pasta ({Path.cwd()}).{NC}')
+        say(f'{DIM}  Para liberar, rode cursor-agent nela uma vez e aceite, ou use ai direto no terminal.{NC}')
+        return code
+    return run_with_key_retry('cursor', argv[:2] + ['--trust'] + argv[2:] + [plain_prompt(prompt)],
+                              'CURSOR_API_KEY', 'Cursor')
+
+
+CURSOR_TRUST = 'Workspace Trust Required'
+
+
+def _trust_folder_for_cursor():
+    """Asks in the terminal; with no one to answer (chat, server, editor), the folder stays untrusted.
+    The Cursor CLI keeps the answer, so it is asked once per folder."""
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return False
+    try:
+        answer = input(f'Confiar em {Path.cwd()} para o Cursor? Ele poderá ler e rodar o que a pasta configurar. [s/N] ')
+    except (EOFError, KeyboardInterrupt):
+        return False
+    return answer.strip().lower() in ('s', 'sim', 'y', 'yes')
 
 
 def run_deepseek(prompt):
