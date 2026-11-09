@@ -629,7 +629,7 @@ docker exec -it omni ai --account login primary
 - **Modes :** `OMNI_MODE=plan|edits|auto|yolo docker compose up -d` (par défaut : `plan`). Les outils travaillent dans `/workspace`, sur le volume `omni-workspace`. Pour utiliser votre dossier, définissez `OMNI_WORKSPACE=/chemin`, accessible en écriture à l'uid 10001.
 - **Risque hors de `plan` :** les commandes tournent avec l'utilisateur qui détient les connexions dans `omni-home`. Qui détient la clé peut les lire : ne donnez de clés qu'à des personnes de confiance et révoquez les sessions en cas de fuite.
 - **Codex :** son sandbox ne démarre pas dans le conteneur, car il a besoin de fonctions bloquées par Docker et le noyau de l'hôte. Il n'utilise des outils qu'en `yolo`, avec le conteneur comme isolation. En `plan`, `edits` et `auto`, il répond seulement, sans lire ni modifier de fichiers.
-- **Mise à jour :** `git pull && docker compose up -d --build`. `ai --update` ne s'applique pas à l'image.
+- **Mise à jour :** `git pull && docker compose up -d --build`. Dans le conteneur, `ai --update` ne remplace pas l'image : il affiche seulement ces commandes. `ai --version` affiche la version de l'image publiée.
 - **Image prête :** `export OMNI_IMAGE=ghcr.io/samuelrms/omni-ai-cli:latest && docker compose pull omni && docker compose up -d --no-build`. Chaque release publie sa version et `latest`, pour amd64 et arm64. Pour figer une version, remplacez `latest` par son numéro, comme `1.23.0`. L'image inclut des CLI tiers, soumis à leurs propres conditions ; l'utilisation de votre compte suit aussi ces conditions.
 
 Pour l'exposer sur un réseau, utilisez un proxy inverse avec HTTPS, comme Caddy :
