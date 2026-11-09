@@ -37,7 +37,10 @@ RUN mkdir -p /opt/tools/.local/bin /opt/tools/.grok/bin /opt/tools/cursor-agent 
     && chmod -R a+rX /opt/tools
 
 COPY omni_ai /app/omni_ai
-RUN printf '#!/bin/sh\nPYTHONPATH=/app exec python3 -P -m omni_ai "$@"\n' > /usr/local/bin/ai \
+# The release passes its version, so `ai --version` and the new-release notice know which one this is.
+ARG OMNI_VERSION=0.0.0-development
+RUN python3 -c 'import json, re, sys; v = sys.argv[1]; re.fullmatch(r"[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.]+)?", v) or sys.exit("bad OMNI_VERSION: " + repr(v)); json.dump({"name": "omni-ai-cli", "version": v}, open("/app/package.json", "w"))' "${OMNI_VERSION}" \
+    && printf '#!/bin/sh\nPYTHONPATH=/app exec python3 -P -m omni_ai "$@"\n' > /usr/local/bin/ai \
     && chmod 755 /usr/local/bin/ai \
     && useradd --uid 10001 --home-dir /home/omni --no-create-home omni \
     && mkdir -p /home/omni \

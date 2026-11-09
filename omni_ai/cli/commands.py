@@ -5,7 +5,7 @@ import subprocess
 
 from .. import config as config_tool
 from . import whats_new
-from ..osutils import REPO, clean_terminal, resolve_bin
+from ..osutils import REPO, clean_terminal, in_container, resolve_bin
 from ..tools import TOOLS
 from .base import (
     LOG_FILE, STATE_FILE, RED, GREEN, YELLOW, CYAN, BOLD, DIM, NC,
@@ -138,6 +138,11 @@ def _fetch_tags():
 
 def _update():
     """Pull the latest version into the install folder; settings live in ~/.config and are kept."""
+    if in_container():
+        say('Na imagem Docker, a atualização é trocar a imagem. No computador onde o container roda:\n'
+            '  docker compose pull omni && docker compose up -d --no-build\n'
+            'Se a imagem foi construída a partir do código: git pull && docker compose up -d --build')
+        return 1
     if (REPO / '.git').is_dir() and resolve_bin('git'):
         # Pull the current branch from origin explicitly, so it works even when the branch has no
         # upstream tracking set (a plain `git pull` fails there). A detached HEAD updates from main.
