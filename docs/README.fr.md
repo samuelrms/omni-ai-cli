@@ -621,7 +621,7 @@ docker exec omni cat /home/omni/.config/smart-ai/server_key.txt   # clé génér
 docker exec -it omni ai --account login primary
 ```
 
-- **Connexion :** voir [Connexion sans navigateur](#connexion-sans-navigateur). Les clés des fournisseurs passent par `docker exec -it omni ai --key <outil>`.
+- **Connexion :** voir [Connexion sans navigateur](#connexion-sans-navigateur). Les clés des fournisseurs passent par `docker exec -it omni ai --key <outil>`. Pour utiliser Cursor en mode `plan`, faites confiance une fois au dossier de travail : `docker exec -it -w /workspace omni cursor-agent` puis acceptez.
 - **Données :** connexions, clés, configuration et cooldowns restent dans le volume `omni-home`, qui survit à la recréation du conteneur. `docker compose down -v` le supprime.
 - **Clé du serveur :** si aucune n'est fournie, une clé est générée et enregistrée dans `/home/omni/.config/smart-ai/server_key.txt`, lisible seulement par l'utilisateur du conteneur. Elle n'apparaît pas dans le journal. Une fois conservée, supprimez le fichier avec `docker exec omni rm /home/omni/.config/smart-ai/server_key.txt`. Pour définir la vôtre, utilisez `SMART_AI_SERVER_KEY`, ou `SMART_AI_SERVER_KEY_FILE` avec un Docker secret. `docker-compose.yml` contient l'exemple.
 - **Port :** publié uniquement sur `127.0.0.1`. `OMNI_PORT` change le port.
@@ -795,6 +795,7 @@ Le workflow demande déjà `id-token: write` et `NPM_CONFIG_PROVENANCE` ; il n'y
 | `You've hit your session limit` | Quota du compte. `ai` passe au suivant ; ajoutez-en un autre avec `/account add` ou une clé avec `/key claude`. |
 | `Individual quota reached` (Antigravity) | Quota d'Antigravity ; il est ignoré jusqu'au renouvellement. |
 | `Not inside a trusted directory` (Codex) | Ancienne installation. Relancez l'installateur. |
+| `Workspace Trust Required` (Cursor) | En mode `plan`, Cursor ne lit que les dossiers auxquels vous avez fait confiance. Dans le terminal, `ai` demande une fois par dossier ; dans le chat, le serveur et l'éditeur, lancez `cursor-agent` une fois dans le dossier et acceptez. Les autres modes ne le demandent pas. |
 | `Claude Code não instalado` | `./scripts/install.sh` (ou `scripts\install.ps1` sous Windows) l'installe avec l'installateur officiel. |
 | Windows : les liens de skills échouent | Activez le mode développeur ou lancez en administrateur ; sinon `ai` utilise des jonctions de dossier. |
 | `o pedido é longo demais para a linha de comando deste sistema` | Antigravity, Cursor et Grok ne reçoivent la demande que par la ligne de commande. Le fallback continue avec Claude Code et Codex, qui reçoivent les demandes longues par l'entrée standard. |

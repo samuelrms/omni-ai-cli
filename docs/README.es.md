@@ -612,7 +612,7 @@ docker exec omni cat /home/omni/.config/smart-ai/server_key.txt   # clave genera
 docker exec -it omni ai --account login primary
 ```
 
-- **Inicio de sesión:** consulta [Inicio de sesión sin navegador](#inicio-de-sesión-sin-navegador). Las claves de proveedores van con `docker exec -it omni ai --key <herramienta>`.
+- **Inicio de sesión:** consulta [Inicio de sesión sin navegador](#inicio-de-sesión-sin-navegador). Las claves de proveedores van con `docker exec -it omni ai --key <herramienta>`. Para usar Cursor en modo `plan`, confía una vez en la carpeta de trabajo: `docker exec -it -w /workspace omni cursor-agent` y acepta.
 - **Datos:** los inicios de sesión, las claves, la configuración y los cooldowns están en el volumen `omni-home`, que sobrevive a la recreación del contenedor. `docker compose down -v` lo elimina.
 - **Clave del servidor:** si no se indica ninguna, se genera una y se guarda en `/home/omni/.config/smart-ai/server_key.txt`, que solo lee el usuario del contenedor. No aparece en el log. Después de guardarla, borra el archivo con `docker exec omni rm /home/omni/.config/smart-ai/server_key.txt`. Para definir la tuya, usa `SMART_AI_SERVER_KEY`, o `SMART_AI_SERVER_KEY_FILE` con un Docker secret. `docker-compose.yml` trae el ejemplo.
 - **Puerto:** publicado solo en `127.0.0.1`. `OMNI_PORT` cambia el puerto.
@@ -786,6 +786,7 @@ guardar ni rotar.
 | `You've hit your session limit` | Cuota de la cuenta. `ai` pasa a la siguiente; agrega otra con `/account add` o una clave con `/key claude`. |
 | `Individual quota reached` (Antigravity) | Cuota de Antigravity; se omite hasta la renovación. |
 | `Not inside a trusted directory` (Codex) | Instalación antigua. Ejecuta el instalador de nuevo. |
+| `Workspace Trust Required` (Cursor) | En modo `plan`, Cursor solo lee carpetas en las que confiaste. En la terminal, `ai` pregunta una vez por carpeta; en el chat, el servidor y el editor, ejecuta `cursor-agent` una vez en la carpeta y acepta. Los otros modos no lo piden. |
 | `Claude Code não instalado` | `./scripts/install.sh` (o `scripts\install.ps1` en Windows) lo instala con el instalador oficial. |
 | Windows: fallan los enlaces de skills | Activa el Modo de desarrollador o ejecuta como administrador; si no, `ai` usa uniones de carpeta. |
 | `o pedido é longo demais para a linha de comando deste sistema` | Antigravity, Cursor y Grok solo reciben el pedido por la línea de comandos. El fallback sigue con Claude Code y Codex, que reciben los pedidos largos por la entrada estándar. |

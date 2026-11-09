@@ -611,7 +611,7 @@ docker exec omni cat /home/omni/.config/smart-ai/server_key.txt   # key generate
 docker exec -it omni ai --account login primary
 ```
 
-- **Login:** see [Browserless login](#browserless-login). Provider keys go through `docker exec -it omni ai --key <tool>`.
+- **Login:** see [Browserless login](#browserless-login). Provider keys go through `docker exec -it omni ai --key <tool>`. To use Cursor in `plan` mode, trust the work folder once: `docker exec -it -w /workspace omni cursor-agent` and accept.
 - **Data:** logins, keys, config and cooldowns live in the `omni-home` volume, which survives recreating the container. `docker compose down -v` deletes it.
 - **Server key:** if none is provided, one is generated and saved in `/home/omni/.config/smart-ai/server_key.txt`, readable only by the container user. It never appears in the log. Once you have stored it, remove the file with `docker exec omni rm /home/omni/.config/smart-ai/server_key.txt`. To set your own, use `SMART_AI_SERVER_KEY`, or `SMART_AI_SERVER_KEY_FILE` with a Docker secret. `docker-compose.yml` has the example.
 - **Port:** published only on `127.0.0.1`. `OMNI_PORT` changes the port.
@@ -784,6 +784,7 @@ The workflow already requests `id-token: write` and `NPM_CONFIG_PROVENANCE`; the
 | `You've hit your session limit` | Account quota. `ai` moves to the next one; add another with `/account add` or a key with `/key claude`. |
 | `Individual quota reached` (Antigravity) | Antigravity quota; it is skipped until it renews. |
 | `Not inside a trusted directory` (Codex) | Old install. Run the installer again. |
+| `Workspace Trust Required` (Cursor) | In `plan` mode, Cursor only reads folders you trusted. In the terminal, `ai` asks once per folder; in the chat, the server and the editor, run `cursor-agent` once in the folder and accept. The other modes do not need it. |
 | `Claude Code não instalado` | `./scripts/install.sh` (or `scripts\install.ps1` on Windows) installs it with the official installer. |
 | Windows: skill links fail | Turn on Developer Mode or run as administrator; otherwise `ai` uses folder junctions. |
 | `o pedido é longo demais para a linha de comando deste sistema` | Antigravity, Cursor and Grok only take the prompt on the command line. The fallback goes on to Claude Code and Codex, which get long prompts through standard input. |

@@ -612,7 +612,7 @@ docker exec omni cat /home/omni/.config/smart-ai/server_key.txt   # chave gerada
 docker exec -it omni ai --account login primary
 ```
 
-- **Login:** veja [Login sem navegador](#login-sem-navegador). Chaves de provedores vão com `docker exec -it omni ai --key <ferramenta>`.
+- **Login:** veja [Login sem navegador](#login-sem-navegador). Chaves de provedores vão com `docker exec -it omni ai --key <ferramenta>`. Para usar o Cursor no modo `plan`, confie uma vez na pasta de trabalho: `docker exec -it -w /workspace omni cursor-agent` e aceite.
 - **Dados:** logins, chaves, configuração e cooldowns ficam no volume `omni-home`, que sobrevive à recriação do container. `docker compose down -v` apaga esse volume.
 - **Chave do servidor:** sem chave informada, uma é gerada e gravada em `/home/omni/.config/smart-ai/server_key.txt`, que só o usuário do container lê. Ela não aparece no log. Depois de guardá-la, apague o arquivo com `docker exec omni rm /home/omni/.config/smart-ai/server_key.txt`. Para definir a sua, use `SMART_AI_SERVER_KEY`, ou `SMART_AI_SERVER_KEY_FILE` com um Docker secret. O `docker-compose.yml` traz o exemplo.
 - **Porta:** publicada só em `127.0.0.1`. `OMNI_PORT` muda a porta.
@@ -785,6 +785,7 @@ guardar nem rotacionar.
 | `You've hit your session limit` | Cota da conta. O `ai` passa para a próxima; adicione outra com `/account add` ou uma chave com `/key claude`. |
 | `Individual quota reached` (Antigravity) | Cota do Antigravity; ele é pulado até a renovação. |
 | `Not inside a trusted directory` (Codex) | Instalação antiga. Rode o instalador de novo. |
+| `Workspace Trust Required` (Cursor) | No modo `plan`, o Cursor só lê pastas em que você confiou. No terminal, o `ai` pergunta uma vez por pasta; no chat, no servidor e no editor, rode `cursor-agent` uma vez na pasta e aceite. Os outros modos não pedem isso. |
 | `Claude Code não instalado` | `./scripts/install.sh` (ou `scripts\install.ps1` no Windows) instala pelo instalador oficial. |
 | Windows: atalhos de skills falham | Ative o Modo de Desenvolvedor ou rode como administrador; sem isso o `ai` usa junções de pasta. |
 | `o pedido é longo demais para a linha de comando deste sistema` | Antigravity, Cursor e Grok só recebem o pedido pela linha de comando. O fallback segue para Claude Code e Codex, que recebem pedidos longos pela entrada padrão. |
