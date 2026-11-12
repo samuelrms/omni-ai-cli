@@ -25,6 +25,11 @@ updates:
     directory: /tools/release
     schedule:
       interval: weekly
+    ignore:
+      # 10.x needs conventional-changelog-writer 9, and the release notes generator of semantic-release
+      # still loads 8, so the notes break. tools/release/check.mjs in CI catches it; lift this when it passes.
+      - dependency-name: conventional-changelog-conventionalcommits
+        versions: ['>=10']
     commit-message:
       prefix: ci
   - package-ecosystem: pip

@@ -60,6 +60,22 @@ jobs:
       - name: Build and startup checks
         run: bash scripts/docker-smoke.sh
 
+  release-tools:
+    name: Release tools
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      # An update to these tools (Dependabot) must not break the next release: run them without publishing
+      - name: Release tools work
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund --prefix tools/release
+          node tools/release/check.mjs
+
   package:
     name: npm package
     runs-on: ubuntu-latest

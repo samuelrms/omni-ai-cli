@@ -69,6 +69,11 @@ class Workflows(unittest.TestCase):
         for script in installs:
             self.assertIn('--ignore-scripts', script)
 
+    def test_ci_runs_the_release_tools_before_a_release_needs_them(self):
+        ci = (WORKFLOWS / 'ci.yml').read_text(encoding='utf-8')
+        self.assertIn('node tools/release/check.mjs', ci)
+        self.assertTrue((WORKFLOWS.parents[1] / 'tools' / 'release' / 'check.mjs').exists())
+
     def test_dependabot_can_update_every_watched_folder(self):
         # It refuses to open pull requests that change files under .github, except for actions
         config = (WORKFLOWS.parent / 'dependabot.yml').read_text(encoding='utf-8')
