@@ -41,7 +41,7 @@ npm run diagrams
 - A seção `## Release notes` do PR, em inglês, entra nas notas do release e aparece em `ai --update` e na aba de mudanças da extensão.
 - A `main` é protegida: todo merge passa por PR, com o CI verde e a aprovação do mantenedor.
 - Actions nos workflows vão fixadas pelo SHA do commit, com a versão em comentário (`uses: actions/checkout@<sha> # v7.0.1`). Uma tag pode passar a apontar para outro código; um commit, não. O Dependabot atualiza os dois juntos, e um teste recusa action sem SHA.
-- As ferramentas que os workflows rodam (semantic-release, vsce, ovsx, coverage) ficam em `.github/release-tools`, com versão exata e lockfile, e são instaladas sem scripts de instalação. Valores como a versão chegam aos scripts por variável de ambiente, nunca com `${{ }}` dentro de `run:`. Os testes de `tests/test_workflows.py` conferem as duas regras.
+- As ferramentas que os workflows rodam (semantic-release, vsce, ovsx, coverage) ficam em `tools/release`, com versão exata e lockfile, e são instaladas sem scripts de instalação. Valores como a versão chegam aos scripts por variável de ambiente, nunca com `${{ }}` dentro de `run:`. Os testes de `tests/test_workflows.py` conferem as duas regras.
 
 ## Versões
 

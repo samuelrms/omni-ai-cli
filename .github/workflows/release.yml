@@ -39,9 +39,9 @@ jobs:
         run: npm install -g npm@12.2.2 --ignore-scripts
       # Exact versions from the lockfile, and no install scripts: they would run with the publishing token around
       - name: Install release tools
-        run: npm ci --ignore-scripts --no-audit --no-fund --prefix .github/release-tools
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix tools/release
       - name: semantic-release
-        run: .github/release-tools/node_modules/.bin/semantic-release
+        run: tools/release/node_modules/.bin/semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_CONFIG_PROVENANCE: 'true'
@@ -78,8 +78,8 @@ jobs:
           node-version: 22
       - name: Install tooling
         run: |
-          npm ci --ignore-scripts --no-audit --no-fund --prefix ../.github/release-tools
-          echo "$PWD/../.github/release-tools/node_modules/.bin" >> "$GITHUB_PATH"
+          npm ci --ignore-scripts --no-audit --no-fund --prefix ../tools/release
+          echo "$PWD/../tools/release/node_modules/.bin" >> "$GITHUB_PATH"
       - name: Set version
         env:
           VERSION: ${{ needs.release.outputs.version }}

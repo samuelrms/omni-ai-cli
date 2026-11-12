@@ -58,16 +58,27 @@ class Workflows(unittest.TestCase):
         self.assertEqual(loose, [])
 
     def test_release_tools_come_from_the_lockfile_without_scripts(self):
-        tools = WORKFLOWS.parent / 'release-tools'
+        tools = WORKFLOWS.parents[1] / 'tools' / 'release'
         manifest = json.loads((tools / 'package.json').read_text(encoding='utf-8'))
         for name, version in manifest['dependencies'].items():
             with self.subTest(package=name):
                 self.assertRegex(version, r'^\d+\.\d+\.\d+$')
         self.assertTrue((tools / 'package-lock.json').exists())
-        installs = [s for _, s in self.run_blocks() if 'release-tools' in s and 'npm ci' in s]
+        installs = [s for _, s in self.run_blocks() if 'tools/release' in s and 'npm ci' in s]
         self.assertTrue(installs)
         for script in installs:
             self.assertIn('--ignore-scripts', script)
+
+    def test_dependabot_can_update_every_watched_folder(self):
+        # It refuses to open pull requests that change files under .github, except for actions
+        config = (WORKFLOWS.parent / 'dependabot.yml').read_text(encoding='utf-8')
+        entries = re.findall(r'package-ecosystem:\s*(\S+)\s+directory:\s*(\S+)', config)
+        self.assertTrue(entries)
+        for ecosystem, directory in entries:
+            with self.subTest(ecosystem=ecosystem, directory=directory):
+                if ecosystem != 'github-actions':
+                    self.assertFalse(directory.startswith('/.github'))
+                    self.assertTrue((WORKFLOWS.parents[1] / directory.lstrip('/')).is_dir())
 
 
 if __name__ == '__main__':
