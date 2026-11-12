@@ -19,15 +19,16 @@ updates:
       interval: weekly
     commit-message:
       prefix: build
-  # The tools the release and coverage workflows run
+  # The tools the release and coverage workflows run. Outside .github: Dependabot cannot open
+  # pull requests that change files there for these ecosystems.
   - package-ecosystem: npm
-    directory: /.github/release-tools
+    directory: /tools/release
     schedule:
       interval: weekly
     commit-message:
       prefix: ci
   - package-ecosystem: pip
-    directory: /.github/release-tools
+    directory: /tools/release
     schedule:
       interval: weekly
     commit-message:

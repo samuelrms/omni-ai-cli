@@ -21,8 +21,8 @@ jobs:
           node-version: 22
       - name: Install tooling
         run: |
-          npm ci --ignore-scripts --no-audit --no-fund --prefix ../.github/release-tools
-          echo "$PWD/../.github/release-tools/node_modules/.bin" >> "$GITHUB_PATH"
+          npm ci --ignore-scripts --no-audit --no-fund --prefix ../tools/release
+          echo "$PWD/../tools/release/node_modules/.bin" >> "$GITHUB_PATH"
       # On a release, use its tag; on a manual run, use the latest release tag
       # so the package never ships the placeholder version from the repo.
       - name: Match the released version

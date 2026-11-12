@@ -27,7 +27,7 @@ jobs:
       - name: Measure coverage
         id: measure
         run: |
-          pip install --require-hashes -r .github/release-tools/requirements-coverage.txt
+          pip install --require-hashes -r tools/release/requirements-coverage.txt
           coverage run --source=omni_ai --omit='omni_ai/vendor/*' -m unittest discover -s tests
           coverage report
           pct=$(coverage report | awk '/^TOTAL/{print $NF}' | tr -d '%')
