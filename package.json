@@ -21,7 +21,7 @@
     "diagrams": "bash scripts/diagrams.sh"
   },
   "optionalDependencies": {
-    "@anthropic-ai/claude-code": "2.1.319"
+    "@anthropic-ai/claude-code": "2.1.325"
   },
   "engines": {
     "node": ">=18"
