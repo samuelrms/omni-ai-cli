@@ -1,5 +1,5 @@
 # Omni AI server: `docker compose up -d`. Logins and keys live in the volume mounted on /home/omni.
-FROM node:26-slim@sha256:5adad64f9a1fca2d51972caa65983634c8a774eb300d72b20f7f2a0f60368072
+FROM node:26-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc
 
 ARG CODEX_VERSION=0.166.0
 ARG CLAUDE_VERSION=2.1.318
