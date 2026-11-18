@@ -817,10 +817,10 @@ guardar ni rotar.
 - Si una herramienta falla después de cambiar archivos, una copia de ellos queda solo en tu máquina, con permiso restringido a tu usuario.
 - Las sesiones, las claves de API y los logs quedan solo en tu máquina, con permiso restringido a tu usuario.
 - El log de uso registra herramienta, cuenta y estado, **nunca el texto de la pregunta**.
-- Antes de ir a OpenRouter, los correos, teléfonos, documentos y otros datos personales
+- Antes de ir a OpenRouter, DeepSeek o Grok por API, los correos, teléfonos, documentos y otros datos personales
   se cambian por marcadores y se restauran en la respuesta. El enmascaramiento es por
   patrones y no garantiza un anonimato total.
-- Claude, Codex, Cursor, Antigravity y Grok Build reciben el texto original, bajo los términos de cada servicio.
+- Claude, Codex, Cursor, Antigravity y Grok Build reciben el texto original, incluso cuando usan una clave de API, bajo los términos de cada servicio.
 - Para clasificar pedidos y decidir sobre la cola, una parte enmascarada del pedido, y de la respuesta anterior en el caso de la cola, va al servicio configurado: Groq, Cerebras u OpenRouter. Si los gratuitos fallan, la clasificación puede usar xAI, que es de pago.
 
 ---

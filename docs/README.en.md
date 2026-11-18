@@ -814,10 +814,10 @@ The workflow already requests `id-token: write` and `NPM_CONFIG_PROVENANCE`; the
 - If a tool fails after changing files, a copy of them stays only on your machine, readable only by your user.
 - Sessions, API keys and logs stay only on your machine, with permissions restricted to your user.
 - The usage log records tool, account and status, **never the text of the question**.
-- Before going to OpenRouter, emails, phone numbers, documents and other personal data
+- Before going to OpenRouter, DeepSeek or Grok over the API, emails, phone numbers, documents and other personal data
   are swapped for placeholders and restored in the answer. Masking is pattern-based and
   does not guarantee full anonymization.
-- Claude, Codex, Cursor, Antigravity and Grok Build receive the original text, under each service's terms.
+- Claude, Codex, Cursor, Antigravity and Grok Build receive the original text, even when they use an API key, under each service's terms.
 - To classify requests and decide on the queue, a masked part of the request, and of the previous answer in the queue's case, goes to the configured service: Groq, Cerebras or OpenRouter. If the free ones fail, classification can use xAI, which is paid.
 
 ---
