@@ -9,7 +9,7 @@ Uso standalone:
 Uso como módulo:
     from omni_ai.pii import PIIMasker  # noqa
     masker = PIIMasker()
-    masked, mapping = masker.mask("Meu CPF é 123.456.789-00")
+    masked, mapping = masker.mask("Meu CPF é 123.456.789-09")
     original = masker.unmask(masked, mapping)
 """
 

@@ -42,7 +42,7 @@ class MaskCategoryTests(unittest.TestCase):
         self.assertTrue(any('SECRET' in k for k in mapping))
 
     def test_brazilian_documents(self):
-        masked, mapping = self.roundtrip('CPF 123.456.789-00 CNPJ 12.345.678/0001-99')
+        masked, mapping = self.roundtrip('CPF 123.456.789-09 CNPJ 12.345.678/0001-95')
         keys = ''.join(mapping)
         self.assertIn('CPF', keys)
         self.assertIn('CNPJ', keys)
@@ -115,7 +115,7 @@ class MaskBehaviourTests(unittest.TestCase):
         self.assertNotIn('a@b.com', masked)
 
     def test_get_report_counts_categories(self):
-        report = self.m.get_report('a@b.com and c@d.com and CPF 123.456.789-00')
+        report = self.m.get_report('a@b.com and c@d.com and CPF 123.456.789-09')
         self.assertEqual(report['total_found'], 3)
         self.assertEqual(report['categories'].get('EMAIL'), 2)
         self.assertEqual(report['categories'].get('CPF'), 1)
