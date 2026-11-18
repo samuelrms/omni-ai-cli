@@ -3,8 +3,6 @@ import datetime
 import json
 import os
 import re
-import sys
-import time
 
 def normalize(data):
     """Aceita session.data, uma lista de mensagens ou um JSON já carregado e

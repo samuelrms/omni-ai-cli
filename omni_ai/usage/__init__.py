@@ -20,7 +20,7 @@ from .providers import (
     claude_reading, codex_reading,
 )
 
-def snapshot(claude_profiles, codex_accounts, openrouter_keys):
+def snapshot(claude_profiles, codex_accounts, openrouter_keys):  # noqa: F811  (a parameter named like the re-exported function)
     """Everything /usage shows, fetched at once: one thread per account."""
     from concurrent.futures import ThreadPoolExecutor
     jobs = {}

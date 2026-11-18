@@ -19,7 +19,7 @@ updates:
       interval: weekly
     commit-message:
       prefix: build
-  # The tools the release and coverage workflows run. Outside .github: Dependabot cannot open
+  # The tools the release, coverage and lint jobs run. Outside .github: Dependabot cannot open
   # pull requests that change files there for these ecosystems.
   - package-ecosystem: npm
     directory: /tools/release
