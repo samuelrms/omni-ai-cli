@@ -140,6 +140,60 @@ class MaskBehaviourTests(unittest.TestCase):
         self.assertEqual(mapping, {})
 
 
+class StreamUnmaskerTests(unittest.TestCase):
+    def setUp(self):
+        m = pii.PIIMasker()
+        masked, self.mapping = m.mask('Escreva para alice@example.com, CPF 123.456.789-09.', namespace='ns')
+        system, more = m.mask('bob@example.com', namespace='SYSTEM')
+        self.mapping.update(more)
+        self.assertEqual(len(self.mapping), 3)
+        # An answer that repeats the placeholders, next to brackets that are not placeholders
+        self.answer = f'{masked} Veja arr[0] e [1]. Assinado: {system}'
+        self.restored = m.unmask(self.answer, self.mapping)
+
+    def stream(self, pieces):
+        restorer = pii.StreamUnmasker(self.mapping)
+        out = []
+        for piece in pieces:
+            out.append(restorer.feed(piece))
+            # Only an ending that can still become a placeholder waits
+            self.assertTrue(not restorer.pending or any(key.startswith(restorer.pending) for key in self.mapping))
+        out.append(restorer.flush())
+        return out
+
+    def test_every_split_point_restores_the_answer(self):
+        for cut in range(len(self.answer) + 1):
+            pieces = self.stream([self.answer[:cut], self.answer[cut:]])
+            self.assertEqual(''.join(pieces), self.restored)
+            for piece in pieces:
+                self.assertNotRegex(piece, r'\[(EMAIL|CPF)_')
+
+    def test_one_character_per_piece(self):
+        self.assertEqual(''.join(self.stream(list(self.answer))), self.restored)
+
+    def test_a_bracket_waits_only_while_it_can_start_a_placeholder(self):
+        restorer = pii.StreamUnmasker(self.mapping)
+        self.assertEqual(restorer.feed('arr[0] e [texto]('), 'arr[0] e [texto](')
+        self.assertEqual(restorer.feed('veja ['), 'veja ')
+        self.assertEqual(restorer.feed('1]'), '[1]')
+
+    def test_answer_ending_inside_a_placeholder_goes_out_as_it_is(self):
+        restorer = pii.StreamUnmasker(self.mapping)
+        self.assertEqual(restorer.feed('fim [EMAIL_n'), 'fim ')
+        self.assertEqual(restorer.flush(), '[EMAIL_n')
+        self.assertEqual(restorer.flush(), '')
+
+    def test_placeholder_not_in_the_map_passes_unchanged(self):
+        restorer = pii.StreamUnmasker(self.mapping)
+        self.assertEqual(restorer.feed('[EMAIL_'), '')
+        self.assertEqual(restorer.feed('xyz_9]'), '[EMAIL_xyz_9]')
+
+    def test_without_a_map_every_piece_goes_out_at_once(self):
+        restorer = pii.StreamUnmasker({})
+        self.assertEqual(restorer.feed('[EMAIL_'), '[EMAIL_')
+        self.assertEqual(restorer.flush(), '')
+
+
 class CliTests(unittest.TestCase):
     def run_cli(self, argv, stdin_text=''):
         out, err = io.StringIO(), io.StringIO()

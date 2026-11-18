@@ -216,7 +216,8 @@ class PIIMasker:
             result = result[:start] + placeholder + result[end:]
         return result, mapping
 
-    def unmask(self, text: str, mapping: dict) -> str:
+    @staticmethod
+    def unmask(text: str, mapping: dict) -> str:
         """Restore only known placeholders, in one pass."""
         if not mapping:
             return text
@@ -238,6 +239,28 @@ class PIIMasker:
             category = found.group(1) if found else placeholder.split("_")[0].strip("[")
             report["categories"][category] = report["categories"].get(category, 0) + 1
         return report
+
+
+class StreamUnmasker:
+    """Restores a streamed answer piece by piece, where a placeholder may arrive split across pieces."""
+
+    def __init__(self, mapping: dict):
+        self.mapping, self.pending = mapping, ""
+
+    def feed(self, piece: str) -> str:
+        """What can be shown now, restored. An ending that may still become a placeholder waits for more text."""
+        text, self.pending = self.pending + piece, ""
+        # A placeholder made by mask() has one "[", at its start, so only the text from the last "[" can be one still arriving
+        start = text.rfind("[")
+        ending = text[start:] if start >= 0 else ""
+        if ending and any(key != ending and key.startswith(ending) for key in self.mapping):
+            text, self.pending = text[:start], ending
+        return PIIMasker.unmask(text, self.mapping)
+
+    def flush(self) -> str:
+        """The ending still held when the answer ends. It never became a placeholder, so it goes out as it is."""
+        text, self.pending = self.pending, ""
+        return text
 
 
 # ─────────────────────────────────────────────

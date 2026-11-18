@@ -46,6 +46,48 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(answer['content'], 'Hello world')
         self.assertEqual(answer['usage'], {'total_tokens': 3})
 
+    def test_streaming_restores_a_placeholder_split_across_pieces(self):
+        client = OpenRouterClient(api_key='synthetic-key', fallback_models=['test/a:free'])
+        pieces = []
+
+        def fake_stream(data):
+            self.assertNotIn('alice@example.com', json.dumps(data))
+            placeholder = next(iter(client._pii_map))
+            yield ('delta', 'Escreva para ' + placeholder[:7])
+            yield ('delta', placeholder[7:] + '.')
+            yield ('final', {'content': f'Escreva para {placeholder}.', 'model': 'test/a:free', 'usage': {}})
+        with patch.object(client, '_stream_request', side_effect=fake_stream), contextlib.redirect_stderr(io.StringIO()):
+            answer = client.chat('alice@example.com', on_delta=pieces.append)
+        self.assertEqual(pieces, ['Escreva para ', 'alice@example.com.'])
+        self.assertEqual(answer['content'], 'Escreva para alice@example.com.')
+
+    def test_streaming_sends_what_was_held_back_when_the_answer_ends(self):
+        client = OpenRouterClient(api_key='synthetic-key', fallback_models=['test/a:free'])
+        pieces = []
+
+        def fake_stream(data):
+            # A lone "[" could still start a placeholder, until the answer ends
+            yield ('delta', 'Lista: [')
+            yield ('final', {'content': 'Lista: [', 'model': 'test/a:free', 'usage': {}})
+        with patch.object(client, '_stream_request', side_effect=fake_stream), contextlib.redirect_stderr(io.StringIO()):
+            client.chat('alice@example.com', on_delta=pieces.append)
+        self.assertEqual(pieces, ['Lista: ', '['])
+
+    def test_streaming_tries_the_next_models_when_nothing_was_shown_before_a_failure(self):
+        client = OpenRouterClient(api_key='synthetic-key', fallback_models=['t/a:free', 't/b:free', 't/c:free', 't/d:free'])
+        pieces = []
+
+        def fake_stream(data):
+            if 't/a:free' in data['models']:
+                yield ('delta', '[')  # held back, so the person saw nothing yet
+                raise RuntimeError('OpenRouter: erro no stream')
+            yield ('delta', 'ok')
+            yield ('final', {'content': 'ok', 'model': 't/d:free', 'usage': {}})
+        with patch.object(client, '_stream_request', side_effect=fake_stream), contextlib.redirect_stderr(io.StringIO()):
+            answer = client.chat('alice@example.com', on_delta=pieces.append)
+        self.assertEqual(pieces, ['ok'])
+        self.assertEqual(answer['content'], 'ok')
+
     def test_stream_request_parses_sse(self):
         client = OpenRouterClient(api_key='synthetic-key', fallback_models=['test/a:free'])
         lines = [
