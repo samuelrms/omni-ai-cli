@@ -439,7 +439,7 @@ class QueueResumeTerminalTests(ChatQueueTerminalTests):
         (self.root / 'gate').unlink()
         (self.root / 'calls').unlink(missing_ok=True)
         self.env_args = ['--resume', saved['id']]
-        text = self.run_chat(['', '/queue'], done=lambda out: out.count('Levou') >= 3)
+        self.run_chat(['', '/queue'], done=lambda out: out.count('Levou') >= 3)
         calls = [json.loads(row)['prompt'] for row in (self.root / 'calls').read_text().splitlines()]
         self.assertEqual(len(calls), 3)
         self.assertTrue(calls[0].endswith('first') and calls[2].endswith('third'))

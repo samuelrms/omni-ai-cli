@@ -17,5 +17,5 @@ assim que possível, e a correção é coordenada antes de qualquer divulgação
 ## Escopo
 
 Chaves de API, sessões e logs ficam só na máquina do usuário, com permissão restrita. O log
-de uso nunca grava o texto das perguntas. Antes de enviar ao OpenRouter, dados pessoais são
+de uso nunca grava o texto das perguntas. Antes de enviar ao OpenRouter, ao DeepSeek ou ao Grok via API (sem o Grok Build), dados pessoais são
 mascarados por padrões — o mascaramento ajuda, mas não garante anonimização total.

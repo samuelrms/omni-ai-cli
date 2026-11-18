@@ -826,10 +826,10 @@ Le workflow demande déjà `id-token: write` et `NPM_CONFIG_PROVENANCE` ; il n'y
 - Si un outil échoue après avoir modifié des fichiers, une copie reste uniquement sur votre machine, accessible à votre seul utilisateur.
 - Les sessions, clés d'API et journaux restent uniquement sur votre machine, avec une permission limitée à votre utilisateur.
 - Le journal d'utilisation enregistre l'outil, le compte et le statut, **jamais le texte de la question**.
-- Avant d'aller vers OpenRouter, e-mails, téléphones, documents et autres données
+- Avant d'aller vers OpenRouter, DeepSeek ou Grok via l'API, e-mails, téléphones, documents et autres données
   personnelles sont remplacés par des marqueurs et restaurés dans la réponse. Le
   masquage repose sur des motifs et ne garantit pas une anonymisation totale.
-- Claude, Codex, Cursor, Antigravity et Grok Build reçoivent le texte original, selon les conditions de chaque service.
+- Claude, Codex, Cursor, Antigravity et Grok Build reçoivent le texte original, même lorsqu'ils utilisent une clé d'API, selon les conditions de chaque service.
 - Pour classer les demandes et décider pour la file, une partie masquée de la demande, et de la réponse précédente pour la file, va au service configuré : Groq, Cerebras ou OpenRouter. Si les gratuits échouent, la classification peut utiliser xAI, qui est payant.
 
 ---

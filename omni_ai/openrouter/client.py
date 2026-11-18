@@ -75,7 +75,7 @@ class OpenRouterClient:
                 reason = ''
             e.close()
             raise RuntimeError(f"OpenRouter HTTP {e.code}" + (f": {reason}" if reason else '')) from None
-        except urllib.error.URLError as e:
+        except urllib.error.URLError:
             raise RuntimeError("Falha de rede ao acessar OpenRouter") from None
         except (ValueError, TimeoutError, http.client.HTTPException, OSError):
             raise RuntimeError("Resposta inválida ou timeout do OpenRouter") from None

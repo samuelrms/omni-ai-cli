@@ -1,8 +1,5 @@
 """Usage reading cache and thresholds: freshness, peak, alerts."""
-import json
-import os
 import time
-from pathlib import Path
 
 from .. import config as config_tool
 from .format import window_label, resets_in

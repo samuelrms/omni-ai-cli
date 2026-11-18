@@ -815,10 +815,10 @@ guardar nem rotacionar.
 - Se uma ferramenta falhar depois de alterar arquivos, uma cópia deles fica só na sua máquina, com permissão restrita ao seu usuário.
 - Sessões, chaves de API e logs ficam só na sua máquina, com permissão restrita ao seu usuário.
 - O log de uso grava ferramenta, conta e status, **nunca o texto da pergunta**.
-- Antes de ir para o OpenRouter, e-mails, telefones, documentos e outros dados pessoais
+- Antes de ir para o OpenRouter, o DeepSeek ou o Grok via API, e-mails, telefones, documentos e outros dados pessoais
   são trocados por marcadores e restaurados na resposta. O mascaramento é por padrões e
   não garante anonimização total.
-- Claude, Codex, Cursor, Antigravity e Grok Build recebem o texto original, sob os termos de cada serviço.
+- Claude, Codex, Cursor, Antigravity e Grok Build recebem o texto original, mesmo quando usam uma chave de API, sob os termos de cada serviço.
 - Para classificar pedidos e decidir sobre a fila, um trecho mascarado do pedido, e da resposta anterior no caso da fila, vai para o serviço configurado: Groq, Cerebras ou OpenRouter. Se os gratuitos falharem, a classificação pode usar a xAI, que é paga.
 
 ---

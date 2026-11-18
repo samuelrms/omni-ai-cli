@@ -1,7 +1,6 @@
 import isolation  # noqa: F401  (first: keeps the tests away from real data)
 import http.client
 import json
-from pathlib import Path
 import sys
 import unittest
 from unittest.mock import patch

@@ -5,7 +5,6 @@ file, so no installer ever runs and nothing persists on the machine.
 """
 import isolation  # noqa: F401  (first: keeps the tests away from real data)
 import io
-import json
 from pathlib import Path
 import sys
 import tempfile

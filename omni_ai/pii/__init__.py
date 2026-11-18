@@ -33,7 +33,7 @@ def main():
     unmask_cmd = sub.add_parser("unmask", help="Desmascara PII do stdin usando mapa")
     unmask_cmd.add_argument("--map", required=True, help="Arquivo JSON com mapa de reversão")
 
-    report_cmd = sub.add_parser("report", help="Apenas relata PII encontrado, sem mascarar")
+    sub.add_parser("report", help="Apenas relata PII encontrado, sem mascarar")
 
     args = parser.parse_args()
     masker = PIIMasker()
