@@ -18,7 +18,7 @@ import json
 import sys
 
 from ..osutils import private_file
-from .masker import PIIMasker
+from .masker import PIIMasker, StreamUnmasker
 
 def main():
     import argparse

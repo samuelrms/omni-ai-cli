@@ -8,7 +8,7 @@ import urllib.request
 import urllib.error
 from typing import Optional
 
-from ..pii import PIIMasker
+from ..pii import PIIMasker, StreamUnmasker
 
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 
@@ -219,20 +219,25 @@ class OpenRouterClient:
                 data["provider"] = {"max_price": {"prompt": 0, "completion": 0}}
             try:
                 if on_delta is not None:
-                    # Stream the tokens as they arrive; a chunk may still be a masked placeholder, so
-                    # unmask each piece best-effort and unmask the whole answer again at the end.
+                    # Stream the tokens as they arrive. A placeholder can come split across pieces, so the
+                    # restorer holds back an ending that may still become one; the whole answer is restored again below.
                     final = None
+                    restorer = StreamUnmasker(self._pii_map)
                     gen = self._stream_request(data)
                     try:
                         for kind, payload in gen:
                             if kind == "delta":
-                                streamed_any = True
-                                piece = self.masker.unmask(payload, self._pii_map) if (self.masker and self._pii_map) else payload
-                                on_delta(piece)
+                                piece = restorer.feed(payload)
+                                if piece:
+                                    streamed_any = True
+                                    on_delta(piece)
                             else:
                                 final = payload
                     finally:
                         gen.close()  # close the HTTP response if the consumer stops early (e.g. BrokenPipe)
+                    rest = restorer.flush()
+                    if rest:
+                        on_delta(rest)
                     if final and final["content"].strip():
                         resp = {"choices": [{"message": {"content": final["content"]}}],
                                 "model": final["model"], "usage": final["usage"]}
