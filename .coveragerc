@@ -1,0 +1,8 @@
+# Read by `coverage run`, in the Coverage workflow and locally
+[run]
+source = omni_ai
+# A pattern, not a relative path: child processes started from another folder would resolve a relative one there
+omit = */omni_ai/vendor/*
+# Many tests run code in a child process, such as `ai serve`. This measures those processes too and turns on
+# parallel mode, so `coverage combine` must run before `coverage report`.
+patch = subprocess

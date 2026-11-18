@@ -23,6 +23,13 @@ Todo módulo de teste começa com `import isolation`, que troca a pasta home, re
 
 Todos os executáveis dos testes são fictícios: nada autentica nem consome cota.
 
+A cobertura usa o `.coveragerc`, que também mede o código que os testes rodam em outro processo, como o `ai serve`. Cada processo grava um arquivo de dados, e o `coverage combine` junta todos antes do relatório:
+
+```bash
+pip install --require-hashes -r tools/release/requirements-coverage.txt
+coverage run -m unittest discover -s tests && coverage combine -q && coverage report
+```
+
 ## Diagramas do README
 
 A página do npm não renderiza `mermaid`. As fontes ficam em `docs/diagrams/*.mmd` e são
