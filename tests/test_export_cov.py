@@ -148,7 +148,6 @@ class ClipboardTests(unittest.TestCase):
             self.assertFalse(export.to_clipboard('oi'))
 
     def test_swallows_tool_failure(self):
-        import subprocess
         with patch('shutil.which', return_value='/usr/bin/pbcopy'), \
              patch('subprocess.run', side_effect=OSError):
             self.assertFalse(export.to_clipboard('oi'))
@@ -210,7 +209,7 @@ class MainTests(unittest.TestCase):
 
     def test_stdin_when_no_from(self):
         with patch('sys.stdin', io.StringIO(json.dumps(SESSION))), \
-             patch('sys.stdout', io.StringIO()) as out, patch('sys.stderr', io.StringIO()), \
+             patch('sys.stdout', io.StringIO()), patch('sys.stderr', io.StringIO()), \
              patch.object(export, 'to_pdf') as pdf:
             code = export.main(['--print'])
         self.assertEqual(code, 0)

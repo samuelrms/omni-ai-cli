@@ -10,7 +10,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from omni_ai.cli import base, limits
+from omni_ai.cli import limits
 from omni_ai.usage import providers
 
 AT = int(time.mktime((2026, 11, 6, 12, 0, 0, 0, 0, -1)))

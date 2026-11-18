@@ -4,7 +4,7 @@ from .. import usage
 from . import attempts
 from ..tools import CLIS
 from .base import (
-    RATE_LIMITED, NOT_READY, RED, GREEN, YELLOW, CYAN, DIM, NC,
+    RATE_LIMITED, NOT_READY, RED, YELLOW, CYAN, DIM, NC,
     say, config, emit, installed, cooldown_left,
 )
 from .classifier import classify, CLASSIFIED_BY

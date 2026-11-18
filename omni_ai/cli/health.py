@@ -1,5 +1,4 @@
 """Status, version and health-check commands: what is installed, logged in and configured."""
-import json
 import os
 import subprocess
 from pathlib import Path
@@ -7,7 +6,7 @@ import urllib.error
 import urllib.request
 
 from .. import config as config_tool
-from ..osutils import REPO, resolve_bin
+from ..osutils import resolve_bin
 from ..tools import CLIS, TOOLS
 from .base import (
     BINS, LOG_FILE, RED, GREEN, YELLOW, CYAN, BOLD, DIM, NC,
