@@ -70,7 +70,7 @@ test('every inline script needs the nonce, and inline handlers are refused', () 
     const csp = html.match(/script-src ([^;]+);/)[1];
     assert.ok(!csp.includes('unsafe-inline'));
     const nonce = csp.match(/'nonce-([^']+)'/)[1];
-    for (const tag of html.match(/<script[^>]*>/g)) assert.ok(tag.includes(`nonce="${nonce}"`), tag);
+    for (const tag of html.match(/<script\b[^>]*>/gi)) assert.ok(tag.includes(`nonce="${nonce}"`), tag);
   }
   assert.notEqual(chatView().webview.html.match(/'nonce-([^']+)'/)[1], chatView().webview.html.match(/'nonce-([^']+)'/)[1]);
 });
@@ -78,7 +78,7 @@ test('every inline script needs the nonce, and inline handlers are refused', () 
 test('Mermaid comes from the extension, carries the nonce and runs in strict mode', () => {
   const { webview } = chatView();
   const nonce = webview.html.match(/'nonce-([^']+)'/)[1];
-  assert.doesNotMatch(webview.html, /<script[^>]*\bsrc=/);
+  assert.doesNotMatch(webview.html, /<script\b[^>]*\bsrc=/i);
   const src = 'https://file+.vscode-resource.vscode-cdn.net/media/mermaid/mermaid.min.js';
   assert.ok(webview.html.includes(`var MERMAID_SRC = "${src}", NONCE = "${nonce}"`), 'Mermaid loads from media/ with the nonce');
   assert.match(webview.html, /s\.nonce = NONCE; s\.src = MERMAID_SRC;/);
