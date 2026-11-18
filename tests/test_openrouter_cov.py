@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 import unittest
 import urllib.error
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 os.environ['PYTHONPATH'] = str(ROOT)

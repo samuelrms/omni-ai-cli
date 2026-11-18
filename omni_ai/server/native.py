@@ -1,6 +1,5 @@
 """Function calling through provider APIs. The client's tools are only described to the model and never run here."""
 import json
-import os
 import threading
 import urllib.error
 import urllib.request

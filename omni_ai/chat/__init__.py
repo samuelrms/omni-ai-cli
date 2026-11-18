@@ -22,7 +22,7 @@ from .. import ui
 from ..osutils import private_file
 from ..tools import KEY_NAMES, PARALLEL, TOOLS
 
-from . import i18n, session, spend, runner, versions, queue, ops
+from . import i18n, session, runner, versions, queue, ops
 
 from .i18n import (display, LANGS, T, LANG_FILE, load_lang, save_lang, LANG, set_lang,
                    tr, choose_lang, LANG_NAMES, ENGINES, MODES, PRINT_LOCK, ESCAPES, TOOL_TEXT)
@@ -58,7 +58,6 @@ def main(argv=None):
         return tr('auto_model') if engine == 'auto' else model_label(engine)
 
     def status():
-        mode = session.data.get('mode', 'default')
         # the mode is drawn as a colored chip by the input box
         return ' · '.join(x for x in ('Omni AI', session.data['engine'], engine_model() if session.data['engine'] != 'auto' else '',
                                       ui.home_path(session.data['cwd'])) if x)
@@ -159,7 +158,7 @@ def main(argv=None):
             session.data['queue'] = pending
             session.save()
 
-    queue = Queue(skip=redundant, run=lambda spec: run_spec(session, spec), changed=persist)
+    queue = Queue(skip=redundant, run=lambda spec: run_spec(session, spec), changed=persist)  # noqa: F811  (chat.queue stays the module)
     box = ui.InputBox(Path(session_dir()).parent / 'input_history', commands, status,
                       lambda: tr('placeholder'), lambda: tr('hints'),
                       arguments=arguments, cwd=lambda: session.data['cwd'], mode=lambda: session.data.get('mode', 'default'),

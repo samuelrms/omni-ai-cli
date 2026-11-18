@@ -13,7 +13,6 @@ from .. import ui
 from ..osutils import clean_terminal, group_kwargs, kill_tree, module_cmd, module_env, send_prompt, stop_tree
 from ..tools import TOOLS
 from .i18n import tr
-from .session import Session
 from .spend import spend, spend_label, record_spend
 
 FORCE_AFTER = 5  # seconds between asking a process to stop and killing it

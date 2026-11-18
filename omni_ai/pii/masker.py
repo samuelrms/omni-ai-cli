@@ -1,9 +1,6 @@
 """PIIMasker: detect and reversibly mask personal data before sending prompts to third-party LLMs."""
 import ipaddress
 import re
-import json
-import sys
-import hashlib
 from typing import Tuple
 
 NOT_A_VALUE = r"(?!(?:string|str|null|none|true|false|undefined|any|int|bool|number)\b)"

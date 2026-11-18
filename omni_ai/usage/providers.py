@@ -15,7 +15,7 @@ from pathlib import Path
 
 from .. import config as config_tool
 from ..osutils import resolve_bin
-from .cache import _f, read, store, FRESH
+from .cache import _f
 
 PLANS = {'max': 'Max', 'pro': 'Pro', 'plus': 'Plus', 'team': 'Team', 'enterprise': 'Enterprise', 'free': 'Free'}
 
