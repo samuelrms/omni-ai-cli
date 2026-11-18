@@ -109,7 +109,6 @@ class TextHelperTests(unittest.TestCase):
         self.assertEqual(ui.home_path('/etc/hosts'), '/etc/hosts')
 
     def test_elapsed_seconds_and_minutes(self):
-        import time
         with patch('omni_ai.ui.screen.time.time', return_value=1000.0):
             self.assertEqual(ui.elapsed(995.0), '5s')
             self.assertEqual(ui.elapsed(900.0), '1m 40s')

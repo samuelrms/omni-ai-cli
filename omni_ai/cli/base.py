@@ -9,9 +9,7 @@ import time
 from pathlib import Path
 
 from .. import config as config_tool
-from .. import usage
-from ..osutils import (REPO, clean_terminal, direct_argv, enable_ansi, fits_command_line, module_cmd, module_env,
-                       private_file, resolve_bin, send_prompt)
+from ..osutils import clean_terminal, direct_argv, fits_command_line, private_file, resolve_bin, send_prompt
 from ..tools import CLIS, KEY_NAMES, TOOLS
 from .attempts import before_attempt
 

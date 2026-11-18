@@ -7,7 +7,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from test_admin import ADMIN_KEY, AdminCase
+from test_admin import AdminCase
 from test_server import ROOT
 
 sys.path.insert(0, str(ROOT))

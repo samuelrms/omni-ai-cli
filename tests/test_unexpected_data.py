@@ -2,7 +2,6 @@
 import isolation  # noqa: F401  (first: keeps the tests away from real data)
 import ast
 import http.client
-import io
 import json
 import os
 from pathlib import Path

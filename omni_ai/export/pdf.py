@@ -1,7 +1,5 @@
 """Zero-dependency PDF export using the base-14 fonts (Helvetica / Courier)."""
-import re
 import sys
-import time
 
 from ..osutils import private_file
 from .convert import _role_label, _when

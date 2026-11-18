@@ -4,15 +4,13 @@ import os
 import subprocess
 import sys
 import time
-from pathlib import Path
 
 from .. import config as config_tool
-from .. import onboarding
 from .. import skills
 from .. import ui
 from ..osutils import module_cmd, module_env, resolve_bin
 from ..tools import PARALLEL
-from .i18n import tr, display, LANG, LANGS
+from .i18n import tr, display, LANG
 from .session import MAX_CONTEXT, session_dir
 from .runner import Runner, ACTIVE
 SKIP_SYSTEM = ('You check a queue of chat requests. Given the previous answer and the next queued request, reply "yes" '

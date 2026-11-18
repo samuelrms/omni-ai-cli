@@ -1,6 +1,5 @@
 """Small formatting helpers for the usage screen: window labels, bars, reset times."""
 import time
-from datetime import datetime
 
 def window_label(minutes, label=None):
     if label:
