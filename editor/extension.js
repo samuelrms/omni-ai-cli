@@ -78,6 +78,10 @@ function validTool(tool) { return typeof tool === 'string' && TOOL_NAME.test(too
 function shellBin(bin) { return SHELL_SAFE.test(bin) ? bin : shq(bin); }
 function scriptNonce() { return crypto.randomBytes(16).toString('base64'); }
 
+// Mermaid ships with the extension, because the webview only runs scripts that carry its nonce. Its source, license
+// and how to update it: media/mermaid/README.md.
+const MERMAID = ['media', 'mermaid', 'mermaid.min.js'];
+
 /** The base command with the configured tool and mode flags. */
 function baseCommand() {
   const tool = validTool(config().get('tool', 'auto'));
@@ -355,8 +359,8 @@ class OmniChatView {
   // Bind to a webview from either the sidebar view or an editor panel.
   attach(webview) {
     this.webview = webview;
-    webview.options = { enableScripts: true };
-    webview.html = this.html();
+    webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media')] };
+    webview.html = this.html(webview);
     webview.onDidReceiveMessage((msg) => {
       if (msg.type === 'send') this.send(msg.text, { tool: msg.tool, mode: msg.mode });
       else if (msg.type === 'cancel') this.cancel();
@@ -765,8 +769,9 @@ class OmniChatView {
     }
   }
 
-  html() {
+  html(webview) {
     const nonce = scriptNonce();
+    const mermaid = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, ...MERMAID));
     const LOGO = `<svg class="mark" viewBox="0 0 48 48" width="56" height="56" aria-hidden="true">
       <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
         <stop offset="0" stop-color="#f7a63b"/><stop offset=".5" stop-color="#ff5c5c"/><stop offset="1" stop-color="#7c5cff"/>
@@ -813,6 +818,7 @@ class OmniChatView {
   .tool .tout { font-size: 12px; opacity: .85; white-space: pre-wrap; background: var(--vscode-textCodeBlock-background, rgba(127,127,127,.12)); padding: 6px 8px; border-radius: 6px; margin-top: 4px; max-height: 320px; overflow: auto; font-family: var(--vscode-editor-font-family, monospace); }
   .tool.fail > summary { color: var(--vscode-errorForeground); }
   .mermaid { background: var(--vscode-textCodeBlock-background, rgba(127,127,127,.08)); border-radius: 8px; padding: 8px; margin: 6px 0; text-align: center; }
+  .mermaid:not(.drawn) { white-space: pre-wrap; text-align: left; font-family: var(--vscode-editor-font-family, monospace); }
   .clicard { align-self: stretch; border: 1px solid var(--vscode-panel-border); border-radius: 10px; overflow: hidden; margin: 2px 0; }
   .clihead { font-size: 11px; padding: 4px 10px; background: rgba(124,92,255,.14); font-family: var(--vscode-editor-font-family, monospace); opacity: .85; border-bottom: 1px solid var(--vscode-panel-border); }
   .clicard .body { padding: 10px 12px; font-size: 12.5px; }
@@ -923,10 +929,24 @@ class OmniChatView {
     </div>
   </div>
 </div>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.3/dist/mermaid.min.js"></script>
 <script nonce="${nonce}">
   var vs = acquireVsCodeApi();
-  try { if (window.mermaid) window.mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'default' }); } catch (e) {}
+  // Mermaid loads when the first diagram shows up: its 3.3 MB would otherwise slow down every opening of the chat
+  var MERMAID_SRC = ${JSON.stringify(String(mermaid))}, NONCE = ${JSON.stringify(nonce)}, mermaidReady = null, mermaidSeq = 0;
+  function loadMermaid(){
+    if (!mermaidReady) mermaidReady = new Promise(function(resolve, reject){
+      var s = document.createElement('script');
+      s.nonce = NONCE; s.src = MERMAID_SRC; s.onerror = reject;
+      s.onload = function(){
+        try {
+          window.mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'default' });
+          resolve(window.mermaid);
+        } catch (e) { reject(e); }
+      };
+      document.head.appendChild(s);
+    });
+    return mermaidReady;
+  }
   var log = document.getElementById('log'), q = document.getElementById('q');
   var sendBtn = document.getElementById('send'), stopBtn = document.getElementById('stop'), attachBtn = document.getElementById('attach');
   var toolSel = document.getElementById('tool'), modeSel = document.getElementById('mode');
@@ -1020,12 +1040,18 @@ class OmniChatView {
     d.appendChild(s); d.appendChild(pre); thread.appendChild(d); scroll();
   }
   function renderMermaid(){
-    if (!window.mermaid) return;
     var els = thread.querySelectorAll('.mermaid:not([data-done])');
     Array.prototype.forEach.call(els, function(el){
       el.setAttribute('data-done', '1');
-      try { el.textContent = decodeURIComponent(el.getAttribute('data-code') || ''); } catch (e) { el.textContent = el.getAttribute('data-code') || ''; }
-      try { window.mermaid.run({ nodes: [el] }); } catch (e) { /* leave as text on parse error */ }
+      var code;
+      try { code = decodeURIComponent(el.getAttribute('data-code') || ''); } catch (e) { code = el.getAttribute('data-code') || ''; }
+      // The source shows as text until the diagram is drawn, and stays if Mermaid cannot load or parse it
+      el.textContent = code;
+      // Each diagram gets its own id: Mermaid's default comes from the clock, and diagrams drawn in the same millisecond collide
+      var id = 'omni-mermaid-' + (++mermaidSeq);
+      loadMermaid().then(function(mermaid){ return mermaid.render(id, code, el); })
+        .then(function(result){ el.innerHTML = result.svg; el.classList.add('drawn'); })
+        .catch(function(){ el.textContent = code; });
     });
   }
   var thread = document.getElementById('thread');
