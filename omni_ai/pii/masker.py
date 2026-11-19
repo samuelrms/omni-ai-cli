@@ -88,7 +88,7 @@ class PIIMasker:
             re.compile(
                 r"\b(?:[0-9A-Z]{2}\.[0-9A-Z]{3}\.[0-9A-Z]{3}/[0-9A-Z]{4}-"
                 r"|[0-9A-Za-z]{8}/[0-9A-Za-z]{4}-"
-                r"|[0-9A-Za-z]{12})\d{2}\b(?!@)"  # before an @ it is the name in an email, which EMAIL takes whole
+                r"|[0-9A-Za-z]{12})\d{2}\b"
             ),
         ),
         ("RG", re.compile(r"\b\d{2}[.\s]?\d{3}[.\s]?\d{3}[-.\s]?[\dxX]\b")),
@@ -240,9 +240,10 @@ class PIIMasker:
         import uuid
         namespace = namespace or uuid.uuid4().hex[:12]
         mapping, replacements, counters = {}, [], {}
-        # Cover complete credentials before patterns nested inside them.
+        # Cover complete credentials before patterns nested inside them, then whole emails, whose parts can look
+        # like a document (52998224725@…, joao@eszycidpyopu61.com.br) and would leave the rest in the clear
         first = {'PRIVATE_KEY', 'CONN_STRING', 'URL_WITH_CREDS'}
-        patterns = sorted(self.patterns, key=lambda item: item[0] not in first)
+        patterns = sorted(self.patterns, key=lambda item: 0 if item[0] in first else 1 if item[0] == 'EMAIL' else 2)
         for category, pattern in patterns:
             for match in pattern.finditer(text):
                 group = match.lastindex or 0
@@ -250,8 +251,13 @@ class PIIMasker:
                 original = match.group(group)
                 if self._is_false_positive(original, category):
                     continue
-                if any(start < right and left < end for left, right, _ in replacements):
+                inside = [item for item in replacements if start < item[1] and item[0] < end]
+                if any(not (start <= left and right <= end) for left, right, _ in inside):
                     continue
+                # A match around earlier ones wins, so a password that holds an email is masked whole
+                for item in inside:
+                    replacements.remove(item)
+                    del mapping[item[2]]
                 counters[category] = counters.get(category, 0) + 1
                 placeholder = f"[{category}_{namespace}_{counters[category]}]"
                 while placeholder in text or placeholder in mapping:

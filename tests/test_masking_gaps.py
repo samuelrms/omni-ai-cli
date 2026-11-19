@@ -69,6 +69,11 @@ SENSITIVE = [
     ('cnpj 90.021.382\\0001-22', '90.021.382\\0001-22'),
     ('cnpj 90 021 382/0001 22', '90 021 382/0001 22'),
     ('cpf １２３.４５６.７８９-０９', '１２３.４５６.７８９-０９'),
+    # An email inside a secret must not leave the rest of the secret out
+    ('auth=me@company.com:ATATT3xFfGF0abc123', 'ATATT3xFfGF0abc123'),
+    ('password=foo@bar.com:hunter2', 'hunter2'),
+    ('auth=joao@x.com&secret=supersecretvalue', 'supersecretvalue'),
+    ('password: "' + 'joao@empresa.com and the rest' + '"', 'and the rest'),
 ]
 # Text that must reach the model unchanged
 ORDINARY = [
@@ -159,11 +164,13 @@ class CheckDigits(unittest.TestCase):
         self.assertNotIn('[CPF_', masked)
         self.assertIn('[PHONE_BR_', masked)
 
-    def test_an_email_name_with_a_cnpj_shape_stays_in_the_email(self):
-        # pedroalves1988 has valid check digits as an alphanumeric CNPJ
-        masked = PIIMasker().mask('email pedroalves1988@empresa.com.br')[0]
-        self.assertIn('[EMAIL_', masked)
-        self.assertNotIn('empresa.com.br', masked)
+    def test_an_email_with_a_document_inside_stays_whole(self):
+        # eszycidpyopu61 and pedroalves1988 have valid check digits as an alphanumeric CNPJ, 52998224725 as a CPF
+        for email in ('pedroalves1988@empresa.com.br', 'eszycidpyopu61.silva@empresa.com.br',
+                      'eszycidpyopu61+tag@empresa.com.br', 'eszycidpyopu61-x@empresa.com.br',
+                      'joao@eszycidpyopu61.com.br', '52998224725@empresa.com.br'):
+            with self.subTest(email=email):
+                self.assertRegex(PIIMasker().mask(f'email {email}')[0], r'^email \[EMAIL_[0-9a-f]+_1\]$')
 
 
 class SystemPrompt(unittest.TestCase):
