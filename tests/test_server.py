@@ -1,6 +1,8 @@
 """`ai serve` end to end: a real server process, the real router, fictional CLIs."""
 import isolation  # noqa: F401  (first: keeps the tests away from real data)
+import contextlib
 import http.client
+import io
 import json
 import os
 from pathlib import Path
@@ -401,15 +403,40 @@ class EventStream(unittest.TestCase):
         self.assertEqual(pieces, ['he', 'llo'])
         self.assertEqual((execution.answer, execution.tokens), ('hello', (1, 2)))
 
-    def test_masked_data_waits_for_the_restored_answer(self):
+    def test_masked_data_streams_like_any_answer(self):
+        # The API client already restored each piece, so nothing waits for the final answer
         pieces = []
         execution = self.execution(pieces.append)
         execution._line('  🛡️  PII mascarado: 1 item(s)')
-        execution._line('{"type":"smart.delta","text":"[EMAIL"}')
-        execution._line('{"type":"smart.answer","content":"a@b.com"}')
-        self.assertEqual(pieces, [])
-        self.assertFalse(execution.sent_delta)
-        self.assertEqual(execution.answer, 'a@b.com')
+        execution._line('{"type":"smart.delta","text":"Escreva para "}')
+        execution._line('{"type":"smart.delta","text":"a@b.com"}')
+        execution._line('{"type":"smart.answer","content":"Escreva para a@b.com"}')
+        self.assertEqual(pieces, ['Escreva para ', 'a@b.com'])
+        self.assertTrue(execution.sent_delta)
+        self.assertEqual(execution.answer, 'Escreva para a@b.com')
+
+    def test_openrouter_pieces_reach_the_client_restored(self):
+        # The other end of the chain: the router's OpenRouter client, with a placeholder split across pieces
+        from omni_ai import openrouter
+        from omni_ai.openrouter import OpenRouterClient
+
+        def fake_stream(client, data):
+            placeholder = next(iter(client._pii_map))
+            yield ('delta', 'Escreva para ' + placeholder[:7])
+            yield ('delta', placeholder[7:] + '.')
+            yield ('final', {'content': f'Escreva para {placeholder}.', 'model': 't/a:free', 'usage': {}})
+        out, err = io.StringIO(), io.StringIO()
+        argv = ['openrouter', '--fallback-model', 't/a:free', 'Escreva para alice@example.com']
+        with patch.object(OpenRouterClient, '_stream_request', fake_stream), patch.object(sys, 'argv', argv), \
+                patch.dict(os.environ, {'SMART_AI_EVENTS': '1', 'OPENROUTER_API_KEY': 'synthetic-key'}), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), contextlib.suppress(SystemExit):
+            openrouter.main()
+        pieces = []
+        execution = self.execution(pieces.append)
+        for line in (err.getvalue() + out.getvalue()).splitlines():
+            execution._line(line)
+        self.assertEqual(pieces, ['Escreva para ', 'alice@example.com.'])
+        self.assertEqual(execution.answer, 'Escreva para alice@example.com.')
 
     def test_next_attempt_clears_a_failed_one(self):
         execution = self.execution(lambda text: None)

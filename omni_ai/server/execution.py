@@ -17,7 +17,6 @@ from .auth import SECRET_VARS
 
 FORCE_AFTER = 5  # seconds between asking a process to stop and killing it
 LIMITED = re.compile(LIMIT_TEXT.pattern + '|cooldown', re.I)
-MASKED = 'PII mascarado'  # the API clients say this when placeholders may show up in the streamed pieces
 
 OK, FAILED, RATE_LIMITED, TIMEOUT, DISCONNECTED, SHUTDOWN, SWITCHED, DENIED = (
     'ok', 'failed', 'rate_limited', 'timeout', 'disconnected', 'shutdown', 'switched', 'denied')
@@ -40,7 +39,6 @@ class Execution:
         self.protocol_error = False
         self.limited = False
         self.denied = False
-        self.masked = False
         self.sent_delta = False
         self.tokens = None
         self.job = {'engine': tool}
@@ -115,7 +113,6 @@ class Execution:
                 raise ValueError()
         except ValueError:
             # Router status line: only used to tell why it failed, never sent to the client
-            self.masked = self.masked or MASKED in raw
             self.limited = self.limited or bool(LIMITED.search(raw))
             self.denied = self.denied or bool(ACTION_REFUSED.search(raw))
             return
@@ -167,8 +164,8 @@ class Execution:
             self.limited = self.limited or bool(LIMITED.search(parsed[1]))
 
     def _delta(self, text):
-        # With masked data a piece can be a placeholder split in two: wait for the whole, restored answer.
-        if not text or self.masked or self.on_delta is None:
+        # Whoever emits smart.delta restores masked data first (today only OpenRouter, with StreamUnmasker)
+        if not text or self.on_delta is None:
             return
         try:
             self.on_delta(text)
