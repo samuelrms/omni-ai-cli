@@ -67,9 +67,8 @@ jobs:
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: ovsx publish omni-ai-cli.vsix -p "$OVSX_PAT"
-      # VS Code Marketplace: prefer a PAT (VSCE_PAT); otherwise try OIDC. Never fails the whole run.
+      # VS Code Marketplace: prefer a PAT (VSCE_PAT); otherwise try OIDC. A failure fails the run.
       - name: Publish to VS Code Marketplace
-        continue-on-error: true
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |

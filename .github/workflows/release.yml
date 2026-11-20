@@ -114,8 +114,9 @@ jobs:
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: ovsx publish omni-ai-cli.vsix -p "$OVSX_PAT"
+      # A failure here fails the job: the store would otherwise stay on an old version without anyone noticing.
+      # To publish again after fixing it, run the "Publish extension" workflow by hand.
       - name: Publish to VS Code Marketplace
-        continue-on-error: true
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
