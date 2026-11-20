@@ -15,6 +15,37 @@ def _secret_pattern(words, shortest):
     )
 
 
+def _check_digit(total):
+    """The Receita's rule for CPF and CNPJ: a remainder of 0 or 1 modulo 11 gives 0, any other gives 11 minus it."""
+    rest = total % 11
+    return 0 if rest < 2 else 11 - rest
+
+
+def valid_cpf(digits: str) -> bool:
+    """Eleven digits whose last two are the check digits of the first nine, as in the Receita's TestaCPF.
+    All zeros is not valid; other repeated digits are, as there."""
+    if not re.fullmatch(r"[0-9]{11}", digits) or digits == "0" * 11:
+        return False
+    numbers = [int(char) for char in digits]
+    first = _check_digit(sum(n * w for n, w in zip(numbers[:9], range(10, 1, -1))))
+    second = _check_digit(sum(n * w for n, w in zip(numbers[:10], range(11, 1, -1))))
+    return numbers[9:] == [first, second]
+
+
+CNPJ_WEIGHTS = (6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2)
+
+
+def valid_cnpj(chars: str) -> bool:
+    """Twelve characters in 0-9 or A-Z and two check digits, by the Receita's rule for the numeric and the
+    alphanumeric CNPJ: each character is worth its ASCII code minus 48. All zeros is not valid."""
+    if not re.fullmatch(r"[0-9A-Z]{12}[0-9]{2}", chars) or chars == "0" * 14:
+        return False
+    values = [ord(char) - 48 for char in chars]
+    first = _check_digit(sum(v * w for v, w in zip(values[:12], CNPJ_WEIGHTS[1:])))
+    second = _check_digit(sum(v * w for v, w in zip(values[:13], CNPJ_WEIGHTS)))
+    return values[12:] == [first, second]
+
+
 class PIIMasker:
     """Mascara e desmascara dados pessoais identificáveis (PII)."""
 
@@ -50,6 +81,16 @@ class PIIMasker:
         # === Documentos Brasileiros ===
         ("CPF", re.compile(r"\b\d{3}[.\s]?\d{3}[.\s]?\d{3}[-.\s]?\d{2}\b")),
         ("CNPJ", re.compile(r"\b\d{2}[.\s]?\d{3}[.\s]?\d{3}[/\\]?\d{4}[-.\s]?\d{2}\b")),
+        # The alphanumeric CNPJ, issued from July 2026. Lowercase is taken too, except with dots, where
+        # it looks more like a host and a path (ab.com.net/blog-44) than a CNPJ
+        (
+            "CNPJ",
+            re.compile(
+                r"\b(?:[0-9A-Z]{2}\.[0-9A-Z]{3}\.[0-9A-Z]{3}/[0-9A-Z]{4}-"
+                r"|[0-9A-Za-z]{8}/[0-9A-Za-z]{4}-"
+                r"|[0-9A-Za-z]{12})\d{2}\b"
+            ),
+        ),
         ("RG", re.compile(r"\b\d{2}[.\s]?\d{3}[.\s]?\d{3}[-.\s]?[\dxX]\b")),
         ("PIS", re.compile(r"\b\d{3}\.\d{5}\.\d{2}-\d\b")),
 
@@ -182,6 +223,13 @@ class PIIMasker:
                 return True
             # `ab::cd` is valid but is far more likely a name in code than an address
             return address.is_loopback or not any(char.isdigit() for char in match_text)
+        # The shape of a CPF or CNPJ is common in ordinary numbers and codes: only valid check digits make it one.
+        # \d also matches other scripts' digits (１２３), which the check needs as 0-9
+        if category in ("CPF", "CNPJ"):
+            ascii_digits = re.sub(r"\d", lambda digit: str(int(digit.group())), match_text)
+            if category == "CPF":
+                return not valid_cpf(re.sub(r"[.\s-]", "", ascii_digits))
+            return not valid_cnpj(re.sub(r"[.\s/\\-]", "", ascii_digits).upper())
         # CEPs que parecem mais versões ou números genéricos
         if category == "CEP" and len(match_text.replace("-", "").replace(".", "")) < 8:
             return True
@@ -192,9 +240,10 @@ class PIIMasker:
         import uuid
         namespace = namespace or uuid.uuid4().hex[:12]
         mapping, replacements, counters = {}, [], {}
-        # Cover complete credentials before patterns nested inside them.
+        # Cover complete credentials before patterns nested inside them, then whole emails, whose parts can look
+        # like a document (52998224725@…, joao@eszycidpyopu61.com.br) and would leave the rest in the clear
         first = {'PRIVATE_KEY', 'CONN_STRING', 'URL_WITH_CREDS'}
-        patterns = sorted(self.patterns, key=lambda item: item[0] not in first)
+        patterns = sorted(self.patterns, key=lambda item: 0 if item[0] in first else 1 if item[0] == 'EMAIL' else 2)
         for category, pattern in patterns:
             for match in pattern.finditer(text):
                 group = match.lastindex or 0
@@ -202,8 +251,13 @@ class PIIMasker:
                 original = match.group(group)
                 if self._is_false_positive(original, category):
                     continue
-                if any(start < right and left < end for left, right, _ in replacements):
+                inside = [item for item in replacements if start < item[1] and item[0] < end]
+                if any(not (start <= left and right <= end) for left, right, _ in inside):
                     continue
+                # A match around earlier ones wins, so a password that holds an email is masked whole
+                for item in inside:
+                    replacements.remove(item)
+                    del mapping[item[2]]
                 counters[category] = counters.get(category, 0) + 1
                 placeholder = f"[{category}_{namespace}_{counters[category]}]"
                 while placeholder in text or placeholder in mapping:
