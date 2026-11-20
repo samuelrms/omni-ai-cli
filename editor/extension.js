@@ -1016,7 +1016,8 @@ class OmniChatView {
       var first = raw.match(/^([^\\n]*)\\n([\\s\\S]*)$/);
       var lang = '', body = raw;
       if (first && /^[a-zA-Z0-9_+#-]{1,15}$/.test(first[1].trim())){ lang = first[1].trim().toLowerCase(); body = first[2]; }
-      if (lang === 'mermaid'){ return '<div class="mermaid" data-code="' + encodeURIComponent(body) + '"></div>'; }
+      // The source goes in as text too, so the block is not an empty box while the answer streams
+      if (lang === 'mermaid'){ return '<div class="mermaid" data-code="' + encodeURIComponent(body) + '">' + esc(body) + '</div>'; }
       return '<pre><code>' + esc(lang ? body : raw) + '</code></pre>';
     });
     return s;

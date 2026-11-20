@@ -1,0 +1,4 @@
+# Mermaid is copied from npm (editor/media/mermaid/README.md): keep it out of the language stats and of diffs,
+# and byte for byte on every system, since a test checks its sha256
+editor/media/mermaid/** linguist-vendored
+editor/media/mermaid/mermaid.min.js -diff -text

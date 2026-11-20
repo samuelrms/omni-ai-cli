@@ -87,6 +87,21 @@ test('Mermaid comes from the extension, carries the nonce and runs in strict mod
   assert.ok(fs.statSync(path.join(__dirname, '..', 'media', 'mermaid', 'mermaid.min.js')).size > 1000000);
 });
 
+test('the bundled Mermaid is the file its README describes', () => {
+  const folder = path.join(__dirname, '..', 'media', 'mermaid');
+  const documented = fs.readFileSync(path.join(folder, 'README.md'), 'utf8').match(/sha256 `([0-9a-f]{64})`/)[1];
+  const actual = require('crypto').createHash('sha256').update(fs.readFileSync(path.join(folder, 'mermaid.min.js'))).digest('hex');
+  assert.equal(actual, documented, 'update the sha256 and the version in media/mermaid/README.md along with the file');
+});
+
+test('a diagram shows its source as text until it is drawn', () => {
+  const { md } = renderer();
+  const fence = '`'.repeat(3);
+  const out = md('before\n' + fence + 'mermaid\ngraph TD; A-->B["<b>x</b>"]\n' + fence);
+  assert.match(out, /<div class="mermaid" data-code="[^"]+">graph TD; A--&gt;B\[&quot;&lt;b&gt;x&lt;\/b&gt;&quot;\]\n<\/div>/);
+  assert.equal(decodeURIComponent(out.match(/data-code="([^"]+)"/)[1]), 'graph TD; A-->B["<b>x</b>"]\n');
+});
+
 test('model text cannot leave an attribute', () => {
   const { md } = renderer();
   const fence = '`'.repeat(3);
